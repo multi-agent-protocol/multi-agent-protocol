@@ -15,8 +15,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestServer, TestClient, TestAgent } from '../testing';
 import { ClientConnection } from '../connection/client';
 import { AgentConnection } from '../connection/agent';
+import { BaseConnection } from '../connection/base';
 import { createStreamPair } from '../stream';
-import type { Event, Message } from '../types';
+import { EVENT_TYPES, isOrphanedAgent, CORE_METHODS, LIFECYCLE_METHODS } from '../types';
+import type { Event, Message, Agent } from '../types';
 
 describe('Integration Tests', () => {
   let server: TestServer;
@@ -287,7 +289,7 @@ describe('Integration Tests', () => {
 
     it('includes ownerId in agent_registered event', async () => {
       const client = await TestClient.create(server, { name: 'Observer' });
-      const subscription = await client.subscribe({ eventTypes: ['agent_registered'] });
+      const subscription = await client.subscribe({ eventTypes: [EVENT_TYPES.AGENT_REGISTERED] });
 
       const events: Event[] = [];
       subscription.on('event', (e) => events.push(e));
@@ -297,6 +299,151 @@ describe('Integration Tests', () => {
 
       expect(events.length).toBe(1);
       expect(events[0].data?.ownerId).toBeDefined();
+
+      await subscription.unsubscribe();
+      await agent.disconnect();
+      await client.disconnect();
+    });
+
+    it('sets ownerId to null for orphaned agents', async () => {
+      // Use BaseConnection directly to control disconnect behavior
+      // (AgentConnection.disconnect() always unregisters first)
+      const [clientStream, serverStream] = createStreamPair();
+      const connection = new BaseConnection(clientStream);
+      server.acceptConnection(serverStream);
+
+      // Connect as agent participant
+      await connection.sendRequest(CORE_METHODS.CONNECT, {
+        protocolVersion: 1,
+        participantType: 'agent',
+        name: 'Orphan Test',
+      });
+
+      // Register an agent
+      const registerResult = await connection.sendRequest<
+        { name: string },
+        { agent: Agent }
+      >(LIFECYCLE_METHODS.AGENTS_REGISTER, { name: 'Orphan Agent' });
+      const agentId = registerResult.agent.id;
+
+      // Verify agent has non-null ownerId
+      const agentBefore = server.agents.get(agentId);
+      expect(agentBefore?.ownerId).not.toBeNull();
+      expect(isOrphanedAgent(agentBefore!)).toBe(false);
+
+      // Disconnect with orphan policy (don't unregister first)
+      await connection.sendRequest(CORE_METHODS.DISCONNECT, {
+        policy: { agentBehavior: 'orphan' },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Agent should still exist but with null ownerId
+      const agentAfter = server.agents.get(agentId);
+      expect(agentAfter).toBeDefined();
+      expect(agentAfter?.ownerId).toBeNull();
+      expect(isOrphanedAgent(agentAfter!)).toBe(true);
+    });
+
+    it('emits agent_orphaned event with previousOwner', async () => {
+      const client = await TestClient.create(server, { name: 'Observer' });
+      const subscription = await client.subscribe({ eventTypes: [EVENT_TYPES.AGENT_ORPHANED] });
+
+      const events: Event[] = [];
+      subscription.on('event', (e) => events.push(e));
+
+      // Use BaseConnection to control disconnect behavior
+      const [agentStream, agentServerStream] = createStreamPair();
+      const agentConn = new BaseConnection(agentStream);
+      server.acceptConnection(agentServerStream);
+
+      // Connect and register
+      await agentConn.sendRequest(CORE_METHODS.CONNECT, {
+        protocolVersion: 1,
+        participantType: 'agent',
+        name: 'Orphan Event Test',
+      });
+      await agentConn.sendRequest(LIFECYCLE_METHODS.AGENTS_REGISTER, {
+        name: 'Orphan Event Agent',
+      });
+
+      // Disconnect with orphan policy
+      await agentConn.sendRequest(CORE_METHODS.DISCONNECT, {
+        policy: { agentBehavior: 'orphan' },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(events.length).toBe(1);
+      expect(events[0].type).toBe(EVENT_TYPES.AGENT_ORPHANED);
+      expect(events[0].data?.previousOwner).toBeDefined();
+      expect(events[0].data?.previousOwner).not.toBeNull();
+
+      await subscription.unsubscribe();
+      await client.disconnect();
+    });
+
+    it('isOrphanedAgent helper correctly identifies orphaned agents', () => {
+      // Test with non-orphaned agent (has ownerId)
+      const ownedAgent: Agent = {
+        id: 'agent-1',
+        ownerId: 'participant-1',
+        state: 'idle',
+      };
+      expect(isOrphanedAgent(ownedAgent)).toBe(false);
+
+      // Test with orphaned agent (null ownerId)
+      const orphanedAgent: Agent = {
+        id: 'agent-2',
+        ownerId: null,
+        state: 'orphaned',
+      };
+      expect(isOrphanedAgent(orphanedAgent)).toBe(true);
+    });
+  });
+
+  // ===========================================================================
+  // EVENT_TYPES Constants
+  // ===========================================================================
+
+  describe('EVENT_TYPES Constants', () => {
+    it('EVENT_TYPES values match expected event type strings', () => {
+      expect(EVENT_TYPES.AGENT_REGISTERED).toBe('agent_registered');
+      expect(EVENT_TYPES.AGENT_UNREGISTERED).toBe('agent_unregistered');
+      expect(EVENT_TYPES.AGENT_STATE_CHANGED).toBe('agent_state_changed');
+      expect(EVENT_TYPES.AGENT_ORPHANED).toBe('agent_orphaned');
+      expect(EVENT_TYPES.PARTICIPANT_CONNECTED).toBe('participant_connected');
+      expect(EVENT_TYPES.PARTICIPANT_DISCONNECTED).toBe('participant_disconnected');
+      expect(EVENT_TYPES.MESSAGE_SENT).toBe('message_sent');
+      expect(EVENT_TYPES.SCOPE_CREATED).toBe('scope_created');
+      expect(EVENT_TYPES.SCOPE_MEMBER_JOINED).toBe('scope_member_joined');
+      expect(EVENT_TYPES.SCOPE_MEMBER_LEFT).toBe('scope_member_left');
+    });
+
+    it('can use EVENT_TYPES in subscription filters', async () => {
+      const client = await TestClient.create(server, { name: 'Observer' });
+
+      // Use multiple EVENT_TYPES in filter
+      const subscription = await client.subscribe({
+        eventTypes: [
+          EVENT_TYPES.AGENT_REGISTERED,
+          EVENT_TYPES.AGENT_STATE_CHANGED,
+        ],
+      });
+
+      const events: Event[] = [];
+      subscription.on('event', (e) => events.push(e));
+
+      // Create an agent (triggers AGENT_REGISTERED)
+      const agent = await TestAgent.create(server, { name: 'Test Agent' });
+
+      // Change state (triggers AGENT_STATE_CHANGED)
+      await agent.busy();
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should receive both event types
+      const eventTypes = events.map((e) => e.type);
+      expect(eventTypes).toContain(EVENT_TYPES.AGENT_REGISTERED);
+      expect(eventTypes).toContain(EVENT_TYPES.AGENT_STATE_CHANGED);
 
       await subscription.unsubscribe();
       await agent.disconnect();
@@ -439,27 +586,190 @@ describe('Integration Tests', () => {
     });
 
     describe('hierarchical messaging', () => {
-      it('sends to parent', async () => {
+      it('sends to parent and parent receives message', async () => {
+        // Create parent-child hierarchy with separate connections
         const parent = await TestAgent.create(server, { name: 'Parent' });
 
-        const result = await parent.sendToParent({ status: 'working' });
+        // Create child with parent relationship
+        const [childStream, childServerStream] = createStreamPair();
+        const childConn = new BaseConnection(childStream);
+        server.acceptConnection(childServerStream);
 
-        expect(result).toBeDefined();
-        expect(server.messages.length).toBe(1);
+        await childConn.sendRequest(CORE_METHODS.CONNECT, {
+          protocolVersion: 1,
+          participantType: 'agent',
+          name: 'Child',
+        });
 
+        const childResult = await childConn.sendRequest<
+          { name: string; parent: string },
+          { agent: Agent }
+        >(LIFECYCLE_METHODS.AGENTS_REGISTER, {
+          name: 'Child Agent',
+          parent: parent.id!,
+        });
+
+        // Child sends to parent
+        await childConn.sendRequest(CORE_METHODS.SEND, {
+          to: { parent: true },
+          payload: { status: 'working' },
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Parent should have received the message
+        expect(parent.receivedMessages.length).toBe(1);
+        expect(parent.lastMessage?.payload).toEqual({ status: 'working' });
+
+        await childConn.sendRequest(CORE_METHODS.DISCONNECT, {});
         await parent.disconnect();
       });
 
-      it('sends to children', async () => {
+      it('sends to children and children receive messages', async () => {
         const parent = await TestAgent.create(server, { name: 'Parent' });
-        await parent.spawn({ name: 'Child 1' });
-        await parent.spawn({ name: 'Child 2' });
 
-        const result = await parent.sendToChildren({ instruction: 'start task' });
+        // Create children with separate connections so they can receive messages
+        const child1 = await TestAgent.create(server, { name: 'Child 1' });
+        const child2 = await TestAgent.create(server, { name: 'Child 2' });
 
-        expect(result).toBeDefined();
+        // Manually set parent relationship in server
+        const child1Agent = server.agents.get(child1.id!);
+        const child2Agent = server.agents.get(child2.id!);
+        if (child1Agent) (child1Agent as { parent?: string }).parent = parent.id!;
+        if (child2Agent) (child2Agent as { parent?: string }).parent = parent.id!;
+
+        // Parent sends to children
+        await parent.sendToChildren({ instruction: 'start task' });
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Both children should have received the message
+        expect(child1.receivedMessages.length).toBe(1);
+        expect(child1.lastMessage?.payload).toEqual({ instruction: 'start task' });
+        expect(child2.receivedMessages.length).toBe(1);
+        expect(child2.lastMessage?.payload).toEqual({ instruction: 'start task' });
 
         await parent.disconnect();
+        await child1.disconnect();
+        await child2.disconnect();
+      });
+
+      it('sends to siblings', async () => {
+        const parent = await TestAgent.create(server, { name: 'Parent' });
+
+        // Create siblings
+        const sibling1 = await TestAgent.create(server, { name: 'Sibling 1' });
+        const sibling2 = await TestAgent.create(server, { name: 'Sibling 2' });
+        const sibling3 = await TestAgent.create(server, { name: 'Sibling 3' });
+
+        // Set parent relationships
+        const s1 = server.agents.get(sibling1.id!);
+        const s2 = server.agents.get(sibling2.id!);
+        const s3 = server.agents.get(sibling3.id!);
+        if (s1) (s1 as { parent?: string }).parent = parent.id!;
+        if (s2) (s2 as { parent?: string }).parent = parent.id!;
+        if (s3) (s3 as { parent?: string }).parent = parent.id!;
+
+        // Sibling 1 sends to siblings
+        await sibling1.sendToSiblings({ greeting: 'hello siblings' });
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Siblings 2 and 3 should receive, but not sibling 1 (sender)
+        expect(sibling1.receivedMessages.length).toBe(0);
+        expect(sibling2.receivedMessages.length).toBe(1);
+        expect(sibling2.lastMessage?.payload).toEqual({ greeting: 'hello siblings' });
+        expect(sibling3.receivedMessages.length).toBe(1);
+        expect(sibling3.lastMessage?.payload).toEqual({ greeting: 'hello siblings' });
+
+        await parent.disconnect();
+        await sibling1.disconnect();
+        await sibling2.disconnect();
+        await sibling3.disconnect();
+      });
+
+      it('sends to descendants (multi-level)', async () => {
+        // Create hierarchy: grandparent -> parent -> child
+        const grandparent = await TestAgent.create(server, { name: 'Grandparent' });
+        const parentAgent = await TestAgent.create(server, { name: 'Parent' });
+        const child = await TestAgent.create(server, { name: 'Child' });
+
+        // Set hierarchy
+        const parentAgentData = server.agents.get(parentAgent.id!);
+        const childAgentData = server.agents.get(child.id!);
+        if (parentAgentData) (parentAgentData as { parent?: string }).parent = grandparent.id!;
+        if (childAgentData) (childAgentData as { parent?: string }).parent = parentAgent.id!;
+
+        // Grandparent sends to all descendants using generic send
+        await grandparent.connection.send({ descendants: true }, { broadcast: 'to all descendants' });
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Both parent and child should receive
+        expect(parentAgent.receivedMessages.length).toBe(1);
+        expect(parentAgent.lastMessage?.payload).toEqual({ broadcast: 'to all descendants' });
+        expect(child.receivedMessages.length).toBe(1);
+        expect(child.lastMessage?.payload).toEqual({ broadcast: 'to all descendants' });
+
+        await grandparent.disconnect();
+        await parentAgent.disconnect();
+        await child.disconnect();
+      });
+
+      it('sends to ancestors (multi-level)', async () => {
+        // Create hierarchy: grandparent -> parent -> child
+        const grandparent = await TestAgent.create(server, { name: 'Grandparent' });
+        const parentAgent = await TestAgent.create(server, { name: 'Parent' });
+        const child = await TestAgent.create(server, { name: 'Child' });
+
+        // Set hierarchy
+        const parentAgentData = server.agents.get(parentAgent.id!);
+        const childAgentData = server.agents.get(child.id!);
+        if (parentAgentData) (parentAgentData as { parent?: string }).parent = grandparent.id!;
+        if (childAgentData) (childAgentData as { parent?: string }).parent = parentAgent.id!;
+
+        // Child sends to all ancestors
+        await child.connection.send({ ancestors: true }, { status: 'from child to ancestors' });
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Both parent and grandparent should receive
+        expect(parentAgent.receivedMessages.length).toBe(1);
+        expect(parentAgent.lastMessage?.payload).toEqual({ status: 'from child to ancestors' });
+        expect(grandparent.receivedMessages.length).toBe(1);
+        expect(grandparent.lastMessage?.payload).toEqual({ status: 'from child to ancestors' });
+        // Child shouldn't receive its own message
+        expect(child.receivedMessages.length).toBe(0);
+
+        await grandparent.disconnect();
+        await parentAgent.disconnect();
+        await child.disconnect();
+      });
+
+      it('respects depth limit for descendants', async () => {
+        // Create 3-level hierarchy: root -> level1 -> level2
+        const root = await TestAgent.create(server, { name: 'Root' });
+        const level1 = await TestAgent.create(server, { name: 'Level 1' });
+        const level2 = await TestAgent.create(server, { name: 'Level 2' });
+
+        // Set hierarchy
+        const l1 = server.agents.get(level1.id!);
+        const l2 = server.agents.get(level2.id!);
+        if (l1) (l1 as { parent?: string }).parent = root.id!;
+        if (l2) (l2 as { parent?: string }).parent = level1.id!;
+
+        // Root sends to descendants with depth=1 (only direct children)
+        await root.connection.send({ descendants: true, depth: 1 }, { message: 'depth limited' });
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Only level1 should receive (depth 1)
+        expect(level1.receivedMessages.length).toBe(1);
+        expect(level2.receivedMessages.length).toBe(0);
+
+        await root.disconnect();
+        await level1.disconnect();
+        await level2.disconnect();
       });
     });
 
@@ -795,6 +1105,115 @@ describe('Integration Tests', () => {
 
         await subscription.unsubscribe();
         await agent.disconnect();
+        await client.disconnect();
+      });
+
+      it('filters by correlationIds', async () => {
+        const client = await TestClient.create(server, { name: 'Observer' });
+
+        // Subscribe to events with specific correlation IDs
+        const subscription = await client.subscribe({
+          correlationIds: ['corr-123', 'corr-456'],
+        });
+        const events: Event[] = [];
+        subscription.on('event', (e) => events.push(e));
+
+        // Emit events with different correlation IDs via server
+        server.emitEvent({
+          type: EVENT_TYPES.MESSAGE_SENT,
+          source: 'test',
+          data: { correlationId: 'corr-123', messageId: 'msg-1' },
+        });
+        server.emitEvent({
+          type: EVENT_TYPES.MESSAGE_SENT,
+          source: 'test',
+          data: { correlationId: 'corr-789', messageId: 'msg-2' }, // Should not match
+        });
+        server.emitEvent({
+          type: EVENT_TYPES.MESSAGE_SENT,
+          source: 'test',
+          data: { correlationId: 'corr-456', messageId: 'msg-3' },
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Should only receive events with matching correlation IDs
+        expect(events.length).toBe(2);
+        expect(events.every((e) =>
+          ['corr-123', 'corr-456'].includes((e.data as { correlationId: string }).correlationId)
+        )).toBe(true);
+
+        await subscription.unsubscribe();
+        await client.disconnect();
+      });
+
+      it('filters by metadataMatch', async () => {
+        const client = await TestClient.create(server, { name: 'Observer' });
+
+        // Subscribe to events with specific metadata values
+        const subscription = await client.subscribe({
+          metadataMatch: { priority: 'high', category: 'alert' },
+        });
+        const events: Event[] = [];
+        subscription.on('event', (e) => events.push(e));
+
+        // Emit events with different metadata
+        server.emitEvent({
+          type: EVENT_TYPES.SYSTEM_ERROR,
+          data: { metadata: { priority: 'high', category: 'alert', source: 'A' } },
+        });
+        server.emitEvent({
+          type: EVENT_TYPES.SYSTEM_ERROR,
+          data: { metadata: { priority: 'low', category: 'alert' } }, // Should not match (priority mismatch)
+        });
+        server.emitEvent({
+          type: EVENT_TYPES.SYSTEM_ERROR,
+          data: { metadata: { priority: 'high', category: 'info' } }, // Should not match (category mismatch)
+        });
+        server.emitEvent({
+          type: EVENT_TYPES.SYSTEM_ERROR,
+          data: { metadata: { priority: 'high', category: 'alert', extra: 'data' } }, // Should match (has both)
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Should only receive events with matching metadata
+        expect(events.length).toBe(2);
+        for (const event of events) {
+          const metadata = (event.data as { metadata: Record<string, unknown> }).metadata;
+          expect(metadata.priority).toBe('high');
+          expect(metadata.category).toBe('alert');
+        }
+
+        await subscription.unsubscribe();
+        await client.disconnect();
+      });
+
+      it('combines multiple filters with AND logic', async () => {
+        const client = await TestClient.create(server, { name: 'Observer' });
+        const worker = await TestAgent.create(server, { name: 'Worker', role: 'worker' });
+        const supervisor = await TestAgent.create(server, { name: 'Supervisor', role: 'supervisor' });
+
+        // Subscribe with multiple filters - should AND them
+        const subscription = await client.subscribe({
+          eventTypes: [EVENT_TYPES.AGENT_STATE_CHANGED],
+          fromRoles: ['worker'],
+        });
+        const events: Event[] = [];
+        subscription.on('event', (e) => events.push(e));
+
+        // Both agents change state
+        await worker.busy();
+        await supervisor.busy();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Should only receive worker state changes (matches both eventType AND role)
+        expect(events.length).toBe(1);
+        expect(events[0].source).toBe(worker.id);
+
+        await subscription.unsubscribe();
+        await worker.disconnect();
+        await supervisor.disconnect();
         await client.disconnect();
       });
     });

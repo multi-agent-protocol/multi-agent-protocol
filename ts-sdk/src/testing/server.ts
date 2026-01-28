@@ -17,6 +17,7 @@ import {
   SCOPE_METHODS,
   NOTIFICATION_METHODS,
   PROTOCOL_VERSION,
+  EVENT_TYPES,
   type Agent,
   type AgentId,
   type AgentState,
@@ -41,6 +42,21 @@ import {
   type InjectRequestParams,
   type DisconnectPolicy,
 } from '../types';
+import {
+  buildConnectResponse,
+  buildSendResponse,
+  buildAgentsRegisterResponse,
+  buildAgentsUnregisterResponse,
+  buildAgentsListResponse,
+  buildAgentsGetResponse,
+  buildAgentsUpdateResponse,
+  buildScopesCreateResponse,
+  buildScopesListResponse,
+  buildScopesJoinResponse,
+  buildScopesLeaveResponse,
+  buildSubscribeResponse,
+  buildUnsubscribeResponse,
+} from '../protocol';
 
 /**
  * Participant connection info
@@ -300,12 +316,12 @@ export class TestServer {
 
     // Emit participant connected event
     this.emitEvent({
-      type: 'participant_connected',
+      type: EVENT_TYPES.PARTICIPANT_CONNECTED,
       source: participantId,
       data: { participantId, participantType: params.participantType, name: params.name },
     });
 
-    return {
+    return buildConnectResponse({
       protocolVersion: PROTOCOL_VERSION,
       sessionId: this.#sessionId,
       participantId,
@@ -319,7 +335,7 @@ export class TestServer {
         name: this.#options.name ?? 'Test MAP Server',
         version: this.#options.version ?? '1.0.0',
       },
-    };
+    });
   }
 
   #handleDisconnect(
@@ -355,11 +371,11 @@ export class TestServer {
         // Unregister the agent and all descendants
         this.#terminateAgentTree(agent.id);
       } else if (agentBehavior === 'orphan') {
-        // Mark agent as orphaned (use a special placeholder value)
+        // Mark agent as orphaned by setting ownerId to null
         const previousOwner = agent.ownerId;
-        (agent as { ownerId: ParticipantId }).ownerId = 'orphaned';
+        (agent as { ownerId: ParticipantId | null }).ownerId = null;
         this.emitEvent({
-          type: 'agent_orphaned',
+          type: EVENT_TYPES.AGENT_ORPHANED,
           source: agent.id,
           data: { agentId: agent.id, previousOwner },
         });
@@ -369,7 +385,7 @@ export class TestServer {
 
     // Emit participant disconnected event
     this.emitEvent({
-      type: 'participant_disconnected',
+      type: EVENT_TYPES.PARTICIPANT_DISCONNECTED,
       source: participantId,
       data: { participantId, participantType: participant.type },
     });
@@ -398,7 +414,7 @@ export class TestServer {
       }
 
       this.emitEvent({
-        type: 'agent_unregistered',
+        type: EVENT_TYPES.AGENT_UNREGISTERED,
         source: agentId,
         data: { agentId, reason: 'owner_disconnected' },
       });
@@ -425,7 +441,7 @@ export class TestServer {
       }
     }
 
-    return { agents };
+    return buildAgentsListResponse(agents);
   }
 
   #handleAgentsGet(params: {
@@ -437,17 +453,15 @@ export class TestServer {
       throw MAPRequestError.agentNotFound(params.agentId);
     }
 
-    const result: { agent: Agent; children?: Agent[]; descendants?: Agent[] } = { agent };
+    const children = params.include?.children
+      ? Array.from(this.#agents.values()).filter((a) => a.parent === params.agentId)
+      : undefined;
 
-    if (params.include?.children) {
-      result.children = Array.from(this.#agents.values()).filter((a) => a.parent === params.agentId);
-    }
+    const descendants = params.include?.descendants
+      ? this.#getDescendants(params.agentId)
+      : undefined;
 
-    if (params.include?.descendants) {
-      result.descendants = this.#getDescendants(params.agentId);
-    }
-
-    return result;
+    return buildAgentsGetResponse(agent, children, descendants);
   }
 
   /**
@@ -465,15 +479,17 @@ export class TestServer {
     return descendants;
   }
 
-  #handleSend(connection: BaseConnection, params: SendRequestParams): { messageId: MessageId; delivered: ParticipantId[] } {
+  #handleSend(connection: BaseConnection, params: SendRequestParams): { messageId: MessageId; delivered?: ParticipantId[] } {
     const messageId = `msg-${this.#nextMessageId++}`;
     const delivered: ParticipantId[] = [];
 
-    // Find sender
+    // Find sender participant and their agent ID (for hierarchical addressing)
     let senderId: ParticipantId | undefined;
+    let senderAgentId: AgentId | undefined;
     for (const [id, participant] of this.#participants) {
       if (participant.connection === connection) {
         senderId = id;
+        senderAgentId = participant.agentId;
         break;
       }
     }
@@ -489,8 +505,8 @@ export class TestServer {
 
     this.#messages.push(message);
 
-    // Resolve recipients
-    const recipients = this.#resolveAddress(params.to);
+    // Resolve recipients (pass sender agent ID for hierarchical addressing)
+    const recipients = this.#resolveAddress(params.to, senderAgentId);
 
     for (const recipientId of recipients) {
       const participant = this.#participants.get(recipientId);
@@ -502,12 +518,12 @@ export class TestServer {
 
     // Emit message event
     this.emitEvent({
-      type: 'message_sent',
+      type: EVENT_TYPES.MESSAGE_SENT,
       source: senderId,
       data: { messageId, to: params.to },
     });
 
-    return { messageId, delivered };
+    return buildSendResponse(messageId, delivered);
   }
 
   #handleSubscribe(
@@ -539,13 +555,13 @@ export class TestServer {
     this.#subscriptions.set(subscriptionId, subscription);
     this.#participants.get(participantId)!.subscriptions.add(subscriptionId);
 
-    return { subscriptionId };
+    return buildSubscribeResponse(subscriptionId);
   }
 
   #handleUnsubscribe(
     _connection: BaseConnection,
     params: { subscriptionId: SubscriptionId }
-  ): { unsubscribed: boolean } {
+  ): { subscription: { id: SubscriptionId; closedAt: number } } {
     const subscription = this.#subscriptions.get(params.subscriptionId);
     if (subscription) {
       this.#subscriptions.delete(params.subscriptionId);
@@ -554,7 +570,7 @@ export class TestServer {
         participant.subscriptions.delete(params.subscriptionId);
       }
     }
-    return { unsubscribed: true };
+    return buildUnsubscribeResponse(params.subscriptionId);
   }
 
   // ===========================================================================
@@ -602,19 +618,22 @@ export class TestServer {
 
     // Emit event
     this.emitEvent({
-      type: 'agent_registered',
+      type: EVENT_TYPES.AGENT_REGISTERED,
       source: agentId,
       data: { agentId, name: agent.name, role: agent.role, ownerId },
     });
 
-    return { agent };
+    return buildAgentsRegisterResponse(agent);
   }
 
-  #handleAgentsUnregister(params: { agentId: AgentId; reason?: string }): { unregistered: boolean } {
+  #handleAgentsUnregister(params: { agentId: AgentId; reason?: string }): { agent: Agent } {
     const agent = this.#agents.get(params.agentId);
     if (!agent) {
       throw MAPRequestError.agentNotFound(params.agentId);
     }
+
+    // Save a copy before deleting
+    const agentCopy = { ...agent };
 
     this.#agents.delete(params.agentId);
 
@@ -625,12 +644,12 @@ export class TestServer {
 
     // Emit event
     this.emitEvent({
-      type: 'agent_unregistered',
+      type: EVENT_TYPES.AGENT_UNREGISTERED,
       source: params.agentId,
       data: { agentId: params.agentId, reason: params.reason },
     });
 
-    return { unregistered: true };
+    return buildAgentsUnregisterResponse(agentCopy);
   }
 
   #handleAgentsUpdate(params: {
@@ -655,13 +674,13 @@ export class TestServer {
     // Emit state change event
     if (params.state && params.state !== previousState) {
       this.emitEvent({
-        type: 'agent_state_changed',
+        type: EVENT_TYPES.AGENT_STATE_CHANGED,
         source: params.agentId,
         data: { agentId: params.agentId, previousState, newState: params.state },
       });
     }
 
-    return { agent };
+    return buildAgentsUpdateResponse(agent);
   }
 
   #handleAgentsSpawn(
@@ -689,7 +708,7 @@ export class TestServer {
     agent.state = 'stopping';
 
     this.emitEvent({
-      type: 'agent_state_changed',
+      type: EVENT_TYPES.AGENT_STATE_CHANGED,
       source: params.agentId,
       data: { agentId: params.agentId, previousState: agent.state, newState: 'stopping' },
     });
@@ -699,7 +718,7 @@ export class TestServer {
 
   #handleScopesList(): { scopes: Scope[] } {
     const scopes = Array.from(this.#scopes.values()).map(({ members, ...scope }) => scope);
-    return { scopes };
+    return buildScopesListResponse(scopes);
   }
 
   #handleScopesCreate(params: ScopesCreateRequestParams): { scope: Scope } {
@@ -718,12 +737,12 @@ export class TestServer {
     this.#scopes.set(scopeId, scope);
 
     this.emitEvent({
-      type: 'scope_created',
+      type: EVENT_TYPES.SCOPE_CREATED,
       data: { scopeId, name: scope.name },
     });
 
     const { members, ...scopeWithoutMembers } = scope;
-    return { scope: scopeWithoutMembers };
+    return buildScopesCreateResponse(scopeWithoutMembers);
   }
 
   #handleScopesJoin(params: { scopeId: ScopeId; agentId: AgentId }): { scope: Scope; agent: Agent } {
@@ -748,13 +767,13 @@ export class TestServer {
     }
 
     this.emitEvent({
-      type: 'scope_member_joined',
+      type: EVENT_TYPES.SCOPE_MEMBER_JOINED,
       source: params.agentId,
       data: { scopeId: params.scopeId, agentId: params.agentId },
     });
 
     const { members, ...scopeWithoutMembers } = scope;
-    return { scope: scopeWithoutMembers, agent };
+    return buildScopesJoinResponse(scopeWithoutMembers, agent);
   }
 
   #handleScopesLeave(params: { scopeId: ScopeId; agentId: AgentId }): { scope: Scope; agent: Agent } {
@@ -775,13 +794,13 @@ export class TestServer {
     }
 
     this.emitEvent({
-      type: 'scope_member_left',
+      type: EVENT_TYPES.SCOPE_MEMBER_LEFT,
       source: params.agentId,
       data: { scopeId: params.scopeId, agentId: params.agentId },
     });
 
     const { members, ...scopeWithoutMembers } = scope;
-    return { scope: scopeWithoutMembers, agent };
+    return buildScopesLeaveResponse(scopeWithoutMembers, agent);
   }
 
   // ===========================================================================
@@ -803,7 +822,7 @@ export class TestServer {
   // Helpers
   // ===========================================================================
 
-  #resolveAddress(address: Address): ParticipantId[] {
+  #resolveAddress(address: Address, senderAgentId?: AgentId): ParticipantId[] {
     if (typeof address === 'string') {
       // Could be either a participant ID or agent ID
       return [this.#findParticipantForAgent(address) ?? address];
@@ -839,12 +858,81 @@ export class TestServer {
         .filter((id): id is ParticipantId => id !== undefined);
     }
 
-    if ('parent' in address || 'children' in address) {
-      // Hierarchical addressing - simplified implementation
-      return [];
+    // Hierarchical addressing - requires sender agent context
+    if ('parent' in address || 'children' in address || 'siblings' in address ||
+        'ancestors' in address || 'descendants' in address) {
+      return this.#resolveHierarchicalAddress(address, senderAgentId);
     }
 
     return [];
+  }
+
+  /**
+   * Resolve hierarchical address relative to sender agent
+   */
+  #resolveHierarchicalAddress(
+    address: { parent?: true; children?: true; siblings?: true; ancestors?: true; descendants?: true; depth?: number },
+    senderAgentId?: AgentId
+  ): ParticipantId[] {
+    if (!senderAgentId) return [];
+
+    const senderAgent = this.#agents.get(senderAgentId);
+    if (!senderAgent) return [];
+
+    const targetAgentIds: AgentId[] = [];
+    const depth = address.depth;
+
+    // Parent - direct parent only
+    if (address.parent && senderAgent.parent) {
+      targetAgentIds.push(senderAgent.parent);
+    }
+
+    // Children - direct children only
+    if (address.children) {
+      const children = Array.from(this.#agents.values())
+        .filter((a) => a.parent === senderAgentId);
+      targetAgentIds.push(...children.map((a) => a.id));
+    }
+
+    // Siblings - agents with same parent (excluding self)
+    if (address.siblings && senderAgent.parent) {
+      const siblings = Array.from(this.#agents.values())
+        .filter((a) => a.parent === senderAgent.parent && a.id !== senderAgentId);
+      targetAgentIds.push(...siblings.map((a) => a.id));
+    }
+
+    // Ancestors - parent, grandparent, etc. (with optional depth limit)
+    if (address.ancestors) {
+      let currentAgent = senderAgent;
+      let currentDepth = 0;
+      while (currentAgent.parent && (depth === undefined || currentDepth < depth)) {
+        targetAgentIds.push(currentAgent.parent);
+        currentAgent = this.#agents.get(currentAgent.parent)!;
+        if (!currentAgent) break;
+        currentDepth++;
+      }
+    }
+
+    // Descendants - children, grandchildren, etc. (with optional depth limit)
+    if (address.descendants) {
+      const collectDescendants = (agentId: AgentId, currentDepth: number): void => {
+        if (depth !== undefined && currentDepth >= depth) return;
+
+        const children = Array.from(this.#agents.values())
+          .filter((a) => a.parent === agentId);
+
+        for (const child of children) {
+          targetAgentIds.push(child.id);
+          collectDescendants(child.id, currentDepth + 1);
+        }
+      };
+      collectDescendants(senderAgentId, 0);
+    }
+
+    // Convert agent IDs to participant IDs
+    return targetAgentIds
+      .map((agentId) => this.#findParticipantForAgent(agentId))
+      .filter((id): id is ParticipantId => id !== undefined);
   }
 
   /**

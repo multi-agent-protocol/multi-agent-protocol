@@ -170,8 +170,11 @@ export interface Agent {
   /**
    * The participant that owns/controls this agent's connection.
    * Used for message routing and cleanup on disconnect.
+   *
+   * - Non-null: Agent is owned by the specified participant
+   * - null: Agent is orphaned (owner disconnected with 'orphan' policy)
    */
-  ownerId: ParticipantId;
+  ownerId: ParticipantId | null;
 
   name?: string;
   description?: string;
@@ -191,6 +194,14 @@ export interface Agent {
   capabilities?: ParticipantCapabilities;
   metadata?: Record<string, unknown>;
   _meta?: Meta;
+}
+
+/**
+ * Check if an agent is orphaned (owner disconnected).
+ * Orphaned agents have `ownerId === null`.
+ */
+export function isOrphanedAgent(agent: Agent): boolean {
+  return agent.ownerId === null;
 }
 
 // =============================================================================
@@ -337,30 +348,42 @@ export interface Scope {
 // Event Types
 // =============================================================================
 
-/** Type of system event */
-export type EventType =
-  // Agent events
-  | 'agent_registered'
-  | 'agent_unregistered'
-  | 'agent_state_changed'
-  | 'agent_orphaned'
-  // Participant events
-  | 'participant_connected'
-  | 'participant_disconnected'
+/**
+ * Event type constants.
+ * Use these instead of string literals for type safety and autocomplete.
+ */
+export const EVENT_TYPES = {
+  // Agent lifecycle events
+  AGENT_REGISTERED: 'agent_registered',
+  AGENT_UNREGISTERED: 'agent_unregistered',
+  AGENT_STATE_CHANGED: 'agent_state_changed',
+  AGENT_ORPHANED: 'agent_orphaned',
+
+  // Participant lifecycle events
+  PARTICIPANT_CONNECTED: 'participant_connected',
+  PARTICIPANT_DISCONNECTED: 'participant_disconnected',
+
   // Message events
-  | 'message_sent'
-  | 'message_delivered'
-  | 'message_failed'
+  MESSAGE_SENT: 'message_sent',
+  MESSAGE_DELIVERED: 'message_delivered',
+  MESSAGE_FAILED: 'message_failed',
+
   // Scope events
-  | 'scope_created'
-  | 'scope_deleted'
-  | 'scope_member_joined'
-  | 'scope_member_left'
+  SCOPE_CREATED: 'scope_created',
+  SCOPE_DELETED: 'scope_deleted',
+  SCOPE_MEMBER_JOINED: 'scope_member_joined',
+  SCOPE_MEMBER_LEFT: 'scope_member_left',
+
   // System events
-  | 'system_error'
+  SYSTEM_ERROR: 'system_error',
+
   // Federation events
-  | 'federation_connected'
-  | 'federation_disconnected';
+  FEDERATION_CONNECTED: 'federation_connected',
+  FEDERATION_DISCONNECTED: 'federation_disconnected',
+} as const;
+
+/** Type of system event (derived from EVENT_TYPES) */
+export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];
 
 /**
  * Input for creating events.
@@ -406,23 +429,103 @@ export function createEvent(input: EventInput): Event {
 // Subscription Types
 // =============================================================================
 
-/** Filter for event subscriptions */
+/**
+ * Filter for event subscriptions.
+ *
+ * ## Combination Logic
+ *
+ * All specified fields are combined with **AND** logic:
+ * - An event must match ALL specified criteria to be delivered
+ * - Within array fields, values are combined with **OR** logic
+ * - Empty arrays (`[]`) are treated as "no filter" (matches any)
+ * - Undefined/omitted fields are treated as "no filter" (matches any)
+ *
+ * ## Examples
+ *
+ * ```typescript
+ * // Match agent_registered OR agent_unregistered events from agent-1 OR agent-2
+ * {
+ *   eventTypes: ['agent_registered', 'agent_unregistered'],
+ *   fromAgents: ['agent-1', 'agent-2']
+ * }
+ *
+ * // Match any event from agents with role 'worker' OR 'supervisor'
+ * { fromRoles: ['worker', 'supervisor'] }
+ *
+ * // Match scope events in scope-1 with metadata containing priority='high'
+ * {
+ *   scopes: ['scope-1'],
+ *   metadataMatch: { priority: 'high' }
+ * }
+ * ```
+ *
+ * ## Field Semantics
+ *
+ * | Field | Within-field | Cross-field | Description |
+ * |-------|--------------|-------------|-------------|
+ * | `eventTypes` | OR | AND | Event type is one of the listed types |
+ * | `agents` | OR | AND | Event relates to one of the listed agents (legacy) |
+ * | `fromAgents` | OR | AND | Event source is one of the listed agents |
+ * | `fromRoles` | OR | AND | Event source agent has one of the listed roles |
+ * | `roles` | OR | AND | Event relates to agents with one of the listed roles |
+ * | `scopes` | OR | AND | Event relates to one of the listed scopes |
+ * | `priorities` | OR | AND | Message priority is one of the listed levels |
+ * | `correlationIds` | OR | AND | Event has one of the listed correlation IDs |
+ * | `metadataMatch` | AND | AND | Event metadata contains ALL specified key-value pairs |
+ */
 export interface SubscriptionFilter {
-  // Target filters
+  /**
+   * Filter by agents the event relates to.
+   * @deprecated Use `fromAgents` for clearer semantics
+   */
   agents?: AgentId[];
+
+  /**
+   * Filter by roles the event relates to.
+   * Matches events where the related agent has one of these roles.
+   */
   roles?: string[];
+
+  /**
+   * Filter by scopes the event relates to.
+   * Matches events with scopeId in event.data matching one of these.
+   */
   scopes?: ScopeId[];
 
-  // Event type filter
+  /**
+   * Filter by event type.
+   * Use EVENT_TYPES constants: `eventTypes: [EVENT_TYPES.AGENT_REGISTERED]`
+   */
   eventTypes?: EventType[];
 
-  // Message filters
+  /**
+   * Filter by message priority (for message events).
+   */
   priorities?: MessagePriority[];
+
+  /**
+   * Filter by correlation ID.
+   * Matches events with correlationId in event.data matching one of these.
+   */
   correlationIds?: CorrelationId[];
+
+  /**
+   * Filter by source agent ID.
+   * Matches events where event.source is one of these agent IDs.
+   */
   fromAgents?: AgentId[];
+
+  /**
+   * Filter by source agent role.
+   * Matches events where the source agent has one of these roles.
+   */
   fromRoles?: string[];
 
-  // Metadata matching
+  /**
+   * Filter by metadata key-value pairs.
+   * All specified pairs must match (AND logic within this field).
+   * Checks event.data.metadata for matching values.
+   */
   metadataMatch?: Record<string, unknown>;
 
   _meta?: Meta;

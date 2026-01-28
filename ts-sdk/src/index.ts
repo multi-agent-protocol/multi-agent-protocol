@@ -81,3 +81,33 @@ export {
 // Schema - Zod validators (optional, requires zod peer dependency)
 // ===========================================================================
 export * from './schema';
+
+// ===========================================================================
+// Protocol - Method registry and response builders
+// ===========================================================================
+export {
+  METHOD_REGISTRY,
+  type MethodCategory,
+  type CapabilityPath,
+  type MethodInfo,
+  getMethodsByCategory,
+  getRequiredCapabilities,
+  hasRequiredCapabilities,
+  getMethodInfo,
+  // Response builders
+  buildConnectResponse,
+  buildDisconnectResponse,
+  buildSendResponse,
+  buildAgentsRegisterResponse,
+  buildAgentsUnregisterResponse,
+  buildAgentsListResponse,
+  buildAgentsGetResponse,
+  buildAgentsUpdateResponse,
+  buildAgentsSpawnResponse,
+  buildScopesCreateResponse,
+  buildScopesListResponse,
+  buildScopesJoinResponse,
+  buildScopesLeaveResponse,
+  buildSubscribeResponse,
+  buildUnsubscribeResponse,
+} from './protocol';
