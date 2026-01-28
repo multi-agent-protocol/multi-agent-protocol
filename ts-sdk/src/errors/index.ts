@@ -123,10 +123,10 @@ export class MAPRequestError extends Error {
     );
   }
 
-  static insufficientPermissions(required?: string): MAPRequestError {
+  static permissionDenied(required?: string): MAPRequestError {
     return new MAPRequestError(
-      AUTH_ERROR_CODES.INSUFFICIENT_PERMISSIONS,
-      required ? `Insufficient permissions: ${required}` : 'Insufficient permissions',
+      AUTH_ERROR_CODES.PERMISSION_DENIED,
+      required ? `Permission denied: ${required}` : 'Permission denied',
       { category: 'auth' }
     );
   }
@@ -253,15 +253,15 @@ export class MAPRequestError extends Error {
 
   static federationUnavailable(systemId?: string): MAPRequestError {
     return new MAPRequestError(
-      FEDERATION_ERROR_CODES.UNAVAILABLE,
+      FEDERATION_ERROR_CODES.FEDERATION_UNAVAILABLE,
       systemId ? `Federation unavailable: ${systemId}` : 'Federation unavailable',
       { category: 'federation', retryable: true }
     );
   }
 
-  static systemNotFound(systemId: string): MAPRequestError {
+  static federationSystemNotFound(systemId: string): MAPRequestError {
     return new MAPRequestError(
-      FEDERATION_ERROR_CODES.SYSTEM_NOT_FOUND,
+      FEDERATION_ERROR_CODES.FEDERATION_SYSTEM_NOT_FOUND,
       `System not found: ${systemId}`,
       { category: 'federation' }
     );
@@ -269,15 +269,15 @@ export class MAPRequestError extends Error {
 
   static federationAuthFailed(systemId: string): MAPRequestError {
     return new MAPRequestError(
-      FEDERATION_ERROR_CODES.AUTH_FAILED,
+      FEDERATION_ERROR_CODES.FEDERATION_AUTH_FAILED,
       `Federation authentication failed: ${systemId}`,
       { category: 'federation' }
     );
   }
 
-  static routeRejected(systemId: string, reason?: string): MAPRequestError {
+  static federationRouteRejected(systemId: string, reason?: string): MAPRequestError {
     return new MAPRequestError(
-      FEDERATION_ERROR_CODES.ROUTE_REJECTED,
+      FEDERATION_ERROR_CODES.FEDERATION_ROUTE_REJECTED,
       reason ? `Route rejected by ${systemId}: ${reason}` : `Route rejected by ${systemId}`,
       { category: 'federation' }
     );

@@ -1,8 +1,20 @@
 /**
- * Multi-Agent Protocol (MAP) Type Definitions
+ * Multi-Agent Protocol (MAP) Type Definitions - v2
  *
  * Core type definitions matching the MAP JSON Schema.
  * These types are the foundation for the TypeScript SDK.
+ *
+ * v2 Changes:
+ * - Fixed ERROR_CODES collision (FEDERATION_AUTH_FAILED)
+ * - Added Agent.ownerId for ownership tracking
+ * - Reorganized method constants by capability domain
+ * - Added EventInput type and createEvent() helper
+ * - Added disconnect policy and lifecycle events
+ * - Expanded subscription filters
+ * - Standardized response shapes (always return entities)
+ * - Added hierarchy expansion to agents/get
+ * - Added CAPABILITY_REQUIREMENTS mapping
+ * - Clarified message event data (no payloads)
  */
 
 // =============================================================================
@@ -86,6 +98,10 @@ export interface ParticipantCapabilities {
     /** Can modify and delete scopes */
     canManageScopes?: boolean;
   };
+  federation?: {
+    /** Can connect to and route to federated systems */
+    canFederate?: boolean;
+  };
   _meta?: Meta;
 }
 
@@ -118,6 +134,7 @@ export type AgentState =
   | 'stopping'
   | 'stopped'
   | 'failed'
+  | 'orphaned'
   | `x-${string}`;
 
 /** Type of relationship between agents */
@@ -137,6 +154,7 @@ export interface AgentLifecycle {
   startedAt?: Timestamp;
   stoppedAt?: Timestamp;
   lastActiveAt?: Timestamp;
+  orphanedAt?: Timestamp;
   exitCode?: number;
   exitReason?: string;
   _meta?: Meta;
@@ -148,9 +166,22 @@ export type AgentVisibility = 'public' | 'parent-only' | 'scope' | 'system';
 /** An agent in the multi-agent system */
 export interface Agent {
   id: AgentId;
+
+  /**
+   * The participant that owns/controls this agent's connection.
+   * Used for message routing and cleanup on disconnect.
+   */
+  ownerId: ParticipantId;
+
   name?: string;
   description?: string;
+
+  /** Parent agent ID (for spawned agents) */
   parent?: AgentId;
+
+  /** Child agent IDs (populated when queried with include.children) */
+  children?: AgentId[];
+
   relationships?: AgentRelationship[];
   state: AgentState;
   role?: string;
@@ -263,6 +294,7 @@ export interface Message<T = unknown> {
   id: MessageId;
   from: ParticipantId;
   to: Address;
+  timestamp: Timestamp;
   payload?: T;
   meta?: MessageMeta;
   _meta?: Meta;
@@ -307,21 +339,46 @@ export interface Scope {
 
 /** Type of system event */
 export type EventType =
+  // Agent events
   | 'agent_registered'
-  | 'agent_state_changed'
   | 'agent_unregistered'
+  | 'agent_state_changed'
+  | 'agent_orphaned'
+  // Participant events
+  | 'participant_connected'
+  | 'participant_disconnected'
+  // Message events
   | 'message_sent'
   | 'message_delivered'
   | 'message_failed'
+  // Scope events
   | 'scope_created'
   | 'scope_deleted'
   | 'scope_member_joined'
   | 'scope_member_left'
+  // System events
   | 'system_error'
+  // Federation events
   | 'federation_connected'
   | 'federation_disconnected';
 
-/** A system event */
+/**
+ * Input for creating events.
+ * id and timestamp are optional - server generates them.
+ */
+export interface EventInput {
+  type: EventType;
+  timestamp?: Timestamp;
+  source?: ParticipantId;
+  data?: Record<string, unknown>;
+  causedBy?: string[];
+  _meta?: Meta;
+}
+
+/**
+ * Wire event as sent to clients.
+ * id and timestamp are always present.
+ */
 export interface Event {
   id: string;
   type: EventType;
@@ -332,23 +389,93 @@ export interface Event {
   _meta?: Meta;
 }
 
+/** Helper to create events with auto-generated id and timestamp */
+export function createEvent(input: EventInput): Event {
+  return {
+    id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: input.timestamp ?? Date.now(),
+    type: input.type,
+    source: input.source,
+    data: input.data,
+    causedBy: input.causedBy,
+    _meta: input._meta,
+  };
+}
+
+// =============================================================================
+// Subscription Types
+// =============================================================================
+
 /** Filter for event subscriptions */
 export interface SubscriptionFilter {
+  // Target filters
   agents?: AgentId[];
   roles?: string[];
   scopes?: ScopeId[];
+
+  // Event type filter
   eventTypes?: EventType[];
+
+  // Message filters
   priorities?: MessagePriority[];
+  correlationIds?: CorrelationId[];
+  fromAgents?: AgentId[];
+  fromRoles?: string[];
+
+  // Metadata matching
+  metadataMatch?: Record<string, unknown>;
+
   _meta?: Meta;
+}
+
+/** Options for subscriptions */
+export interface SubscriptionOptions {
+  /** Include full payloads in message events (default: false) */
+  includeMessagePayloads?: boolean;
+  /** Exclude events from own actions (default: false) */
+  excludeOwnEvents?: boolean;
 }
 
 /** An active event subscription */
 export interface Subscription {
   id: SubscriptionId;
   filter?: SubscriptionFilter;
+  options?: SubscriptionOptions;
   createdAt?: Timestamp;
   replayFrom?: Timestamp | string;
   _meta?: Meta;
+}
+
+// =============================================================================
+// Message Event Data Types
+// =============================================================================
+
+/** Data for message_sent events (no payload for privacy) */
+export interface MessageSentEventData {
+  messageId: MessageId;
+  from: ParticipantId;
+  to: Address;
+  timestamp: Timestamp;
+  correlationId?: CorrelationId;
+  priority?: MessagePriority;
+}
+
+/** Data for message_delivered events (no payload for privacy) */
+export interface MessageDeliveredEventData {
+  messageId: MessageId;
+  from: ParticipantId;
+  deliveredTo: ParticipantId[];
+  timestamp: Timestamp;
+  correlationId?: CorrelationId;
+}
+
+/** Data for message_failed events */
+export interface MessageFailedEventData {
+  messageId: MessageId;
+  from: ParticipantId;
+  to: Address;
+  reason: string;
+  code?: number;
 }
 
 // =============================================================================
@@ -428,6 +555,7 @@ export interface SessionInfo {
   id: SessionId;
   createdAt: Timestamp;
   lastActiveAt?: Timestamp;
+  closedAt?: Timestamp;
 }
 
 // =============================================================================
@@ -447,10 +575,19 @@ export interface FederationAuth {
 }
 
 // =============================================================================
-// Request/Response Types - Core Tier
+// Connect Types
 // =============================================================================
 
-// --- map/connect ---
+/** Policy for handling unexpected disconnection */
+export interface DisconnectPolicy {
+  /** What happens to agents on disconnect */
+  agentBehavior: 'unregister' | 'orphan' | 'grace-period';
+  /** Grace period before unregistering (ms) */
+  gracePeriodMs?: number;
+  /** Emit events to subscribers */
+  notifySubscribers?: boolean;
+}
+
 export interface ConnectRequestParams {
   protocolVersion: ProtocolVersion;
   participantType: ParticipantType;
@@ -458,6 +595,10 @@ export interface ConnectRequestParams {
   name?: string;
   capabilities?: ParticipantCapabilities;
   sessionId?: SessionId;
+  /** Reclaim orphaned agents from previous connection */
+  reclaimAgents?: AgentId[];
+  /** Policy for unexpected disconnect */
+  disconnectPolicy?: DisconnectPolicy;
   auth?: AuthParams;
   _meta?: Meta;
 }
@@ -476,10 +617,19 @@ export interface ConnectResponseResult {
     name?: string;
     version?: string;
   };
+  /** Is this a reconnection? */
+  reconnected?: boolean;
+  /** Reclaimed agents */
+  reclaimedAgents?: Agent[];
+  /** Currently owned agents */
+  ownedAgents?: AgentId[];
   _meta?: Meta;
 }
 
-// --- map/disconnect ---
+// =============================================================================
+// Disconnect Types
+// =============================================================================
+
 export interface DisconnectRequestParams {
   reason?: string;
   _meta?: Meta;
@@ -491,11 +641,14 @@ export interface DisconnectRequest extends MAPRequestBase<DisconnectRequestParam
 }
 
 export interface DisconnectResponseResult {
-  acknowledged: boolean;
+  session: SessionInfo;
   _meta?: Meta;
 }
 
-// --- map/session/list ---
+// =============================================================================
+// Session Request/Response Types
+// =============================================================================
+
 export interface SessionListRequestParams {
   _meta?: Meta;
 }
@@ -510,7 +663,6 @@ export interface SessionListResponseResult {
   _meta?: Meta;
 }
 
-// --- map/session/load ---
 export interface SessionLoadRequestParams {
   sessionId: SessionId;
   _meta?: Meta;
@@ -527,7 +679,6 @@ export interface SessionLoadResponseResult {
   _meta?: Meta;
 }
 
-// --- map/session/close ---
 export interface SessionCloseRequestParams {
   sessionId?: SessionId;
   _meta?: Meta;
@@ -539,17 +690,21 @@ export interface SessionCloseRequest extends MAPRequestBase<SessionCloseRequestP
 }
 
 export interface SessionCloseResponseResult {
-  closed: boolean;
+  session: SessionInfo;
   _meta?: Meta;
 }
 
-// --- map/agents/list ---
+// =============================================================================
+// Agents Request/Response Types
+// =============================================================================
+
 export interface AgentsListFilter {
   states?: AgentState[];
   roles?: string[];
   scopes?: ScopeId[];
   parent?: AgentId;
   hasChildren?: boolean;
+  ownerId?: ParticipantId;
 }
 
 export interface AgentsListRequestParams {
@@ -570,9 +725,19 @@ export interface AgentsListResponseResult {
   _meta?: Meta;
 }
 
-// --- map/agents/get ---
+/** Options for expanding related agents */
+export interface AgentIncludeOptions {
+  parent?: boolean;
+  children?: boolean;
+  siblings?: boolean;
+  ancestors?: boolean;
+  descendants?: boolean;
+  maxDepth?: number;
+}
+
 export interface AgentsGetRequestParams {
   agentId: AgentId;
+  include?: AgentIncludeOptions;
   _meta?: Meta;
 }
 
@@ -583,84 +748,14 @@ export interface AgentsGetRequest extends MAPRequestBase<AgentsGetRequestParams>
 
 export interface AgentsGetResponseResult {
   agent: Agent;
+  parent?: Agent;
+  children?: Agent[];
+  siblings?: Agent[];
+  ancestors?: Agent[];
+  descendants?: Agent[];
   _meta?: Meta;
 }
 
-// --- map/send ---
-export interface SendRequestParams {
-  to: Address;
-  payload?: unknown;
-  meta?: MessageMeta;
-  _meta?: Meta;
-}
-
-export interface SendRequest extends MAPRequestBase<SendRequestParams> {
-  method: 'map/send';
-  params: SendRequestParams;
-}
-
-export interface SendResponseResult {
-  messageId: MessageId;
-  delivered?: ParticipantId[];
-  _meta?: Meta;
-}
-
-// --- map/subscribe ---
-export interface SubscribeRequestParams {
-  filter?: SubscriptionFilter;
-  replayFrom?: Timestamp | string;
-  _meta?: Meta;
-}
-
-export interface SubscribeRequest extends MAPRequestBase<SubscribeRequestParams> {
-  method: 'map/subscribe';
-  params?: SubscribeRequestParams;
-}
-
-export interface SubscribeResponseResult {
-  subscriptionId: SubscriptionId;
-  _meta?: Meta;
-}
-
-// --- map/unsubscribe ---
-export interface UnsubscribeRequestParams {
-  subscriptionId: SubscriptionId;
-  _meta?: Meta;
-}
-
-export interface UnsubscribeRequest extends MAPRequestBase<UnsubscribeRequestParams> {
-  method: 'map/unsubscribe';
-  params: UnsubscribeRequestParams;
-}
-
-export interface UnsubscribeResponseResult {
-  unsubscribed: boolean;
-  _meta?: Meta;
-}
-
-// --- map/auth/refresh ---
-export interface AuthRefreshRequestParams {
-  refreshToken: string;
-  _meta?: Meta;
-}
-
-export interface AuthRefreshRequest extends MAPRequestBase<AuthRefreshRequestParams> {
-  method: 'map/auth/refresh';
-  params: AuthRefreshRequestParams;
-}
-
-export interface AuthRefreshResponseResult {
-  accessToken: string;
-  expiresAt: Timestamp;
-  refreshToken?: string;
-  _meta?: Meta;
-}
-
-// =============================================================================
-// Request/Response Types - Structure Tier
-// =============================================================================
-
-// --- map/agents/register ---
 export interface AgentsRegisterRequestParams {
   agentId?: AgentId;
   name?: string;
@@ -684,7 +779,39 @@ export interface AgentsRegisterResponseResult {
   _meta?: Meta;
 }
 
-// --- map/agents/spawn ---
+export interface AgentsUnregisterRequestParams {
+  agentId: AgentId;
+  reason?: string;
+  _meta?: Meta;
+}
+
+export interface AgentsUnregisterRequest extends MAPRequestBase<AgentsUnregisterRequestParams> {
+  method: 'map/agents/unregister';
+  params: AgentsUnregisterRequestParams;
+}
+
+export interface AgentsUnregisterResponseResult {
+  agent: Agent;
+  _meta?: Meta;
+}
+
+export interface AgentsUpdateRequestParams {
+  agentId: AgentId;
+  state?: AgentState;
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+export interface AgentsUpdateRequest extends MAPRequestBase<AgentsUpdateRequestParams> {
+  method: 'map/agents/update';
+  params: AgentsUpdateRequestParams;
+}
+
+export interface AgentsUpdateResponseResult {
+  agent: Agent;
+  _meta?: Meta;
+}
+
 export interface AgentsSpawnRequestParams {
   agentId?: AgentId;
   name?: string;
@@ -710,42 +837,6 @@ export interface AgentsSpawnResponseResult {
   _meta?: Meta;
 }
 
-// --- map/agents/unregister ---
-export interface AgentsUnregisterRequestParams {
-  agentId: AgentId;
-  reason?: string;
-  _meta?: Meta;
-}
-
-export interface AgentsUnregisterRequest extends MAPRequestBase<AgentsUnregisterRequestParams> {
-  method: 'map/agents/unregister';
-  params: AgentsUnregisterRequestParams;
-}
-
-export interface AgentsUnregisterResponseResult {
-  unregistered: boolean;
-  _meta?: Meta;
-}
-
-// --- map/agents/update ---
-export interface AgentsUpdateRequestParams {
-  agentId: AgentId;
-  state?: AgentState;
-  metadata?: Record<string, unknown>;
-  _meta?: Meta;
-}
-
-export interface AgentsUpdateRequest extends MAPRequestBase<AgentsUpdateRequestParams> {
-  method: 'map/agents/update';
-  params: AgentsUpdateRequestParams;
-}
-
-export interface AgentsUpdateResponseResult {
-  agent: Agent;
-  _meta?: Meta;
-}
-
-// --- map/agents/stop ---
 export interface AgentsStopRequestParams {
   agentId: AgentId;
   reason?: string;
@@ -759,12 +850,10 @@ export interface AgentsStopRequest extends MAPRequestBase<AgentsStopRequestParam
 }
 
 export interface AgentsStopResponseResult {
-  stopping: boolean;
-  agent?: Agent;
+  agent: Agent;
   _meta?: Meta;
 }
 
-// --- map/agents/suspend ---
 export interface AgentsSuspendRequestParams {
   agentId: AgentId;
   reason?: string;
@@ -777,12 +866,10 @@ export interface AgentsSuspendRequest extends MAPRequestBase<AgentsSuspendReques
 }
 
 export interface AgentsSuspendResponseResult {
-  suspended: boolean;
-  agent?: Agent;
+  agent: Agent;
   _meta?: Meta;
 }
 
-// --- map/agents/resume ---
 export interface AgentsResumeRequestParams {
   agentId: AgentId;
   _meta?: Meta;
@@ -794,37 +881,96 @@ export interface AgentsResumeRequest extends MAPRequestBase<AgentsResumeRequestP
 }
 
 export interface AgentsResumeResponseResult {
-  resumed: boolean;
-  agent?: Agent;
+  agent: Agent;
   _meta?: Meta;
 }
 
-// --- map/structure/graph ---
-export interface StructureGraphRequestParams {
-  rootAgentId?: AgentId;
-  depth?: number;
-  includeRelationships?: boolean;
+// =============================================================================
+// Send Types
+// =============================================================================
+
+export interface SendRequestParams {
+  to: Address;
+  payload?: unknown;
+  meta?: MessageMeta;
   _meta?: Meta;
 }
 
-export interface StructureGraphRequest extends MAPRequestBase<StructureGraphRequestParams> {
-  method: 'map/structure/graph';
-  params?: StructureGraphRequestParams;
+export interface SendRequest extends MAPRequestBase<SendRequestParams> {
+  method: 'map/send';
+  params: SendRequestParams;
 }
 
-export interface GraphEdge {
-  from: AgentId;
-  to: AgentId;
-  type: 'parent-child' | 'peer' | 'supervisor' | 'collaborator';
-}
-
-export interface StructureGraphResponseResult {
-  nodes: Agent[];
-  edges: GraphEdge[];
+export interface SendResponseResult {
+  messageId: MessageId;
+  delivered?: ParticipantId[];
   _meta?: Meta;
 }
 
-// --- map/scopes/list ---
+// =============================================================================
+// Subscribe Types
+// =============================================================================
+
+export interface SubscribeRequestParams {
+  filter?: SubscriptionFilter;
+  options?: SubscriptionOptions;
+  replayFrom?: Timestamp | string;
+  _meta?: Meta;
+}
+
+export interface SubscribeRequest extends MAPRequestBase<SubscribeRequestParams> {
+  method: 'map/subscribe';
+  params?: SubscribeRequestParams;
+}
+
+export interface SubscribeResponseResult {
+  subscriptionId: SubscriptionId;
+  _meta?: Meta;
+}
+
+export interface UnsubscribeRequestParams {
+  subscriptionId: SubscriptionId;
+  _meta?: Meta;
+}
+
+export interface UnsubscribeRequest extends MAPRequestBase<UnsubscribeRequestParams> {
+  method: 'map/unsubscribe';
+  params: UnsubscribeRequestParams;
+}
+
+export interface UnsubscribeResponseResult {
+  subscription: {
+    id: SubscriptionId;
+    closedAt: Timestamp;
+  };
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Auth Types
+// =============================================================================
+
+export interface AuthRefreshRequestParams {
+  refreshToken: string;
+  _meta?: Meta;
+}
+
+export interface AuthRefreshRequest extends MAPRequestBase<AuthRefreshRequestParams> {
+  method: 'map/auth/refresh';
+  params: AuthRefreshRequestParams;
+}
+
+export interface AuthRefreshResponseResult {
+  accessToken: string;
+  expiresAt: Timestamp;
+  refreshToken?: string;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Scope Types
+// =============================================================================
+
 export interface ScopesListRequestParams {
   parent?: ScopeId;
   _meta?: Meta;
@@ -840,7 +986,6 @@ export interface ScopesListResponseResult {
   _meta?: Meta;
 }
 
-// --- map/scopes/get ---
 export interface ScopesGetRequestParams {
   scopeId: ScopeId;
   _meta?: Meta;
@@ -856,7 +1001,6 @@ export interface ScopesGetResponseResult {
   _meta?: Meta;
 }
 
-// --- map/scopes/create ---
 export interface ScopesCreateRequestParams {
   scopeId?: ScopeId;
   name?: string;
@@ -883,7 +1027,6 @@ export interface ScopesCreateResponseResult {
   _meta?: Meta;
 }
 
-// --- map/scopes/delete ---
 export interface ScopesDeleteRequestParams {
   scopeId: ScopeId;
   _meta?: Meta;
@@ -895,11 +1038,10 @@ export interface ScopesDeleteRequest extends MAPRequestBase<ScopesDeleteRequestP
 }
 
 export interface ScopesDeleteResponseResult {
-  deleted: boolean;
+  scope: Scope;
   _meta?: Meta;
 }
 
-// --- map/scopes/join ---
 export interface ScopesJoinRequestParams {
   scopeId: ScopeId;
   agentId: AgentId;
@@ -912,11 +1054,11 @@ export interface ScopesJoinRequest extends MAPRequestBase<ScopesJoinRequestParam
 }
 
 export interface ScopesJoinResponseResult {
-  joined: boolean;
+  scope: Scope;
+  agent: Agent;
   _meta?: Meta;
 }
 
-// --- map/scopes/leave ---
 export interface ScopesLeaveRequestParams {
   scopeId: ScopeId;
   agentId: AgentId;
@@ -929,11 +1071,11 @@ export interface ScopesLeaveRequest extends MAPRequestBase<ScopesLeaveRequestPar
 }
 
 export interface ScopesLeaveResponseResult {
-  left: boolean;
+  scope: Scope;
+  agent: Agent;
   _meta?: Meta;
 }
 
-// --- map/scopes/members ---
 export interface ScopesMembersRequestParams {
   scopeId: ScopeId;
   limit?: number;
@@ -953,10 +1095,37 @@ export interface ScopesMembersResponseResult {
 }
 
 // =============================================================================
-// Request/Response Types - Extension Tier
+// Structure Graph Types
 // =============================================================================
 
-// --- map/inject ---
+export interface StructureGraphRequestParams {
+  rootAgentId?: AgentId;
+  depth?: number;
+  includeRelationships?: boolean;
+  _meta?: Meta;
+}
+
+export interface StructureGraphRequest extends MAPRequestBase<StructureGraphRequestParams> {
+  method: 'map/structure/graph';
+  params?: StructureGraphRequestParams;
+}
+
+export interface GraphEdge {
+  from: AgentId;
+  to: AgentId;
+  type: 'parent-child' | 'peer' | 'supervisor' | 'collaborator';
+}
+
+export interface StructureGraphResponseResult {
+  nodes: Agent[];
+  edges: GraphEdge[];
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Inject Types
+// =============================================================================
+
 export type InjectDelivery = 'interrupt' | 'queue' | 'best-effort';
 export type InjectDeliveryResult = 'interrupt' | 'queue' | 'message';
 
@@ -978,7 +1147,10 @@ export interface InjectResponseResult {
   _meta?: Meta;
 }
 
-// --- map/federation/connect ---
+// =============================================================================
+// Federation Types
+// =============================================================================
+
 export interface FederationConnectRequestParams {
   systemId: string;
   endpoint: string;
@@ -1001,7 +1173,6 @@ export interface FederationConnectResponseResult {
   _meta?: Meta;
 }
 
-// --- map/federation/route ---
 export interface FederationRouteRequestParams {
   systemId: string;
   message: Message;
@@ -1023,7 +1194,6 @@ export interface FederationRouteResponseResult {
 // Notification Types
 // =============================================================================
 
-// --- map/event ---
 export interface EventNotificationParams {
   subscriptionId: SubscriptionId;
   sequenceNumber: number;
@@ -1036,7 +1206,6 @@ export interface EventNotification extends MAPNotificationBase<EventNotification
   params: EventNotificationParams;
 }
 
-// --- map/message ---
 export interface MessageNotificationParams {
   message: Message;
   _meta?: Meta;
@@ -1090,46 +1259,70 @@ export type MAPRequest =
 export type MAPNotification = EventNotification | MessageNotification;
 
 // =============================================================================
-// Method Constants
+// Method Constants (Reorganized by capability domain)
 // =============================================================================
 
-/** Core tier methods */
+/** Core methods - All implementations must support */
 export const CORE_METHODS = {
   CONNECT: 'map/connect',
   DISCONNECT: 'map/disconnect',
-  SESSION_LIST: 'map/session/list',
-  SESSION_LOAD: 'map/session/load',
-  SESSION_CLOSE: 'map/session/close',
-  AGENTS_LIST: 'map/agents/list',
-  AGENTS_GET: 'map/agents/get',
   SEND: 'map/send',
   SUBSCRIBE: 'map/subscribe',
   UNSUBSCRIBE: 'map/unsubscribe',
-  AUTH_REFRESH: 'map/auth/refresh',
 } as const;
 
-/** Structure tier methods */
-export const STRUCTURE_METHODS = {
-  AGENTS_REGISTER: 'map/agents/register',
-  AGENTS_SPAWN: 'map/agents/spawn',
-  AGENTS_UNREGISTER: 'map/agents/unregister',
-  AGENTS_UPDATE: 'map/agents/update',
-  AGENTS_STOP: 'map/agents/stop',
-  AGENTS_SUSPEND: 'map/agents/suspend',
-  AGENTS_RESUME: 'map/agents/resume',
-  STRUCTURE_GRAPH: 'map/structure/graph',
+/** Observation methods - Query/read operations */
+export const OBSERVATION_METHODS = {
+  AGENTS_LIST: 'map/agents/list',
+  AGENTS_GET: 'map/agents/get',
   SCOPES_LIST: 'map/scopes/list',
   SCOPES_GET: 'map/scopes/get',
+  SCOPES_MEMBERS: 'map/scopes/members',
+  STRUCTURE_GRAPH: 'map/structure/graph',
+} as const;
+
+/** Lifecycle methods - Agent creation/destruction */
+export const LIFECYCLE_METHODS = {
+  AGENTS_REGISTER: 'map/agents/register',
+  AGENTS_UNREGISTER: 'map/agents/unregister',
+  AGENTS_SPAWN: 'map/agents/spawn',
+} as const;
+
+/** State methods - Agent state management */
+export const STATE_METHODS = {
+  AGENTS_UPDATE: 'map/agents/update',
+  AGENTS_SUSPEND: 'map/agents/suspend',
+  AGENTS_RESUME: 'map/agents/resume',
+  AGENTS_STOP: 'map/agents/stop',
+} as const;
+
+/** Steering methods - External control */
+export const STEERING_METHODS = {
+  INJECT: 'map/inject',
+} as const;
+
+/** Scope methods - Scope management */
+export const SCOPE_METHODS = {
   SCOPES_CREATE: 'map/scopes/create',
   SCOPES_DELETE: 'map/scopes/delete',
   SCOPES_JOIN: 'map/scopes/join',
   SCOPES_LEAVE: 'map/scopes/leave',
-  SCOPES_MEMBERS: 'map/scopes/members',
 } as const;
 
-/** Extension tier methods */
-export const EXTENSION_METHODS = {
-  INJECT: 'map/inject',
+/** Session methods */
+export const SESSION_METHODS = {
+  SESSION_LIST: 'map/session/list',
+  SESSION_LOAD: 'map/session/load',
+  SESSION_CLOSE: 'map/session/close',
+} as const;
+
+/** Auth methods */
+export const AUTH_METHODS = {
+  AUTH_REFRESH: 'map/auth/refresh',
+} as const;
+
+/** Federation methods */
+export const FEDERATION_METHODS = {
   FEDERATION_CONNECT: 'map/federation/connect',
   FEDERATION_ROUTE: 'map/federation/route',
 } as const;
@@ -1143,15 +1336,31 @@ export const NOTIFICATION_METHODS = {
 /** All MAP methods */
 export const MAP_METHODS = {
   ...CORE_METHODS,
-  ...STRUCTURE_METHODS,
-  ...EXTENSION_METHODS,
+  ...OBSERVATION_METHODS,
+  ...LIFECYCLE_METHODS,
+  ...STATE_METHODS,
+  ...STEERING_METHODS,
+  ...SCOPE_METHODS,
+  ...SESSION_METHODS,
+  ...AUTH_METHODS,
+  ...FEDERATION_METHODS,
 } as const;
 
-/** Protocol version */
-export const PROTOCOL_VERSION: ProtocolVersion = 1;
+// Legacy aliases for backward compatibility
+export const STRUCTURE_METHODS = {
+  ...LIFECYCLE_METHODS,
+  ...STATE_METHODS,
+  ...SCOPE_METHODS,
+  STRUCTURE_GRAPH: OBSERVATION_METHODS.STRUCTURE_GRAPH,
+} as const;
+
+export const EXTENSION_METHODS = {
+  ...STEERING_METHODS,
+  ...FEDERATION_METHODS,
+} as const;
 
 // =============================================================================
-// Error Codes
+// Error Codes (Fixed: no collisions)
 // =============================================================================
 
 /** JSON-RPC standard error codes */
@@ -1168,7 +1377,7 @@ export const AUTH_ERROR_CODES = {
   AUTH_REQUIRED: 1000,
   AUTH_FAILED: 1001,
   TOKEN_EXPIRED: 1002,
-  INSUFFICIENT_PERMISSIONS: 1003,
+  PERMISSION_DENIED: 1003,
 } as const;
 
 /** Routing error codes */
@@ -1196,12 +1405,12 @@ export const RESOURCE_ERROR_CODES = {
   QUOTA_EXCEEDED: 4002,
 } as const;
 
-/** Federation error codes */
+/** Federation error codes - prefixed to avoid collision with AUTH_FAILED */
 export const FEDERATION_ERROR_CODES = {
-  UNAVAILABLE: 5000,
-  SYSTEM_NOT_FOUND: 5001,
-  AUTH_FAILED: 5002,
-  ROUTE_REJECTED: 5003,
+  FEDERATION_UNAVAILABLE: 5000,
+  FEDERATION_SYSTEM_NOT_FOUND: 5001,
+  FEDERATION_AUTH_FAILED: 5002,
+  FEDERATION_ROUTE_REJECTED: 5003,
 } as const;
 
 /** All error codes */
@@ -1212,6 +1421,66 @@ export const ERROR_CODES = {
   ...AGENT_ERROR_CODES,
   ...RESOURCE_ERROR_CODES,
   ...FEDERATION_ERROR_CODES,
+} as const;
+
+/** Protocol version */
+export const PROTOCOL_VERSION: ProtocolVersion = 1;
+
+// =============================================================================
+// Capability Requirements
+// =============================================================================
+
+/**
+ * Maps methods to required capabilities.
+ * Empty array means no special capability required.
+ */
+export const CAPABILITY_REQUIREMENTS: Record<string, string[]> = {
+  // Core
+  [CORE_METHODS.CONNECT]: [],
+  [CORE_METHODS.DISCONNECT]: [],
+  [CORE_METHODS.SEND]: ['messaging.canSend'],
+  [CORE_METHODS.SUBSCRIBE]: ['observation.canObserve'],
+  [CORE_METHODS.UNSUBSCRIBE]: ['observation.canObserve'],
+
+  // Observation
+  [OBSERVATION_METHODS.AGENTS_LIST]: ['observation.canQuery'],
+  [OBSERVATION_METHODS.AGENTS_GET]: ['observation.canQuery'],
+  [OBSERVATION_METHODS.SCOPES_LIST]: ['observation.canQuery'],
+  [OBSERVATION_METHODS.SCOPES_GET]: ['observation.canQuery'],
+  [OBSERVATION_METHODS.SCOPES_MEMBERS]: ['observation.canQuery'],
+  [OBSERVATION_METHODS.STRUCTURE_GRAPH]: ['observation.canQuery'],
+
+  // Lifecycle
+  [LIFECYCLE_METHODS.AGENTS_REGISTER]: ['lifecycle.canRegister'],
+  [LIFECYCLE_METHODS.AGENTS_UNREGISTER]: ['lifecycle.canUnregister'],
+  [LIFECYCLE_METHODS.AGENTS_SPAWN]: ['lifecycle.canSpawn'],
+
+  // State
+  [STATE_METHODS.AGENTS_UPDATE]: ['lifecycle.canRegister'],
+  [STATE_METHODS.AGENTS_SUSPEND]: ['lifecycle.canStop'],
+  [STATE_METHODS.AGENTS_RESUME]: ['lifecycle.canStop'],
+  [STATE_METHODS.AGENTS_STOP]: ['lifecycle.canStop'],
+
+  // Steering
+  [STEERING_METHODS.INJECT]: ['lifecycle.canSteer'],
+
+  // Scopes
+  [SCOPE_METHODS.SCOPES_CREATE]: ['scopes.canCreateScopes'],
+  [SCOPE_METHODS.SCOPES_DELETE]: ['scopes.canManageScopes'],
+  [SCOPE_METHODS.SCOPES_JOIN]: [],
+  [SCOPE_METHODS.SCOPES_LEAVE]: [],
+
+  // Session
+  [SESSION_METHODS.SESSION_LIST]: [],
+  [SESSION_METHODS.SESSION_LOAD]: [],
+  [SESSION_METHODS.SESSION_CLOSE]: [],
+
+  // Auth
+  [AUTH_METHODS.AUTH_REFRESH]: [],
+
+  // Federation
+  [FEDERATION_METHODS.FEDERATION_CONNECT]: ['federation.canFederate'],
+  [FEDERATION_METHODS.FEDERATION_ROUTE]: ['federation.canFederate'],
 } as const;
 
 // =============================================================================
@@ -1246,4 +1515,16 @@ export function isScopeAddress(address: Address): address is ScopeAddress {
 /** Check if an address is a broadcast address */
 export function isBroadcastAddress(address: Address): address is BroadcastAddress {
   return typeof address === 'object' && 'broadcast' in address;
+}
+
+/** Check if an address is a hierarchical address */
+export function isHierarchicalAddress(address: Address): address is HierarchicalAddress {
+  return (
+    typeof address === 'object' &&
+    ('parent' in address ||
+      'children' in address ||
+      'ancestors' in address ||
+      'descendants' in address ||
+      'siblings' in address)
+  );
 }

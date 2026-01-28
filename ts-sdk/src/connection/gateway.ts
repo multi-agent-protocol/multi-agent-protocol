@@ -9,7 +9,7 @@ import type { Stream } from '../stream';
 import { BaseConnection, type BaseConnectionOptions } from './base';
 import {
   CORE_METHODS,
-  EXTENSION_METHODS,
+  FEDERATION_METHODS,
   PROTOCOL_VERSION,
   type ParticipantCapabilities,
   type SessionId,
@@ -164,7 +164,7 @@ export class GatewayConnection {
     const result = await this.#connection.sendRequest<
       FederationConnectRequestParams,
       FederationConnectResponseResult
-    >(EXTENSION_METHODS.FEDERATION_CONNECT, params);
+    >(FEDERATION_METHODS.FEDERATION_CONNECT, params);
 
     if (result.connected && result.systemInfo) {
       this.#connectedSystems.set(systemId, {
@@ -191,7 +191,7 @@ export class GatewayConnection {
     return this.#connection.sendRequest<
       FederationRouteRequestParams,
       FederationRouteResponseResult
-    >(EXTENSION_METHODS.FEDERATION_ROUTE, params);
+    >(FEDERATION_METHODS.FEDERATION_ROUTE, params);
   }
 
   /**

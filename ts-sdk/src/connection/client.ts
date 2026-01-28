@@ -10,8 +10,10 @@ import { BaseConnection, type BaseConnectionOptions } from './base';
 import { Subscription, createSubscription } from '../subscription';
 import {
   CORE_METHODS,
-  STRUCTURE_METHODS,
-  EXTENSION_METHODS,
+  OBSERVATION_METHODS,
+  STATE_METHODS,
+  STEERING_METHODS,
+  SESSION_METHODS,
   NOTIFICATION_METHODS,
   PROTOCOL_VERSION,
   type ParticipantCapabilities,
@@ -35,6 +37,7 @@ import {
   type AgentsListRequestParams,
   type AgentsListResponseResult,
   type AgentsGetResponseResult,
+  type AgentsGetRequestParams,
   type SendRequestParams,
   type SendResponseResult,
   type SubscribeRequestParams,
@@ -185,21 +188,21 @@ export class ClientConnection {
    * List available sessions
    */
   async listSessions(): Promise<SessionListResponseResult> {
-    return this.#connection.sendRequest(CORE_METHODS.SESSION_LIST);
+    return this.#connection.sendRequest(SESSION_METHODS.SESSION_LIST);
   }
 
   /**
    * Load an existing session
    */
   async loadSession(sessionId: SessionId): Promise<SessionLoadResponseResult> {
-    return this.#connection.sendRequest(CORE_METHODS.SESSION_LOAD, { sessionId });
+    return this.#connection.sendRequest(SESSION_METHODS.SESSION_LOAD, { sessionId });
   }
 
   /**
    * Close the current session
    */
   async closeSession(sessionId?: SessionId): Promise<SessionCloseResponseResult> {
-    return this.#connection.sendRequest(CORE_METHODS.SESSION_CLOSE, { sessionId });
+    return this.#connection.sendRequest(SESSION_METHODS.SESSION_CLOSE, { sessionId });
   }
 
   // ===========================================================================
@@ -210,18 +213,21 @@ export class ClientConnection {
    * List agents with optional filters
    */
   async listAgents(options?: AgentsListRequestParams): Promise<AgentsListResponseResult> {
-    return this.#connection.sendRequest(CORE_METHODS.AGENTS_LIST, options);
+    return this.#connection.sendRequest(OBSERVATION_METHODS.AGENTS_LIST, options);
   }
 
   /**
    * Get a single agent by ID
    */
-  async getAgent(agentId: AgentId): Promise<Agent> {
-    const result = await this.#connection.sendRequest<
-      { agentId: AgentId },
-      AgentsGetResponseResult
-    >(CORE_METHODS.AGENTS_GET, { agentId });
-    return result.agent;
+  async getAgent(
+    agentId: AgentId,
+    options?: { include?: { children?: boolean; descendants?: boolean } }
+  ): Promise<AgentsGetResponseResult> {
+    const params: AgentsGetRequestParams = { agentId, ...options };
+    return this.#connection.sendRequest<AgentsGetRequestParams, AgentsGetResponseResult>(
+      OBSERVATION_METHODS.AGENTS_GET,
+      params
+    );
   }
 
   /**
@@ -230,7 +236,7 @@ export class ClientConnection {
   async getStructureGraph(
     options?: StructureGraphRequestParams
   ): Promise<StructureGraphResponseResult> {
-    return this.#connection.sendRequest(STRUCTURE_METHODS.STRUCTURE_GRAPH, options);
+    return this.#connection.sendRequest(OBSERVATION_METHODS.STRUCTURE_GRAPH, options);
   }
 
   // ===========================================================================
@@ -241,7 +247,7 @@ export class ClientConnection {
    * List scopes
    */
   async listScopes(options?: ScopesListRequestParams): Promise<ScopesListResponseResult> {
-    return this.#connection.sendRequest(STRUCTURE_METHODS.SCOPES_LIST, options);
+    return this.#connection.sendRequest(OBSERVATION_METHODS.SCOPES_LIST, options);
   }
 
   /**
@@ -251,7 +257,7 @@ export class ClientConnection {
     const result = await this.#connection.sendRequest<
       { scopeId: ScopeId },
       ScopesGetResponseResult
-    >(STRUCTURE_METHODS.SCOPES_GET, { scopeId });
+    >(OBSERVATION_METHODS.SCOPES_GET, { scopeId });
     return result.scope;
   }
 
@@ -262,7 +268,7 @@ export class ClientConnection {
     scopeId: ScopeId,
     options?: Omit<ScopesMembersRequestParams, 'scopeId'>
   ): Promise<ScopesMembersResponseResult> {
-    return this.#connection.sendRequest(STRUCTURE_METHODS.SCOPES_MEMBERS, {
+    return this.#connection.sendRequest(OBSERVATION_METHODS.SCOPES_MEMBERS, {
       scopeId,
       ...options,
     });
@@ -437,7 +443,7 @@ export class ClientConnection {
     const params: InjectRequestParams = { agentId, content };
     if (delivery) params.delivery = delivery;
 
-    return this.#connection.sendRequest(EXTENSION_METHODS.INJECT, params);
+    return this.#connection.sendRequest(STEERING_METHODS.INJECT, params);
   }
 
   // ===========================================================================
@@ -451,7 +457,7 @@ export class ClientConnection {
     agentId: AgentId,
     options?: { reason?: string; force?: boolean }
   ): Promise<{ stopping: boolean; agent?: Agent }> {
-    return this.#connection.sendRequest(STRUCTURE_METHODS.AGENTS_STOP, {
+    return this.#connection.sendRequest(STATE_METHODS.AGENTS_STOP, {
       agentId,
       ...options,
     });
@@ -464,7 +470,7 @@ export class ClientConnection {
     agentId: AgentId,
     reason?: string
   ): Promise<{ suspended: boolean; agent?: Agent }> {
-    return this.#connection.sendRequest(STRUCTURE_METHODS.AGENTS_SUSPEND, {
+    return this.#connection.sendRequest(STATE_METHODS.AGENTS_SUSPEND, {
       agentId,
       reason,
     });
@@ -474,7 +480,7 @@ export class ClientConnection {
    * Resume a suspended agent
    */
   async resumeAgent(agentId: AgentId): Promise<{ resumed: boolean; agent?: Agent }> {
-    return this.#connection.sendRequest(STRUCTURE_METHODS.AGENTS_RESUME, { agentId });
+    return this.#connection.sendRequest(STATE_METHODS.AGENTS_RESUME, { agentId });
   }
 
   // ===========================================================================

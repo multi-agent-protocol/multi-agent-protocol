@@ -10,7 +10,9 @@ import { BaseConnection, type BaseConnectionOptions } from './base';
 import { Subscription, createSubscription } from '../subscription';
 import {
   CORE_METHODS,
-  STRUCTURE_METHODS,
+  LIFECYCLE_METHODS,
+  STATE_METHODS,
+  SCOPE_METHODS,
   NOTIFICATION_METHODS,
   PROTOCOL_VERSION,
   type ParticipantCapabilities,
@@ -146,7 +148,7 @@ export class AgentConnection {
     const registerResult = await this.#connection.sendRequest<
       AgentsRegisterRequestParams,
       AgentsRegisterResponseResult
-    >(STRUCTURE_METHODS.AGENTS_REGISTER, registerParams);
+    >(LIFECYCLE_METHODS.AGENTS_REGISTER, registerParams);
 
     this.#agentId = registerResult.agent.id;
     this.#currentState = registerResult.agent.state;
@@ -166,7 +168,7 @@ export class AgentConnection {
         await this.#connection.sendRequest<
           { agentId: AgentId; reason?: string },
           AgentsUnregisterResponseResult
-        >(STRUCTURE_METHODS.AGENTS_UNREGISTER, {
+        >(LIFECYCLE_METHODS.AGENTS_UNREGISTER, {
           agentId: this.#agentId,
           reason,
         });
@@ -273,7 +275,7 @@ export class AgentConnection {
     const result = await this.#connection.sendRequest<
       { agentId: AgentId; state: AgentState },
       AgentsUpdateResponseResult
-    >(STRUCTURE_METHODS.AGENTS_UPDATE, {
+    >(STATE_METHODS.AGENTS_UPDATE, {
       agentId: this.#agentId,
       state,
     });
@@ -293,7 +295,7 @@ export class AgentConnection {
     const result = await this.#connection.sendRequest<
       { agentId: AgentId; metadata: Record<string, unknown> },
       AgentsUpdateResponseResult
-    >(STRUCTURE_METHODS.AGENTS_UPDATE, {
+    >(STATE_METHODS.AGENTS_UPDATE, {
       agentId: this.#agentId,
       metadata,
     });
@@ -363,7 +365,7 @@ export class AgentConnection {
     return this.#connection.sendRequest<
       AgentsSpawnRequestParams,
       AgentsSpawnResponseResult
-    >(STRUCTURE_METHODS.AGENTS_SPAWN, params);
+    >(LIFECYCLE_METHODS.AGENTS_SPAWN, params);
   }
 
   // ===========================================================================
@@ -463,46 +465,42 @@ export class AgentConnection {
     const result = await this.#connection.sendRequest<
       ScopesCreateRequestParams,
       ScopesCreateResponseResult
-    >(STRUCTURE_METHODS.SCOPES_CREATE, options);
+    >(SCOPE_METHODS.SCOPES_CREATE, options);
     return result.scope;
   }
 
   /**
    * Join a scope
    */
-  async joinScope(scopeId: ScopeId): Promise<boolean> {
+  async joinScope(scopeId: ScopeId): Promise<ScopesJoinResponseResult> {
     if (!this.#agentId) {
       throw new Error('Agent not registered');
     }
 
-    const result = await this.#connection.sendRequest<
+    return this.#connection.sendRequest<
       { scopeId: ScopeId; agentId: AgentId },
       ScopesJoinResponseResult
-    >(STRUCTURE_METHODS.SCOPES_JOIN, {
+    >(SCOPE_METHODS.SCOPES_JOIN, {
       scopeId,
       agentId: this.#agentId,
     });
-
-    return result.joined;
   }
 
   /**
    * Leave a scope
    */
-  async leaveScope(scopeId: ScopeId): Promise<boolean> {
+  async leaveScope(scopeId: ScopeId): Promise<ScopesLeaveResponseResult> {
     if (!this.#agentId) {
       throw new Error('Agent not registered');
     }
 
-    const result = await this.#connection.sendRequest<
+    return this.#connection.sendRequest<
       { scopeId: ScopeId; agentId: AgentId },
       ScopesLeaveResponseResult
-    >(STRUCTURE_METHODS.SCOPES_LEAVE, {
+    >(SCOPE_METHODS.SCOPES_LEAVE, {
       scopeId,
       agentId: this.#agentId,
     });
-
-    return result.left;
   }
 
   // ===========================================================================

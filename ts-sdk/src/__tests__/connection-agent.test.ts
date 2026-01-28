@@ -8,7 +8,9 @@ import { BaseConnection } from '../connection/base';
 import { createStreamPair } from '../stream';
 import {
   CORE_METHODS,
-  STRUCTURE_METHODS,
+  LIFECYCLE_METHODS,
+  STATE_METHODS,
+  SCOPE_METHODS,
   NOTIFICATION_METHODS,
   type ConnectRequestParams,
   type ConnectResponseResult,
@@ -62,7 +64,7 @@ function createMockServer(serverStream: ReturnType<typeof createStreamPair>[1]) 
         state.connected = false;
         return { acknowledged: true };
 
-      case STRUCTURE_METHODS.AGENTS_REGISTER: {
+      case LIFECYCLE_METHODS.AGENTS_REGISTER: {
         const registerParams = params as AgentsRegisterRequestParams;
         const agentId = registerParams.agentId || `agent-${state.nextAgentId++}`;
         const agent = {
@@ -77,7 +79,7 @@ function createMockServer(serverStream: ReturnType<typeof createStreamPair>[1]) 
         return { agent } satisfies AgentsRegisterResponseResult;
       }
 
-      case STRUCTURE_METHODS.AGENTS_UPDATE: {
+      case STATE_METHODS.AGENTS_UPDATE: {
         const { agentId, state: newState, metadata } = params as {
           agentId: string;
           state?: string;
@@ -90,13 +92,13 @@ function createMockServer(serverStream: ReturnType<typeof createStreamPair>[1]) 
         return { agent } satisfies AgentsUpdateResponseResult;
       }
 
-      case STRUCTURE_METHODS.AGENTS_UNREGISTER: {
+      case LIFECYCLE_METHODS.AGENTS_UNREGISTER: {
         const { agentId } = params as { agentId: string };
         state.agents.delete(agentId);
         return { acknowledged: true };
       }
 
-      case STRUCTURE_METHODS.AGENTS_SPAWN: {
+      case LIFECYCLE_METHODS.AGENTS_SPAWN: {
         const spawnParams = params as { parent: string; name?: string; role?: string };
         const childId = `agent-${state.nextAgentId++}`;
         const child = {
@@ -129,7 +131,7 @@ function createMockServer(serverStream: ReturnType<typeof createStreamPair>[1]) 
         return { acknowledged: true };
       }
 
-      case STRUCTURE_METHODS.SCOPES_CREATE: {
+      case SCOPE_METHODS.SCOPES_CREATE: {
         const createParams = params as { scopeId?: string; name?: string };
         const scopeId = createParams.scopeId || `scope-${state.nextScopeId++}`;
         const scope = { id: scopeId, name: createParams.name, members: [] };
@@ -137,22 +139,26 @@ function createMockServer(serverStream: ReturnType<typeof createStreamPair>[1]) 
         return { scope } satisfies ScopesCreateResponseResult;
       }
 
-      case STRUCTURE_METHODS.SCOPES_JOIN: {
+      case SCOPE_METHODS.SCOPES_JOIN: {
         const { scopeId, agentId } = params as { scopeId: string; agentId: string };
         const scope = state.scopes.get(scopeId);
         if (!scope) throw { code: -32005, message: 'Scope not found' };
+        const agent = state.agents.get(agentId);
+        if (!agent) throw { code: -32004, message: 'Agent not found' };
         if (!scope.members.includes(agentId)) {
           scope.members.push(agentId);
         }
-        return { joined: true } satisfies ScopesJoinResponseResult;
+        return { scope, agent } satisfies ScopesJoinResponseResult;
       }
 
-      case STRUCTURE_METHODS.SCOPES_LEAVE: {
+      case SCOPE_METHODS.SCOPES_LEAVE: {
         const { scopeId, agentId } = params as { scopeId: string; agentId: string };
         const scope = state.scopes.get(scopeId);
         if (!scope) throw { code: -32005, message: 'Scope not found' };
+        const agent = state.agents.get(agentId);
+        if (!agent) throw { code: -32004, message: 'Agent not found' };
         scope.members = scope.members.filter((m) => m !== agentId);
-        return { left: true } satisfies ScopesLeaveResponseResult;
+        return { scope, agent } satisfies ScopesLeaveResponseResult;
       }
 
       default:
@@ -419,9 +425,10 @@ describe('AgentConnection', () => {
       await agent.connect();
       const scope = await agent.createScope({ name: 'Test Scope' });
 
-      const joined = await agent.joinScope(scope.id);
+      const result = await agent.joinScope(scope.id);
 
-      expect(joined).toBe(true);
+      expect(result.scope).toBeDefined();
+      expect(result.agent).toBeDefined();
     });
 
     it('leaves scope', async () => {
@@ -429,9 +436,10 @@ describe('AgentConnection', () => {
       const scope = await agent.createScope({ name: 'Test Scope' });
       await agent.joinScope(scope.id);
 
-      const left = await agent.leaveScope(scope.id);
+      const result = await agent.leaveScope(scope.id);
 
-      expect(left).toBe(true);
+      expect(result.scope).toBeDefined();
+      expect(result.agent).toBeDefined();
     });
 
     it('throws if not registered', async () => {

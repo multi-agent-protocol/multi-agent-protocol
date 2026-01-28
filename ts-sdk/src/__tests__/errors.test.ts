@@ -113,10 +113,10 @@ describe('MAPRequestError', () => {
       expect(error.data?.category).toBe('auth');
     });
 
-    it('insufficientPermissions creates correct error', () => {
-      const error = MAPRequestError.insufficientPermissions('write access');
+    it('permissionDenied creates correct error', () => {
+      const error = MAPRequestError.permissionDenied('write access');
 
-      expect(error.code).toBe(ERROR_CODES.INSUFFICIENT_PERMISSIONS);
+      expect(error.code).toBe(ERROR_CODES.PERMISSION_DENIED);
       expect(error.message).toContain('write access');
       expect(error.data?.category).toBe('auth');
     });

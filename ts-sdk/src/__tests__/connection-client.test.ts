@@ -6,7 +6,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ClientConnection } from '../connection/client';
 import { BaseConnection } from '../connection/base';
 import { createStreamPair } from '../stream';
-import { CORE_METHODS, STRUCTURE_METHODS, EXTENSION_METHODS, NOTIFICATION_METHODS } from '../types';
+import {
+  CORE_METHODS,
+  OBSERVATION_METHODS,
+  STATE_METHODS,
+  STEERING_METHODS,
+  NOTIFICATION_METHODS,
+} from '../types';
 import type {
   ConnectRequestParams,
   ConnectResponseResult,
@@ -53,10 +59,10 @@ function createMockServer(serverStream: ReturnType<typeof createStreamPair>[1]) 
         state.connected = false;
         return { acknowledged: true };
 
-      case CORE_METHODS.AGENTS_LIST:
+      case OBSERVATION_METHODS.AGENTS_LIST:
         return { agents: state.agents } satisfies AgentsListResponseResult;
 
-      case CORE_METHODS.AGENTS_GET: {
+      case OBSERVATION_METHODS.AGENTS_GET: {
         const { agentId } = params as { agentId: string };
         const agent = state.agents.find((a) => a.id === agentId);
         if (!agent) {
@@ -83,13 +89,13 @@ function createMockServer(serverStream: ReturnType<typeof createStreamPair>[1]) 
         return { acknowledged: true };
       }
 
-      case STRUCTURE_METHODS.SCOPES_LIST:
+      case OBSERVATION_METHODS.SCOPES_LIST:
         return { scopes: state.scopes } satisfies ScopesListResponseResult;
 
-      case STRUCTURE_METHODS.AGENTS_STOP:
+      case STATE_METHODS.AGENTS_STOP:
         return { stopping: true };
 
-      case EXTENSION_METHODS.INJECT:
+      case STEERING_METHODS.INJECT:
         return { injected: true };
 
       default:
@@ -208,10 +214,10 @@ describe('ClientConnection', () => {
     it('returns agent by ID', async () => {
       await client.connect();
 
-      const agent = await client.getAgent('agent-1');
+      const result = await client.getAgent('agent-1');
 
-      expect(agent.id).toBe('agent-1');
-      expect(agent.name).toBe('Agent One');
+      expect(result.agent.id).toBe('agent-1');
+      expect(result.agent.name).toBe('Agent One');
     });
 
     it('throws if agent not found', async () => {
