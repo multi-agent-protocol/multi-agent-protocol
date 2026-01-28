@@ -2,6 +2,7 @@
  * Subscription class for MAP event streams
  *
  * Provides both AsyncIterable and event emitter patterns for consuming events.
+ * Includes automatic deduplication based on eventId when provided by the server.
  */
 
 import type {
@@ -24,6 +25,12 @@ export interface SubscriptionOptions {
   filter?: SubscriptionFilter;
   /** Buffer size for events before backpressure */
   bufferSize?: number;
+  /**
+   * Maximum number of eventIds to track for deduplication.
+   * Older eventIds are evicted when this limit is reached.
+   * Default: 10000
+   */
+  maxSeenEventIds?: number;
 }
 
 /**
@@ -40,6 +47,16 @@ export interface SubscriptionOptions {
  * // Event handler
  * subscription.on('event', (event) => console.log(event));
  * ```
+ *
+ * ## Deduplication
+ *
+ * When the server provides `eventId` in the notification params,
+ * the subscription automatically deduplicates events. This handles
+ * scenarios like:
+ * - Network retries delivering the same event twice
+ * - Reconnection replay overlapping with already-received events
+ *
+ * If `eventId` is not provided, deduplication is skipped.
  */
 export class Subscription implements AsyncIterable<Event> {
   readonly id: SubscriptionId;
@@ -50,9 +67,16 @@ export class Subscription implements AsyncIterable<Event> {
   readonly #bufferSize: number;
   readonly #unsubscribe: () => Promise<void>;
 
+  // Deduplication tracking
+  readonly #seenEventIds: Set<string> = new Set();
+  readonly #seenEventIdOrder: string[] = []; // For LRU eviction
+  readonly #maxSeenEventIds: number;
+
   #eventResolver: ((event: Event | null) => void) | null = null;
   #closed = false;
   #lastSequenceNumber = -1;
+  #lastEventId: string | undefined;
+  #lastTimestamp: number | undefined;
 
   constructor(
     id: SubscriptionId,
@@ -62,6 +86,7 @@ export class Subscription implements AsyncIterable<Event> {
     this.id = id;
     this.filter = options.filter;
     this.#bufferSize = options.bufferSize ?? 1000;
+    this.#maxSeenEventIds = options.maxSeenEventIds ?? 10000;
     this.#unsubscribe = unsubscribe;
   }
 
@@ -80,10 +105,31 @@ export class Subscription implements AsyncIterable<Event> {
   }
 
   /**
+   * Last received eventId (for replay positioning)
+   */
+  get lastEventId(): string | undefined {
+    return this.#lastEventId;
+  }
+
+  /**
+   * Last received server timestamp
+   */
+  get lastTimestamp(): number | undefined {
+    return this.#lastTimestamp;
+  }
+
+  /**
    * Number of events currently buffered
    */
   get bufferedCount(): number {
     return this.#eventQueue.length;
+  }
+
+  /**
+   * Number of eventIds being tracked for deduplication
+   */
+  get trackedEventIdCount(): number {
+    return this.#seenEventIds.size;
   }
 
   /**
@@ -134,8 +180,10 @@ export class Subscription implements AsyncIterable<Event> {
       this.#eventResolver = null;
     }
 
-    // Clear handlers
+    // Clear handlers and tracking
     this.#eventHandlers.clear();
+    this.#seenEventIds.clear();
+    this.#seenEventIdOrder.length = 0;
 
     // Call the unsubscribe callback
     await this.#unsubscribe();
@@ -148,7 +196,35 @@ export class Subscription implements AsyncIterable<Event> {
   _pushEvent(params: EventNotificationParams): void {
     if (this.#closed) return;
 
-    const { sequenceNumber, event } = params;
+    const { sequenceNumber, eventId, timestamp, event } = params;
+
+    // Deduplicate by eventId if provided
+    if (eventId) {
+      if (this.#seenEventIds.has(eventId)) {
+        // Duplicate event, skip silently
+        return;
+      }
+
+      // Track this eventId
+      this.#seenEventIds.add(eventId);
+      this.#seenEventIdOrder.push(eventId);
+
+      // LRU eviction if we've exceeded the limit
+      while (this.#seenEventIds.size > this.#maxSeenEventIds) {
+        const oldestId = this.#seenEventIdOrder.shift();
+        if (oldestId) {
+          this.#seenEventIds.delete(oldestId);
+        }
+      }
+
+      // Track last eventId for replay positioning
+      this.#lastEventId = eventId;
+    }
+
+    // Track last timestamp
+    if (timestamp !== undefined) {
+      this.#lastTimestamp = timestamp;
+    }
 
     // Check for sequence gaps (out of order or missed events)
     if (this.#lastSequenceNumber >= 0 && sequenceNumber !== this.#lastSequenceNumber + 1) {

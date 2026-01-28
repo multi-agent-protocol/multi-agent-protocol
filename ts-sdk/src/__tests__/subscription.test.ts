@@ -364,4 +364,164 @@ describe('Subscription', () => {
       consoleSpy.mockRestore();
     });
   });
+
+  describe('deduplication', () => {
+    it('deduplicates events with same eventId', () => {
+      const handler = vi.fn();
+      subscription.on('event', handler);
+
+      const eventId = 'evt-12345';
+      const params: EventNotificationParams = {
+        subscriptionId: 'sub-123',
+        sequenceNumber: 0,
+        eventId,
+        timestamp: Date.now(),
+        event: { type: 'agent.registered', timestamp: Date.now() },
+      };
+
+      // Push same event twice
+      subscription._pushEvent(params);
+      subscription._pushEvent({ ...params, sequenceNumber: 1 });
+
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('processes events without eventId (no deduplication)', () => {
+      const handler = vi.fn();
+      subscription.on('event', handler);
+
+      // Events without eventId are not deduplicated
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 0,
+        event: { type: 'agent.registered', timestamp: 1 },
+      });
+
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 1,
+        event: { type: 'agent.registered', timestamp: 2 },
+      });
+
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    it('tracks lastEventId when eventId is provided', () => {
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 0,
+        eventId: 'evt-first',
+        event: { type: 'agent.registered', timestamp: 1 },
+      });
+
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 1,
+        eventId: 'evt-second',
+        event: { type: 'agent.registered', timestamp: 2 },
+      });
+
+      expect(subscription.lastEventId).toBe('evt-second');
+    });
+
+    it('tracks lastTimestamp when timestamp is provided', () => {
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 0,
+        timestamp: 1000,
+        event: { type: 'agent.registered', timestamp: 1000 },
+      });
+
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 1,
+        timestamp: 2000,
+        event: { type: 'agent.registered', timestamp: 2000 },
+      });
+
+      expect(subscription.lastTimestamp).toBe(2000);
+    });
+
+    it('tracks seen eventId count', () => {
+      expect(subscription.trackedEventIdCount).toBe(0);
+
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 0,
+        eventId: 'evt-1',
+        event: { type: 'agent.registered', timestamp: 1 },
+      });
+
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 1,
+        eventId: 'evt-2',
+        event: { type: 'agent.registered', timestamp: 2 },
+      });
+
+      expect(subscription.trackedEventIdCount).toBe(2);
+    });
+
+    it('evicts old eventIds when limit is reached (LRU)', () => {
+      const smallCacheSub = createSubscription('sub-lru', unsubscribeFn, {
+        maxSeenEventIds: 3,
+      });
+
+      const handler = vi.fn();
+      smallCacheSub.on('event', handler);
+
+      // Push 5 events with unique IDs
+      for (let i = 0; i < 5; i++) {
+        smallCacheSub._pushEvent({
+          subscriptionId: 'sub-lru',
+          sequenceNumber: i,
+          eventId: `evt-${i}`,
+          event: { type: 'agent.registered', timestamp: i },
+        });
+      }
+
+      // Should have 5 events delivered
+      expect(handler).toHaveBeenCalledTimes(5);
+
+      // Should only track 3 eventIds (limit)
+      expect(smallCacheSub.trackedEventIdCount).toBe(3);
+
+      // evt-0 and evt-1 should have been evicted, so re-sending evt-0 should work
+      smallCacheSub._pushEvent({
+        subscriptionId: 'sub-lru',
+        sequenceNumber: 5,
+        eventId: 'evt-0',
+        event: { type: 'agent.registered', timestamp: 100 },
+      });
+
+      expect(handler).toHaveBeenCalledTimes(6); // evt-0 delivered again
+
+      // evt-4 should still be tracked, so re-sending should be deduplicated
+      smallCacheSub._pushEvent({
+        subscriptionId: 'sub-lru',
+        sequenceNumber: 6,
+        eventId: 'evt-4',
+        event: { type: 'agent.registered', timestamp: 101 },
+      });
+
+      expect(handler).toHaveBeenCalledTimes(6); // evt-4 deduplicated
+
+      smallCacheSub._close();
+    });
+
+    it('clears tracking on unsubscribe', async () => {
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 0,
+        eventId: 'evt-1',
+        event: { type: 'agent.registered', timestamp: 1 },
+      });
+
+      expect(subscription.trackedEventIdCount).toBe(1);
+
+      await subscription.unsubscribe();
+
+      expect(subscription.trackedEventIdCount).toBe(0);
+    });
+  });
 });

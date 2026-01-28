@@ -106,6 +106,12 @@ export const METHOD_REGISTRY: Record<string, MethodInfo> = {
     capabilities: ['observation.canObserve'],
     description: 'Unsubscribe from event stream',
   },
+  'replay': {
+    method: 'map/replay',
+    category: 'core',
+    capabilities: ['observation.canObserve'],
+    description: 'Replay historical events with filtering and pagination',
+  },
 
   // Observation methods
   'agents/list': {

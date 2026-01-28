@@ -1050,6 +1050,94 @@ export interface UnsubscribeResponseResult {
 }
 
 // =============================================================================
+// Replay Types
+// =============================================================================
+
+/**
+ * A replayed event with its envelope metadata.
+ */
+export interface ReplayedEvent {
+  /** Globally unique event ID (ULID format) */
+  eventId: string;
+  /** Server timestamp when event was originally processed */
+  timestamp: Timestamp;
+  /** Event IDs that causally precede this event */
+  causedBy?: string[];
+  /** The event payload */
+  event: Event;
+}
+
+/**
+ * Parameters for replaying historical events.
+ *
+ * Uses keyset pagination with `afterEventId` - pass the last eventId
+ * from the previous response to get the next page of results.
+ *
+ * @example
+ * ```typescript
+ * // Replay from a specific point
+ * const page1 = await client.replay({ limit: 100 });
+ * const page2 = await client.replay({
+ *   afterEventId: page1.events.at(-1)?.eventId,
+ *   limit: 100
+ * });
+ * ```
+ */
+export interface ReplayRequestParams {
+  /**
+   * Start after this eventId (exclusive).
+   * Used for keyset pagination - pass the last eventId from previous response.
+   */
+  afterEventId?: string;
+
+  /**
+   * Alternative: start from this timestamp (inclusive).
+   * If both afterEventId and fromTimestamp are provided, afterEventId takes precedence.
+   */
+  fromTimestamp?: Timestamp;
+
+  /**
+   * End at this timestamp (inclusive).
+   * If not provided, replays up to the most recent event.
+   */
+  toTimestamp?: Timestamp;
+
+  /**
+   * Filter events (same as subscription filter).
+   */
+  filter?: SubscriptionFilter;
+
+  /**
+   * Maximum number of events to return.
+   * Default: 100, Maximum: 1000
+   */
+  limit?: number;
+
+  _meta?: Meta;
+}
+
+export interface ReplayRequest extends MAPRequestBase<ReplayRequestParams> {
+  method: 'map/replay';
+  params?: ReplayRequestParams;
+}
+
+export interface ReplayResponseResult {
+  /** Replayed events in chronological order */
+  events: ReplayedEvent[];
+
+  /** Whether more events exist after the last returned event */
+  hasMore: boolean;
+
+  /**
+   * Total count of matching events (if known).
+   * May be omitted for performance reasons on large result sets.
+   */
+  totalCount?: number;
+
+  _meta?: Meta;
+}
+
+// =============================================================================
 // Auth Types
 // =============================================================================
 
@@ -1297,10 +1385,57 @@ export interface FederationRouteResponseResult {
 // Notification Types
 // =============================================================================
 
+/**
+ * Parameters for event notifications delivered to subscribers.
+ *
+ * The envelope contains both delivery metadata (subscriptionId, sequence)
+ * and optional fields for deduplication and causal ordering.
+ */
 export interface EventNotificationParams {
+  /** The subscription this event is being delivered to */
   subscriptionId: SubscriptionId;
+
+  /** Monotonically increasing sequence number within this subscription */
   sequenceNumber: number;
+
+  /**
+   * Globally unique event identifier (ULID format).
+   *
+   * Used for:
+   * - Deduplication (same event delivered multiple times)
+   * - Replay references (afterEventId in replay requests)
+   * - Causal tracking (referenced in causedBy arrays)
+   *
+   * Format: 26-character ULID, e.g., "01HQJY3KCNP5VXWZ8M4R6T2G9B"
+   *
+   * @remarks
+   * If not provided by the server, deduplication is skipped.
+   * New routers should always provide this field.
+   */
+  eventId?: string;
+
+  /**
+   * Server timestamp when the event was processed (milliseconds since epoch).
+   *
+   * This is the envelope-level timestamp, which may differ from event.timestamp
+   * if the event was queued or replayed.
+   */
+  timestamp?: Timestamp;
+
+  /**
+   * Event IDs of events that causally precede this event.
+   *
+   * Used for enforcing causal ordering - this event should not be
+   * processed until all events in causedBy have been processed.
+   *
+   * @example
+   * A message_delivered event would have causedBy: [messagesentEventId]
+   */
+  causedBy?: string[];
+
+  /** The event payload */
   event: Event;
+
   _meta?: Meta;
 }
 
@@ -1336,6 +1471,7 @@ export type MAPRequest =
   | SendRequest
   | SubscribeRequest
   | UnsubscribeRequest
+  | ReplayRequest
   | AuthRefreshRequest
   // Structure
   | AgentsRegisterRequest
@@ -1372,6 +1508,7 @@ export const CORE_METHODS = {
   SEND: 'map/send',
   SUBSCRIBE: 'map/subscribe',
   UNSUBSCRIBE: 'map/unsubscribe',
+  REPLAY: 'map/replay',
 } as const;
 
 /** Observation methods - Query/read operations */

@@ -57,6 +57,7 @@ import {
   buildSubscribeResponse,
   buildUnsubscribeResponse,
 } from '../protocol';
+import { ulid } from '../utils';
 
 /**
  * Participant connection info
@@ -87,6 +88,17 @@ export interface TestServerOptions {
   name?: string;
   version?: string;
   capabilities?: ParticipantCapabilities;
+  /** Maximum number of events to retain for replay. Default: 10000 */
+  maxEventHistory?: number;
+}
+
+/**
+ * Stored event for replay capability
+ */
+interface StoredEvent {
+  eventId: string;
+  timestamp: number;
+  event: Event;
 }
 
 /**
@@ -101,6 +113,8 @@ export class TestServer {
   readonly #scopes: Map<ScopeId, Scope & { members: Set<AgentId> }> = new Map();
   readonly #subscriptions: Map<SubscriptionId, ServerSubscription> = new Map();
   readonly #messages: Message[] = [];
+  readonly #eventHistory: StoredEvent[] = [];
+  readonly #maxEventHistory: number;
 
   #sessionId: SessionId;
   #nextParticipantId = 1;
@@ -112,6 +126,7 @@ export class TestServer {
   constructor(options: TestServerOptions = {}) {
     this.#options = options;
     this.#sessionId = `session-${Date.now()}`;
+    this.#maxEventHistory = options.maxEventHistory ?? 10000;
   }
 
   /**
@@ -159,14 +174,31 @@ export class TestServer {
   }
 
   /**
+   * Get event history for replay testing
+   */
+  get eventHistory(): readonly StoredEvent[] {
+    return this.#eventHistory;
+  }
+
+  /**
    * Emit an event to subscribers
    */
   emitEvent(event: Omit<Event, 'id' | 'timestamp'>): void {
+    const eventId = ulid();
+    const timestamp = Date.now();
     const fullEvent: Event = {
-      id: `evt-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      timestamp: Date.now(),
+      id: `evt-${timestamp}-${Math.random().toString(36).slice(2)}`,
+      timestamp,
       ...event,
     };
+
+    // Store in event history for replay
+    this.#eventHistory.push({ eventId, timestamp, event: fullEvent });
+
+    // Evict oldest events if we exceed the limit
+    while (this.#eventHistory.length > this.#maxEventHistory) {
+      this.#eventHistory.shift();
+    }
 
     for (const subscription of this.#subscriptions.values()) {
       if (this.#matchesFilter(fullEvent, subscription.filter)) {
@@ -176,6 +208,8 @@ export class TestServer {
           participant.connection.sendNotification(NOTIFICATION_METHODS.EVENT, {
             subscriptionId: subscription.id,
             sequenceNumber: subscription.sequenceNumber,
+            eventId,
+            timestamp,
             event: fullEvent,
           });
         }
