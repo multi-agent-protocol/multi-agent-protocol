@@ -52,6 +52,9 @@ import {
   type ScopesMembersResponseResult,
   type InjectRequestParams,
   type InjectResponseResult,
+  type ReplayRequestParams,
+  type ReplayResponseResult,
+  type ReplayedEvent,
 } from '../types';
 
 /**
@@ -426,6 +429,83 @@ export class ClientConnection {
       { subscriptionId: SubscriptionId },
       UnsubscribeResponseResult
     >(CORE_METHODS.UNSUBSCRIBE, { subscriptionId });
+  }
+
+  // ===========================================================================
+  // Event Replay
+  // ===========================================================================
+
+  /**
+   * Replay historical events.
+   *
+   * Uses keyset pagination - pass the last eventId from the previous
+   * response to get the next page.
+   *
+   * @example
+   * ```typescript
+   * // Replay all events from the last hour
+   * const result = await client.replay({
+   *   fromTimestamp: Date.now() - 3600000,
+   *   filter: { eventTypes: ['agent.registered'] },
+   *   limit: 100
+   * });
+   *
+   * // Paginate through results
+   * let afterEventId: string | undefined;
+   * do {
+   *   const page = await client.replay({ afterEventId, limit: 100 });
+   *   for (const item of page.events) {
+   *     console.log(item.eventId, item.event);
+   *   }
+   *   afterEventId = page.events.at(-1)?.eventId;
+   * } while (page.hasMore);
+   * ```
+   */
+  async replay(params: ReplayRequestParams = {}): Promise<ReplayResponseResult> {
+    // Validate and cap limit
+    const limit = Math.min(params.limit ?? 100, 1000);
+
+    return this.#connection.sendRequest<ReplayRequestParams, ReplayResponseResult>(
+      CORE_METHODS.REPLAY,
+      { ...params, limit }
+    );
+  }
+
+  /**
+   * Replay all events matching filter, handling pagination automatically.
+   *
+   * Returns an async generator for streaming through all results.
+   *
+   * @example
+   * ```typescript
+   * for await (const item of client.replayAll({
+   *   filter: { eventTypes: ['agent.registered'] }
+   * })) {
+   *   console.log(item.eventId, item.event);
+   * }
+   * ```
+   */
+  async *replayAll(
+    params: Omit<ReplayRequestParams, 'afterEventId'> = {}
+  ): AsyncGenerator<ReplayedEvent> {
+    let afterEventId: string | undefined;
+    let hasMore = true;
+
+    while (hasMore) {
+      const result = await this.replay({ ...params, afterEventId });
+
+      for (const item of result.events) {
+        yield item;
+      }
+
+      hasMore = result.hasMore;
+      afterEventId = result.events.at(-1)?.eventId;
+
+      // Safety: if no events returned but hasMore is true, break to avoid infinite loop
+      if (result.events.length === 0) {
+        break;
+      }
+    }
   }
 
   // ===========================================================================

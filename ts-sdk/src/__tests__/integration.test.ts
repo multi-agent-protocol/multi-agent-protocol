@@ -1408,4 +1408,160 @@ describe('Integration Tests', () => {
       });
     });
   });
+
+  // ===========================================================================
+  // Event Replay
+  // ===========================================================================
+
+  describe('Event Replay', () => {
+    let client: ClientConnection;
+    let clientStream: ReturnType<typeof createStreamPair>[0];
+    let serverStream: ReturnType<typeof createStreamPair>[1];
+
+    beforeEach(async () => {
+      [clientStream, serverStream] = createStreamPair();
+      client = new ClientConnection(clientStream, { name: 'Replay Client' });
+      server.acceptConnection(serverStream);
+      await client.connect();
+    });
+
+    afterEach(async () => {
+      await client.disconnect();
+    });
+
+    it('replays events from event history', async () => {
+      // Create some events
+      const agent1 = await TestAgent.create(server, { name: 'Agent 1' });
+      const agent2 = await TestAgent.create(server, { name: 'Agent 2' });
+      const agent3 = await TestAgent.create(server, { name: 'Agent 3' });
+
+      // Replay all events
+      const result = await client.replay();
+
+      // Should have events (participant connected + agent registered events)
+      expect(result.events.length).toBeGreaterThan(0);
+      expect(result.events.every((e) => e.eventId)).toBe(true);
+      expect(result.events.every((e) => e.timestamp > 0)).toBe(true);
+
+      await agent1.disconnect();
+      await agent2.disconnect();
+      await agent3.disconnect();
+    });
+
+    it('supports keyset pagination with afterEventId', async () => {
+      // Create events
+      const agent1 = await TestAgent.create(server, { name: 'Agent 1' });
+      const agent2 = await TestAgent.create(server, { name: 'Agent 2' });
+      const agent3 = await TestAgent.create(server, { name: 'Agent 3' });
+
+      // Get first page with limit 2
+      const page1 = await client.replay({ limit: 2 });
+      expect(page1.events.length).toBe(2);
+      expect(page1.hasMore).toBe(true);
+
+      // Get second page using afterEventId
+      const lastEventId = page1.events.at(-1)?.eventId;
+      const page2 = await client.replay({ afterEventId: lastEventId, limit: 2 });
+      expect(page2.events.length).toBe(2);
+
+      // Events should be different between pages
+      const page1Ids = new Set(page1.events.map((e) => e.eventId));
+      const page2Ids = new Set(page2.events.map((e) => e.eventId));
+      expect([...page1Ids].some((id) => page2Ids.has(id))).toBe(false);
+
+      await agent1.disconnect();
+      await agent2.disconnect();
+      await agent3.disconnect();
+    });
+
+    it('filters events by event type', async () => {
+      // Create agents to generate agent_registered events
+      const agent = await TestAgent.create(server, { name: 'Test Agent' });
+
+      // Replay only agent_registered events
+      const result = await client.replay({
+        filter: { eventTypes: ['agent_registered'] },
+      });
+
+      // All returned events should be agent_registered
+      expect(result.events.every((e) => e.event.type === 'agent_registered')).toBe(true);
+
+      await agent.disconnect();
+    });
+
+    it('filters events by timestamp range', async () => {
+      const beforeTimestamp = Date.now();
+
+      // Create event
+      const agent = await TestAgent.create(server, { name: 'Test Agent' });
+
+      const afterTimestamp = Date.now();
+
+      // Replay with timestamp range
+      const result = await client.replay({
+        fromTimestamp: beforeTimestamp,
+        toTimestamp: afterTimestamp,
+      });
+
+      // All events should be within the time range
+      expect(result.events.every((e) => e.timestamp >= beforeTimestamp && e.timestamp <= afterTimestamp)).toBe(true);
+
+      await agent.disconnect();
+    });
+
+    it('replayAll iterates through all events', async () => {
+      // Create multiple events
+      const agent1 = await TestAgent.create(server, { name: 'Agent 1' });
+      const agent2 = await TestAgent.create(server, { name: 'Agent 2' });
+
+      // Collect all events using replayAll
+      const allEvents = [];
+      for await (const event of client.replayAll({ limit: 1 })) {
+        allEvents.push(event);
+      }
+
+      // Should have multiple events
+      expect(allEvents.length).toBeGreaterThan(0);
+
+      // All events should have valid fields
+      expect(allEvents.every((e) => e.eventId && e.timestamp && e.event)).toBe(true);
+
+      await agent1.disconnect();
+      await agent2.disconnect();
+    });
+
+    it('returns totalCount in replay response', async () => {
+      const agent = await TestAgent.create(server, { name: 'Test Agent' });
+
+      const result = await client.replay();
+
+      expect(typeof result.totalCount).toBe('number');
+      expect(result.totalCount).toBeGreaterThan(0);
+
+      await agent.disconnect();
+    });
+
+    it('includes eventId in live event notifications', async () => {
+      // Subscribe to events
+      const subscription = await client.subscribe();
+      const receivedEvents: Event[] = [];
+
+      subscription.on('event', (event) => {
+        receivedEvents.push(event);
+      });
+
+      // Create an agent to trigger event
+      const agent = await TestAgent.create(server, { name: 'Live Event Agent' });
+
+      // Wait for event
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Check that eventId was included in the delivery
+      // The subscription tracks lastEventId
+      expect(subscription.lastEventId).toBeDefined();
+
+      await subscription.unsubscribe();
+      await agent.disconnect();
+    });
+  });
 });

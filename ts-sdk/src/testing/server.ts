@@ -41,6 +41,8 @@ import {
   type ScopesCreateRequestParams,
   type InjectRequestParams,
   type DisconnectPolicy,
+  type ReplayRequestParams,
+  type ReplayResponseResult,
 } from '../types';
 import {
   buildConnectResponse,
@@ -256,6 +258,9 @@ export class TestServer {
 
       case CORE_METHODS.UNSUBSCRIBE:
         return this.#handleUnsubscribe(connection, params as { subscriptionId: SubscriptionId });
+
+      case CORE_METHODS.REPLAY:
+        return this.#handleReplay(params as ReplayRequestParams | undefined);
 
       // =======================================================================
       // Observation Methods
@@ -605,6 +610,57 @@ export class TestServer {
       }
     }
     return buildUnsubscribeResponse(params.subscriptionId);
+  }
+
+  #handleReplay(params?: ReplayRequestParams): ReplayResponseResult {
+    const {
+      afterEventId,
+      fromTimestamp,
+      toTimestamp,
+      filter,
+      limit = 100,
+    } = params ?? {};
+
+    // Start with all events
+    let events = [...this.#eventHistory];
+
+    // Apply afterEventId filter (keyset pagination)
+    if (afterEventId) {
+      const idx = events.findIndex((e) => e.eventId === afterEventId);
+      if (idx >= 0) {
+        events = events.slice(idx + 1);
+      }
+      // If not found, return all events (could also throw error)
+    }
+
+    // Apply timestamp filters
+    if (fromTimestamp !== undefined) {
+      events = events.filter((e) => e.timestamp >= fromTimestamp);
+    }
+    if (toTimestamp !== undefined) {
+      events = events.filter((e) => e.timestamp <= toTimestamp);
+    }
+
+    // Apply subscription filter
+    if (filter) {
+      events = events.filter((e) => this.#matchesFilter(e.event, filter));
+    }
+
+    // Determine if there are more events beyond the limit
+    const hasMore = events.length > limit;
+
+    // Apply limit
+    events = events.slice(0, Math.min(limit, 1000));
+
+    return {
+      events: events.map((e) => ({
+        eventId: e.eventId,
+        timestamp: e.timestamp,
+        event: e.event,
+      })),
+      hasMore,
+      totalCount: this.#eventHistory.length,
+    };
   }
 
   // ===========================================================================
