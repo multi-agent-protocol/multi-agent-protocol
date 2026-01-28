@@ -111,3 +111,48 @@ export {
   buildSubscribeResponse,
   buildUnsubscribeResponse,
 } from './protocol';
+
+// ===========================================================================
+// Utils - Utility functions
+// ===========================================================================
+export {
+  ulid,
+  monotonicFactory,
+  ulidTimestamp,
+  compareUlid,
+  isValidUlid,
+} from './utils';
+
+// ===========================================================================
+// Permissions - Permission utilities for 4-layer model
+// ===========================================================================
+export {
+  // Types
+  type SystemExposure,
+  type PermissionSystemConfig,
+  type PermissionParticipant,
+  type PermissionContext,
+  type PermissionAction,
+  type PermissionResult,
+  // Layer 1: System exposure
+  isAgentExposed,
+  isEventTypeExposed,
+  isScopeExposed,
+  // Layer 2: Capabilities
+  hasCapability,
+  canPerformMethod,
+  // Layer 3: Scope permissions
+  canSeeScope,
+  canSendToScope,
+  canJoinScope,
+  // Layer 4: Agent permissions
+  canSeeAgent,
+  canMessageAgent,
+  canControlAgent,
+  // High-level resolution
+  canPerformAction,
+  // Filtering utilities
+  filterVisibleAgents,
+  filterVisibleScopes,
+  filterVisibleEvents,
+} from './permissions';
