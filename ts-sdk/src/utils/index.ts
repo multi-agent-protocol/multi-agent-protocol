@@ -3,3 +3,15 @@
  */
 
 export { ulid, monotonicFactory, ulidTimestamp, compareUlid, isValidUlid } from './ulid';
+
+export {
+  type RetryPolicy,
+  type RetryState,
+  type RetryCallbacks,
+  DEFAULT_RETRY_POLICY,
+  calculateDelay,
+  withRetry,
+  retryable,
+  createRetryPolicy,
+  sleep,
+} from './retry';

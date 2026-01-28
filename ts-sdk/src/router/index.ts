@@ -7,6 +7,11 @@
 
 export type {
   ConnectedParticipant,
+  AgentExposure,
+  EventExposure,
+  ScopeExposure,
+  SystemExposure,
+  RouterLimits,
   MAPRouterConfig,
   MAPRouter,
   MAPRouterFactory,

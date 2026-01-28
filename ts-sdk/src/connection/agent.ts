@@ -6,7 +6,8 @@
  */
 
 import type { Stream } from '../stream';
-import { BaseConnection, type BaseConnectionOptions } from './base';
+import { BaseConnection, type BaseConnectionOptions, type ConnectionState } from './base';
+import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from '../utils';
 import { Subscription, createSubscription } from '../subscription';
 import {
   CORE_METHODS,
@@ -56,6 +57,43 @@ import {
 export type MessageHandler = (message: Message) => void | Promise<void>;
 
 /**
+ * Options for automatic reconnection
+ */
+export interface AgentReconnectionOptions {
+  /** Enable automatic reconnection (default: false) */
+  enabled: boolean;
+  /** Maximum number of retry attempts (default: 10) */
+  maxRetries?: number;
+  /** Initial delay in milliseconds (default: 1000) */
+  baseDelayMs?: number;
+  /** Maximum delay in milliseconds (default: 30000) */
+  maxDelayMs?: number;
+  /** Add jitter to delays (default: true) */
+  jitter?: boolean;
+  /** Restore scope memberships after reconnect (default: true) */
+  restoreScopeMemberships?: boolean;
+}
+
+/**
+ * Agent reconnection event types
+ */
+export type AgentReconnectionEventType =
+  | 'disconnected'
+  | 'reconnecting'
+  | 'reconnected'
+  | 'reconnectFailed';
+
+/**
+ * Handler for reconnection events
+ */
+export type AgentReconnectionEventHandler = (event: {
+  type: AgentReconnectionEventType;
+  attempt?: number;
+  delay?: number;
+  error?: Error;
+}) => void;
+
+/**
  * Options for agent connection
  */
 export interface AgentConnectionOptions extends BaseConnectionOptions {
@@ -71,6 +109,10 @@ export interface AgentConnectionOptions extends BaseConnectionOptions {
   parent?: AgentId;
   /** Initial scopes to join */
   scopes?: ScopeId[];
+  /** Factory to create new stream for reconnection */
+  createStream?: () => Promise<Stream>;
+  /** Reconnection options */
+  reconnection?: AgentReconnectionOptions;
 }
 
 /**
@@ -85,16 +127,23 @@ export interface AgentConnectionOptions extends BaseConnectionOptions {
  * - Managing scope memberships
  */
 export class AgentConnection {
-  readonly #connection: BaseConnection;
+  #connection: BaseConnection;
   readonly #subscriptions: Map<SubscriptionId, Subscription> = new Map();
   readonly #options: AgentConnectionOptions;
   readonly #messageHandlers: Set<MessageHandler> = new Set();
+  readonly #reconnectionHandlers: Set<AgentReconnectionEventHandler> = new Set();
+  readonly #scopeMemberships: Set<ScopeId> = new Set();
 
   #agentId: AgentId | null = null;
   #sessionId: SessionId | null = null;
   #serverCapabilities: ParticipantCapabilities | null = null;
   #currentState: AgentState = 'registered';
   #connected = false;
+  #lastConnectOptions?: {
+    agentId?: AgentId;
+    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
+  };
+  #isReconnecting = false;
 
   constructor(stream: Stream, options: AgentConnectionOptions = {}) {
     this.#connection = new BaseConnection(stream, options);
@@ -102,6 +151,15 @@ export class AgentConnection {
 
     // Set up notification handler for events and messages
     this.#connection.setNotificationHandler(this.#handleNotification.bind(this));
+
+    // Set up disconnect detection for auto-reconnect
+    if (options.reconnection?.enabled && options.createStream) {
+      this.#connection.onStateChange((newState) => {
+        if (newState === 'closed' && this.#connected && !this.#isReconnecting) {
+          void this.#handleDisconnect();
+        }
+      });
+    }
   }
 
   // ===========================================================================
@@ -134,6 +192,9 @@ export class AgentConnection {
     this.#serverCapabilities = connectResult.capabilities;
     this.#connected = true;
 
+    // Store connect options for potential reconnection
+    this.#lastConnectOptions = options;
+
     // Then register as an agent
     const registerParams: AgentsRegisterRequestParams = {
       agentId: options?.agentId,
@@ -152,6 +213,9 @@ export class AgentConnection {
 
     this.#agentId = registerResult.agent.id;
     this.#currentState = registerResult.agent.state;
+
+    // Transition to connected state
+    this.#connection._transitionTo('connected');
 
     return { connection: connectResult, agent: registerResult.agent };
   }
@@ -477,13 +541,18 @@ export class AgentConnection {
       throw new Error('Agent not registered');
     }
 
-    return this.#connection.sendRequest<
+    const result = await this.#connection.sendRequest<
       { scopeId: ScopeId; agentId: AgentId },
       ScopesJoinResponseResult
     >(SCOPE_METHODS.SCOPES_JOIN, {
       scopeId,
       agentId: this.#agentId,
     });
+
+    // Track scope membership for potential restoration
+    this.#scopeMemberships.add(scopeId);
+
+    return result;
   }
 
   /**
@@ -494,13 +563,18 @@ export class AgentConnection {
       throw new Error('Agent not registered');
     }
 
-    return this.#connection.sendRequest<
+    const result = await this.#connection.sendRequest<
       { scopeId: ScopeId; agentId: AgentId },
       ScopesLeaveResponseResult
     >(SCOPE_METHODS.SCOPES_LEAVE, {
       scopeId,
       agentId: this.#agentId,
     });
+
+    // Remove from tracked scope memberships
+    this.#scopeMemberships.delete(scopeId);
+
+    return result;
   }
 
   // ===========================================================================
@@ -547,6 +621,47 @@ export class AgentConnection {
   }
 
   // ===========================================================================
+  // Reconnection
+  // ===========================================================================
+
+  /**
+   * Current connection state
+   */
+  get connectionState(): ConnectionState {
+    return this.#connection.state;
+  }
+
+  /**
+   * Whether the connection is currently reconnecting
+   */
+  get isReconnecting(): boolean {
+    return this.#isReconnecting;
+  }
+
+  /**
+   * Register a handler for reconnection events.
+   *
+   * @param handler - Function called when reconnection events occur
+   * @returns Unsubscribe function to remove the handler
+   */
+  onReconnection(handler: AgentReconnectionEventHandler): () => void {
+    this.#reconnectionHandlers.add(handler);
+    return () => this.#reconnectionHandlers.delete(handler);
+  }
+
+  /**
+   * Register a handler for connection state changes.
+   *
+   * @param handler - Function called when state changes
+   * @returns Unsubscribe function to remove the handler
+   */
+  onStateChange(
+    handler: (newState: ConnectionState, oldState: ConnectionState) => void
+  ): () => void {
+    return this.#connection.onStateChange(handler);
+  }
+
+  // ===========================================================================
   // Internal
   // ===========================================================================
 
@@ -579,6 +694,115 @@ export class AgentConnection {
 
       default:
         console.warn('MAP: Unknown notification:', method);
+    }
+  }
+
+  /**
+   * Emit a reconnection event to all registered handlers
+   */
+  #emitReconnectionEvent(event: Parameters<AgentReconnectionEventHandler>[0]): void {
+    for (const handler of this.#reconnectionHandlers) {
+      try {
+        handler(event);
+      } catch (error) {
+        console.error('MAP: Reconnection event handler error:', error);
+      }
+    }
+  }
+
+  /**
+   * Handle disconnect when auto-reconnect is enabled
+   */
+  async #handleDisconnect(): Promise<void> {
+    this.#isReconnecting = true;
+    this.#connected = false;
+
+    this.#emitReconnectionEvent({ type: 'disconnected' });
+
+    try {
+      await this.#attemptReconnect();
+    } catch (error) {
+      this.#isReconnecting = false;
+      this.#emitReconnectionEvent({
+        type: 'reconnectFailed',
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
+    }
+  }
+
+  /**
+   * Attempt to reconnect with retry logic
+   */
+  async #attemptReconnect(): Promise<void> {
+    const options = this.#options.reconnection!;
+    const createStream = this.#options.createStream!;
+
+    const retryPolicy: RetryPolicy = {
+      maxRetries: options.maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
+      baseDelayMs: options.baseDelayMs ?? DEFAULT_RETRY_POLICY.baseDelayMs,
+      maxDelayMs: options.maxDelayMs ?? DEFAULT_RETRY_POLICY.maxDelayMs,
+      jitter: options.jitter ?? DEFAULT_RETRY_POLICY.jitter,
+    };
+
+    // Store current scopes for restoration
+    const scopesToRestore = Array.from(this.#scopeMemberships);
+
+    await withRetry(
+      async () => {
+        // Create a new stream
+        const newStream = await createStream();
+
+        // Reconnect the base connection
+        await this.#connection.reconnect(newStream);
+
+        // Re-establish connection and registration
+        // Use the stored agentId to try to reclaim the same identity
+        const result = await this.connect({
+          agentId: this.#agentId ?? this.#lastConnectOptions?.agentId,
+          auth: this.#lastConnectOptions?.auth,
+        });
+
+        // Update stored values
+        this.#agentId = result.agent.id;
+        this.#sessionId = result.connection.sessionId;
+        this.#serverCapabilities = result.connection.capabilities;
+        this.#currentState = result.agent.state;
+      },
+      retryPolicy,
+      {
+        onRetry: (state) => {
+          this.#emitReconnectionEvent({
+            type: 'reconnecting',
+            attempt: state.attempt,
+            delay: state.nextDelayMs,
+            error: state.lastError,
+          });
+        },
+      }
+    );
+
+    this.#isReconnecting = false;
+    this.#emitReconnectionEvent({ type: 'reconnected' });
+
+    // Restore scope memberships if enabled
+    if (options.restoreScopeMemberships !== false) {
+      await this.#restoreScopeMemberships(scopesToRestore);
+    }
+  }
+
+  /**
+   * Restore scope memberships after reconnection
+   */
+  async #restoreScopeMemberships(scopes: ScopeId[]): Promise<void> {
+    // Clear tracked memberships (will be re-added by joinScope)
+    this.#scopeMemberships.clear();
+
+    for (const scopeId of scopes) {
+      try {
+        await this.joinScope(scopeId);
+      } catch (error) {
+        console.warn('MAP: Failed to restore scope membership:', scopeId, error);
+      }
     }
   }
 }

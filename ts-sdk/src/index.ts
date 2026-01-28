@@ -58,11 +58,19 @@ export {
   type BaseConnectionOptions,
   type RequestHandler,
   type NotificationHandler,
+  type ConnectionState,
+  type StateChangeHandler,
   ClientConnection,
   type ClientConnectionOptions,
+  type ReconnectionOptions,
+  type ReconnectionEventType,
+  type ReconnectionEventHandler,
   AgentConnection,
   type AgentConnectionOptions,
   type MessageHandler,
+  type AgentReconnectionOptions,
+  type AgentReconnectionEventType,
+  type AgentReconnectionEventHandler,
   GatewayConnection,
   type GatewayConnectionOptions,
 } from './connection';
@@ -72,6 +80,11 @@ export {
 // ===========================================================================
 export {
   type ConnectedParticipant,
+  type AgentExposure,
+  type EventExposure,
+  type ScopeExposure,
+  type SystemExposure,
+  type RouterLimits,
   type MAPRouterConfig,
   type MAPRouter,
   type MAPRouterFactory,
@@ -116,19 +129,29 @@ export {
 // Utils - Utility functions
 // ===========================================================================
 export {
+  // ULID utilities
   ulid,
   monotonicFactory,
   ulidTimestamp,
   compareUlid,
   isValidUlid,
+  // Retry utilities
+  type RetryPolicy,
+  type RetryState,
+  type RetryCallbacks,
+  DEFAULT_RETRY_POLICY,
+  calculateDelay,
+  withRetry,
+  retryable,
+  createRetryPolicy,
+  sleep,
 } from './utils';
 
 // ===========================================================================
 // Permissions - Permission utilities for 4-layer model
 // ===========================================================================
 export {
-  // Types
-  type SystemExposure,
+  // Types (SystemExposure is exported from router module)
   type PermissionSystemConfig,
   type PermissionParticipant,
   type PermissionContext,

@@ -6,8 +6,9 @@
  */
 
 import type { Stream } from '../stream';
-import { BaseConnection, type BaseConnectionOptions } from './base';
-import { Subscription, createSubscription } from '../subscription';
+import { BaseConnection, type BaseConnectionOptions, type ConnectionState } from './base';
+import { Subscription, createSubscription, type EventHandler } from '../subscription';
+import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from '../utils';
 import {
   CORE_METHODS,
   OBSERVATION_METHODS,
@@ -58,6 +59,60 @@ import {
 } from '../types';
 
 /**
+ * Options for automatic reconnection
+ */
+export interface ReconnectionOptions {
+  /** Enable automatic reconnection (default: false) */
+  enabled: boolean;
+  /** Maximum number of retry attempts (default: 10) */
+  maxRetries?: number;
+  /** Initial delay in milliseconds (default: 1000) */
+  baseDelayMs?: number;
+  /** Maximum delay in milliseconds (default: 30000) */
+  maxDelayMs?: number;
+  /** Add jitter to delays (default: true) */
+  jitter?: boolean;
+  /** Restore subscriptions after reconnect (default: true) */
+  restoreSubscriptions?: boolean;
+  /** Replay missed events on restore (default: true) */
+  replayOnRestore?: boolean;
+  /** Maximum events to replay per subscription (default: 1000) */
+  maxReplayEventsPerSubscription?: number;
+}
+
+/**
+ * State tracked for subscription restoration
+ */
+interface SubscriptionState {
+  filter?: SubscriptionFilter;
+  lastEventId?: string;
+  handlers: Set<EventHandler>;
+}
+
+/**
+ * Reconnection event types
+ */
+export type ReconnectionEventType =
+  | 'disconnected'
+  | 'reconnecting'
+  | 'reconnected'
+  | 'reconnectFailed'
+  | 'subscriptionRestored'
+  | 'subscriptionRestoreFailed';
+
+/**
+ * Handler for reconnection events
+ */
+export type ReconnectionEventHandler = (event: {
+  type: ReconnectionEventType;
+  attempt?: number;
+  delay?: number;
+  error?: Error;
+  subscriptionId?: SubscriptionId;
+  newSubscriptionId?: SubscriptionId;
+}) => void;
+
+/**
  * Options for client connection
  */
 export interface ClientConnectionOptions extends BaseConnectionOptions {
@@ -65,6 +120,10 @@ export interface ClientConnectionOptions extends BaseConnectionOptions {
   name?: string;
   /** Client capabilities */
   capabilities?: ParticipantCapabilities;
+  /** Factory to create new stream for reconnection */
+  createStream?: () => Promise<Stream>;
+  /** Reconnection options */
+  reconnection?: ReconnectionOptions;
 }
 
 /**
@@ -77,13 +136,20 @@ export interface ClientConnectionOptions extends BaseConnectionOptions {
  * - (With permissions) Steering agents
  */
 export class ClientConnection {
-  readonly #connection: BaseConnection;
+  #connection: BaseConnection;
   readonly #subscriptions: Map<SubscriptionId, Subscription> = new Map();
+  readonly #subscriptionStates: Map<SubscriptionId, SubscriptionState> = new Map();
+  readonly #reconnectionHandlers: Set<ReconnectionEventHandler> = new Set();
   readonly #options: ClientConnectionOptions;
 
   #sessionId: SessionId | null = null;
   #serverCapabilities: ParticipantCapabilities | null = null;
   #connected = false;
+  #lastConnectOptions?: {
+    sessionId?: SessionId;
+    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
+  };
+  #isReconnecting = false;
 
   constructor(stream: Stream, options: ClientConnectionOptions = {}) {
     this.#connection = new BaseConnection(stream, options);
@@ -91,6 +157,15 @@ export class ClientConnection {
 
     // Set up notification handler for events
     this.#connection.setNotificationHandler(this.#handleNotification.bind(this));
+
+    // Set up disconnect detection for auto-reconnect
+    if (options.reconnection?.enabled && options.createStream) {
+      this.#connection.onStateChange((newState) => {
+        if (newState === 'closed' && this.#connected && !this.#isReconnecting) {
+          void this.#handleDisconnect();
+        }
+      });
+    }
   }
 
   // ===========================================================================
@@ -121,6 +196,12 @@ export class ClientConnection {
     this.#sessionId = result.sessionId;
     this.#serverCapabilities = result.capabilities;
     this.#connected = true;
+
+    // Transition to connected state
+    this.#connection._transitionTo('connected');
+
+    // Store connect options for potential reconnection
+    this.#lastConnectOptions = options;
 
     return result;
   }
@@ -412,6 +493,24 @@ export class ClientConnection {
 
     this.#subscriptions.set(result.subscriptionId, subscription);
 
+    // Track subscription state for potential restoration
+    if (this.#options.reconnection?.restoreSubscriptions !== false) {
+      this.#subscriptionStates.set(result.subscriptionId, {
+        filter,
+        handlers: new Set(),
+      });
+
+      // Update lastEventId when events are received
+      const originalPushEvent = subscription._pushEvent.bind(subscription);
+      subscription._pushEvent = (event: EventNotificationParams) => {
+        const state = this.#subscriptionStates.get(result.subscriptionId);
+        if (state && event.eventId) {
+          state.lastEventId = event.eventId;
+        }
+        originalPushEvent(event);
+      };
+    }
+
     return subscription;
   }
 
@@ -424,6 +523,9 @@ export class ClientConnection {
       subscription._close();
       this.#subscriptions.delete(subscriptionId);
     }
+
+    // Clean up subscription state
+    this.#subscriptionStates.delete(subscriptionId);
 
     await this.#connection.sendRequest<
       { subscriptionId: SubscriptionId },
@@ -564,6 +666,67 @@ export class ClientConnection {
   }
 
   // ===========================================================================
+  // Reconnection
+  // ===========================================================================
+
+  /**
+   * Current connection state
+   */
+  get state(): ConnectionState {
+    return this.#connection.state;
+  }
+
+  /**
+   * Whether the connection is currently reconnecting
+   */
+  get isReconnecting(): boolean {
+    return this.#isReconnecting;
+  }
+
+  /**
+   * Register a handler for reconnection events.
+   *
+   * @param handler - Function called when reconnection events occur
+   * @returns Unsubscribe function to remove the handler
+   *
+   * @example
+   * ```typescript
+   * const unsubscribe = client.onReconnection((event) => {
+   *   switch (event.type) {
+   *     case 'disconnected':
+   *       console.log('Connection lost');
+   *       break;
+   *     case 'reconnecting':
+   *       console.log(`Reconnecting, attempt ${event.attempt}`);
+   *       break;
+   *     case 'reconnected':
+   *       console.log('Reconnected successfully');
+   *       break;
+   *     case 'reconnectFailed':
+   *       console.log('Failed to reconnect:', event.error);
+   *       break;
+   *   }
+   * });
+   * ```
+   */
+  onReconnection(handler: ReconnectionEventHandler): () => void {
+    this.#reconnectionHandlers.add(handler);
+    return () => this.#reconnectionHandlers.delete(handler);
+  }
+
+  /**
+   * Register a handler for connection state changes.
+   *
+   * @param handler - Function called when state changes
+   * @returns Unsubscribe function to remove the handler
+   */
+  onStateChange(
+    handler: (newState: ConnectionState, oldState: ConnectionState) => void
+  ): () => void {
+    return this.#connection.onStateChange(handler);
+  }
+
+  // ===========================================================================
   // Internal
   // ===========================================================================
 
@@ -591,6 +754,168 @@ export class ClientConnection {
 
       default:
         console.warn('MAP: Unknown notification:', method);
+    }
+  }
+
+  /**
+   * Emit a reconnection event to all registered handlers
+   */
+  #emitReconnectionEvent(event: Parameters<ReconnectionEventHandler>[0]): void {
+    for (const handler of this.#reconnectionHandlers) {
+      try {
+        handler(event);
+      } catch (error) {
+        console.error('MAP: Reconnection event handler error:', error);
+      }
+    }
+  }
+
+  /**
+   * Handle disconnect when auto-reconnect is enabled
+   */
+  async #handleDisconnect(): Promise<void> {
+    this.#isReconnecting = true;
+    this.#connected = false;
+
+    this.#emitReconnectionEvent({ type: 'disconnected' });
+
+    try {
+      await this.#attemptReconnect();
+    } catch (error) {
+      this.#isReconnecting = false;
+      this.#emitReconnectionEvent({
+        type: 'reconnectFailed',
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
+    }
+  }
+
+  /**
+   * Attempt to reconnect with retry logic
+   */
+  async #attemptReconnect(): Promise<void> {
+    const options = this.#options.reconnection!;
+    const createStream = this.#options.createStream!;
+
+    const retryPolicy: RetryPolicy = {
+      maxRetries: options.maxRetries ?? DEFAULT_RETRY_POLICY.maxRetries,
+      baseDelayMs: options.baseDelayMs ?? DEFAULT_RETRY_POLICY.baseDelayMs,
+      maxDelayMs: options.maxDelayMs ?? DEFAULT_RETRY_POLICY.maxDelayMs,
+      jitter: options.jitter ?? DEFAULT_RETRY_POLICY.jitter,
+    };
+
+    await withRetry(
+      async () => {
+        // Create a new stream
+        const newStream = await createStream();
+
+        // Reconnect the base connection
+        await this.#connection.reconnect(newStream);
+
+        // Re-authenticate
+        const connectResult = await this.connect(this.#lastConnectOptions);
+
+        // Update stored values
+        this.#sessionId = connectResult.sessionId;
+        this.#serverCapabilities = connectResult.capabilities;
+      },
+      retryPolicy,
+      {
+        onRetry: (state) => {
+          this.#emitReconnectionEvent({
+            type: 'reconnecting',
+            attempt: state.attempt,
+            delay: state.nextDelayMs,
+            error: state.lastError,
+          });
+        },
+      }
+    );
+
+    this.#isReconnecting = false;
+    this.#emitReconnectionEvent({ type: 'reconnected' });
+
+    // Restore subscriptions if enabled
+    if (options.restoreSubscriptions !== false) {
+      await this.#restoreSubscriptions();
+    }
+  }
+
+  /**
+   * Restore subscriptions after reconnection
+   */
+  async #restoreSubscriptions(): Promise<void> {
+    const options = this.#options.reconnection!;
+    const subscriptionEntries = Array.from(this.#subscriptionStates.entries());
+
+    // Clear old subscription tracking (IDs will change)
+    this.#subscriptions.clear();
+    this.#subscriptionStates.clear();
+
+    for (const [oldId, state] of subscriptionEntries) {
+      try {
+        // Create new subscription with same filter
+        const newSubscription = await this.subscribe(state.filter);
+        const newId = newSubscription.id;
+
+        // Replay missed events if enabled
+        if (options.replayOnRestore !== false && state.lastEventId) {
+          const maxEvents = options.maxReplayEventsPerSubscription ?? 1000;
+
+          try {
+            let replayedCount = 0;
+            let afterEventId: string | undefined = state.lastEventId;
+            let hasMore = true;
+
+            // Paginate through replayed events
+            while (hasMore && replayedCount < maxEvents) {
+              const result = await this.replay({
+                afterEventId,
+                filter: state.filter,
+                limit: Math.min(100, maxEvents - replayedCount),
+              });
+
+              for (const replayedEvent of result.events) {
+                if (replayedCount >= maxEvents) break;
+
+                // Push replayed event to the new subscription
+                newSubscription._pushEvent({
+                  subscriptionId: newId,
+                  sequenceNumber: replayedCount + 1,
+                  eventId: replayedEvent.eventId,
+                  timestamp: replayedEvent.timestamp,
+                  event: replayedEvent.event,
+                });
+
+                replayedCount++;
+              }
+
+              hasMore = result.hasMore;
+              afterEventId = result.events.at(-1)?.eventId;
+
+              // Safety: if no events returned but hasMore is true, break
+              if (result.events.length === 0) {
+                break;
+              }
+            }
+          } catch (replayError) {
+            // Replay is best-effort, log but don't fail restoration
+            console.warn('MAP: Failed to replay events for subscription:', oldId, replayError);
+          }
+        }
+
+        this.#emitReconnectionEvent({
+          type: 'subscriptionRestored',
+          subscriptionId: oldId,
+          newSubscriptionId: newId,
+        });
+      } catch (error) {
+        this.#emitReconnectionEvent({
+          type: 'subscriptionRestoreFailed',
+          subscriptionId: oldId,
+          error: error instanceof Error ? error : new Error(String(error)),
+        });
+      }
     }
   }
 }

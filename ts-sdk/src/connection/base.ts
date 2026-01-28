@@ -48,6 +48,24 @@ export type NotificationHandler = (
 ) => Promise<void>;
 
 /**
+ * Connection state for tracking lifecycle
+ */
+export type ConnectionState =
+  | 'initial'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'closed';
+
+/**
+ * Handler for connection state changes
+ */
+export type StateChangeHandler = (
+  newState: ConnectionState,
+  oldState: ConnectionState
+) => void;
+
+/**
  * Options for base connection
  */
 export interface BaseConnectionOptions {
@@ -62,11 +80,12 @@ export interface BaseConnectionOptions {
  * (ClientConnection, AgentConnection, etc.)
  */
 export class BaseConnection {
-  readonly #stream: Stream;
+  #stream: Stream;
   readonly #pendingResponses: Map<RequestId, PendingResponse> = new Map();
   readonly #abortController: AbortController = new AbortController();
   readonly #closedPromise: Promise<void>;
   readonly #defaultTimeout: number;
+  readonly #stateChangeHandlers: Set<StateChangeHandler> = new Set();
 
   #nextRequestId: number = 1;
   #writeQueue: Promise<void> = Promise.resolve();
@@ -74,6 +93,7 @@ export class BaseConnection {
   #notificationHandler: NotificationHandler | null = null;
   #closed = false;
   #closeResolver!: () => void;
+  #state: ConnectionState = 'initial';
 
   constructor(stream: Stream, options: BaseConnectionOptions = {}) {
     this.#stream = stream;
@@ -85,7 +105,7 @@ export class BaseConnection {
     });
 
     // Start receiving messages
-    this.#startReceiving();
+    void this.#startReceiving();
   }
 
   /**
@@ -122,6 +142,70 @@ export class BaseConnection {
    */
   setNotificationHandler(handler: NotificationHandler): void {
     this.#notificationHandler = handler;
+  }
+
+  /**
+   * Current connection state
+   */
+  get state(): ConnectionState {
+    return this.#state;
+  }
+
+  /**
+   * Register a handler for state changes.
+   *
+   * @param handler - Function called when state changes
+   * @returns Unsubscribe function to remove the handler
+   */
+  onStateChange(handler: StateChangeHandler): () => void {
+    this.#stateChangeHandlers.add(handler);
+    return () => this.#stateChangeHandlers.delete(handler);
+  }
+
+  /**
+   * Transition to a new state and notify handlers.
+   * @internal
+   */
+  _transitionTo(newState: ConnectionState): void {
+    if (this.#state === newState) return;
+
+    const oldState = this.#state;
+    this.#state = newState;
+
+    for (const handler of this.#stateChangeHandlers) {
+      try {
+        handler(newState, oldState);
+      } catch (error) {
+        console.error('MAP: State change handler error:', error);
+      }
+    }
+  }
+
+  /**
+   * Reconnect with a new stream.
+   *
+   * This method is used by role-specific connections to replace the
+   * underlying transport after a disconnect.
+   *
+   * @param newStream - The new stream to use
+   * @throws If the connection is permanently closed
+   */
+  async reconnect(newStream: Stream): Promise<void> {
+    if (this.#state === 'closed') {
+      throw new Error('Cannot reconnect a permanently closed connection');
+    }
+
+    // Replace the stream
+    this.#stream = newStream;
+    this.#closed = false;
+
+    // Reset the write queue
+    this.#writeQueue = Promise.resolve();
+
+    // Start receiving on the new stream
+    void this.#startReceiving();
+
+    this._transitionTo('connected');
   }
 
   /**
@@ -205,6 +289,7 @@ export class BaseConnection {
     if (this.#closed) return;
 
     this.#closed = true;
+    this._transitionTo('closed');
     this.#abortController.abort();
 
     // Reject all pending responses

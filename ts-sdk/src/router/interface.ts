@@ -18,6 +18,7 @@ import type {
   Message,
   Address,
   Event,
+  EventType,
   SubscriptionFilter,
 } from '../types';
 
@@ -34,6 +35,75 @@ export interface ConnectedParticipant {
 }
 
 /**
+ * Agent exposure configuration.
+ * Controls which agents are visible to external participants.
+ */
+export interface AgentExposure {
+  /** Whether agents are public by default (default: true) */
+  publicByDefault?: boolean;
+  /** Glob patterns for agents that are always public */
+  publicAgents?: string[];
+  /** Glob patterns for agents that are always hidden (takes precedence over publicAgents) */
+  hiddenAgents?: string[];
+}
+
+/**
+ * Event exposure configuration.
+ * Controls which event types are visible to external participants.
+ */
+export interface EventExposure {
+  /** Event types that are exposed (whitelist - if provided, only these types are visible) */
+  exposedTypes?: EventType[];
+  /** Event types that are always hidden (blacklist - takes precedence) */
+  hiddenTypes?: EventType[];
+}
+
+/**
+ * Scope exposure configuration.
+ * Controls which scopes are visible to external participants.
+ */
+export interface ScopeExposure {
+  /** Whether scopes are public by default (default: true) */
+  publicByDefault?: boolean;
+  /** Glob patterns for scopes that are always public */
+  publicScopes?: string[];
+  /** Glob patterns for scopes that are always hidden (takes precedence over publicScopes) */
+  hiddenScopes?: string[];
+}
+
+/**
+ * System-level exposure configuration.
+ * Controls what entities are visible to participants at the system level (Layer 1).
+ */
+export interface SystemExposure {
+  /** Agent visibility configuration */
+  agents?: AgentExposure;
+  /** Event visibility configuration */
+  events?: EventExposure;
+  /** Scope visibility configuration */
+  scopes?: ScopeExposure;
+}
+
+/**
+ * Resource limits for the router.
+ * Enforces capacity constraints to prevent resource exhaustion.
+ */
+export interface RouterLimits {
+  /** Maximum total concurrent connections */
+  maxConnections?: number;
+  /** Maximum connections per unique client identity */
+  maxConnectionsPerClient?: number;
+  /** Maximum subscriptions per connection */
+  maxSubscriptionsPerConnection?: number;
+  /** Maximum agents a single client can register */
+  maxAgentsPerClient?: number;
+  /** Maximum scopes a single agent can join */
+  maxScopesPerAgent?: number;
+  /** Maximum events to retain for replay */
+  maxEventHistory?: number;
+}
+
+/**
  * Router configuration
  */
 export interface MAPRouterConfig {
@@ -45,6 +115,24 @@ export interface MAPRouterConfig {
   defaultClientCapabilities?: ParticipantCapabilities;
   /** Default capabilities granted to agents */
   defaultAgentCapabilities?: ParticipantCapabilities;
+
+  /**
+   * System-level exposure configuration.
+   * Controls what entities are visible at Layer 1 of the permission model.
+   */
+  exposure?: SystemExposure;
+
+  /**
+   * Resource limits for the router.
+   */
+  limits?: RouterLimits;
+
+  /**
+   * Capabilities granted to anonymous/unauthenticated participants.
+   * If not set, anonymous connections may be rejected or granted minimal permissions.
+   */
+  anonymousCapabilities?: ParticipantCapabilities;
+
   /** Authentication handler */
   authenticate?: (
     participantType: ParticipantType,
