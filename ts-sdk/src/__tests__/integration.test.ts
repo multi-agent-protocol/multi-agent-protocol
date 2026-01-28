@@ -1564,4 +1564,230 @@ describe('Integration Tests', () => {
       await agent.disconnect();
     });
   });
+
+  // ===========================================================================
+  // Permission Filtering
+  // ===========================================================================
+
+  describe('Permission Filtering', () => {
+    it('filters hidden agents from list when exposure is configured', async () => {
+      // Create a server with exposure that hides agents matching 'internal-*'
+      const filteredServer = new TestServer({
+        name: 'Filtered Server',
+        exposure: {
+          agents: {
+            publicByDefault: true,
+            hiddenAgents: ['internal-*'],
+          },
+        },
+      });
+
+      // Create client and connect
+      const [clientStream, serverStream] = createStreamPair();
+      const client = new ClientConnection(clientStream, { name: 'Test Client' });
+      filteredServer.acceptConnection(serverStream);
+      await client.connect();
+
+      // Register two agents - one public, one internal
+      const publicAgent = await TestAgent.create(filteredServer, {
+        agentId: 'public-worker',
+        name: 'Public Worker',
+      });
+      const internalAgent = await TestAgent.create(filteredServer, {
+        agentId: 'internal-system',
+        name: 'Internal System',
+      });
+
+      // List agents through client - internal agent should be hidden
+      const result = await client.listAgents();
+
+      // Only public agent should be visible
+      expect(result.agents.map((a) => a.id)).toContain('public-worker');
+      expect(result.agents.map((a) => a.id)).not.toContain('internal-system');
+
+      await publicAgent.disconnect();
+      await internalAgent.disconnect();
+      await client.disconnect();
+    });
+
+    it('filters hidden scopes from list when exposure is configured', async () => {
+      // Create a server with exposure that hides scopes matching 'private-*'
+      const filteredServer = new TestServer({
+        name: 'Filtered Server',
+        exposure: {
+          scopes: {
+            publicByDefault: true,
+            hiddenScopes: ['private-*'],
+          },
+        },
+      });
+
+      // Create agent to create scopes
+      const scopeCreator = await TestAgent.create(filteredServer, { name: 'Scope Creator' });
+
+      // Create two scopes - one public, one private (using agent's createScope)
+      await scopeCreator.connection.createScope({ scopeId: 'public-room', name: 'Public Room' });
+      await scopeCreator.connection.createScope({ scopeId: 'private-admin', name: 'Private Admin' });
+
+      // Create client and connect to list scopes
+      const [clientStream, serverStream] = createStreamPair();
+      const client = new ClientConnection(clientStream, { name: 'Test Client' });
+      filteredServer.acceptConnection(serverStream);
+      await client.connect();
+
+      // List scopes - private scope should be hidden
+      const result = await client.listScopes();
+
+      expect(result.scopes.map((s) => s.id)).toContain('public-room');
+      expect(result.scopes.map((s) => s.id)).not.toContain('private-admin');
+
+      await scopeCreator.disconnect();
+      await client.disconnect();
+    });
+
+    it('filters hidden event types from notifications', async () => {
+      // Create a server that hides agent state events
+      const filteredServer = new TestServer({
+        name: 'Filtered Server',
+        exposure: {
+          events: {
+            hiddenTypes: [EVENT_TYPES.AGENT_STATE_CHANGED],
+          },
+        },
+      });
+
+      // Create client and subscribe
+      const [clientStream, serverStream] = createStreamPair();
+      const client = new ClientConnection(clientStream, { name: 'Test Client' });
+      filteredServer.acceptConnection(serverStream);
+      await client.connect();
+
+      const receivedEvents: Event[] = [];
+      const subscription = await client.subscribe();
+      subscription.on('event', (event) => {
+        receivedEvents.push(event);
+      });
+
+      // Create agent (emits agent_registered) and update state (emits agent_state_changed)
+      const agent = await TestAgent.create(filteredServer, { name: 'Test Agent' });
+      await agent.setState('busy');
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should receive registration event but not state change event
+      expect(receivedEvents.some((e) => e.type === EVENT_TYPES.AGENT_REGISTERED)).toBe(true);
+      expect(receivedEvents.some((e) => e.type === EVENT_TYPES.AGENT_STATE_CHANGED)).toBe(false);
+
+      await subscription.unsubscribe();
+      await agent.disconnect();
+      await client.disconnect();
+    });
+  });
+
+  // ===========================================================================
+  // Causal Event Tracking
+  // ===========================================================================
+
+  describe('Causal Event Tracking', () => {
+    it('includes causedBy when abrupt disconnect causes agent unregister', async () => {
+      // Create agent via direct stream pair (so we can close it abruptly)
+      const [agentStream, serverStream] = createStreamPair();
+      const agentConnection = new AgentConnection(agentStream, { name: 'Abrupt Agent' });
+      server.acceptConnection(serverStream);
+
+      // Connect and register the agent
+      await agentConnection.connect();
+
+      // Subscribe to observe events
+      const [clientStream, clientServerStream] = createStreamPair();
+      const client = new ClientConnection(clientStream, { name: 'Observer' });
+      server.acceptConnection(clientServerStream);
+      await client.connect();
+
+      // Track events with causedBy info by checking event history directly
+      const eventsBefore = server.eventHistory.length;
+
+      // Close the agent stream ABRUPTLY (without calling disconnect/unregister)
+      // This simulates a network failure or crash
+      agentStream.writable.close();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Get events emitted since disconnect
+      const newEvents = server.eventHistory.slice(eventsBefore);
+
+      // Find the disconnect and unregister events
+      const disconnectEvent = newEvents.find(
+        (e) => e.event.type === EVENT_TYPES.PARTICIPANT_DISCONNECTED
+      );
+      const unregisterEvent = newEvents.find(
+        (e) => e.event.type === EVENT_TYPES.AGENT_UNREGISTERED
+      );
+
+      expect(disconnectEvent).toBeDefined();
+      expect(unregisterEvent).toBeDefined();
+
+      // When connection closes abruptly, unregister should be caused by disconnect
+      expect(unregisterEvent!.causedBy).toBeDefined();
+      expect(unregisterEvent!.causedBy).toContain(disconnectEvent!.eventId);
+
+      await client.disconnect();
+    });
+
+    it('includes causedBy in replay response for causally linked events', async () => {
+      // Create agent via direct stream pair (so we can close it abruptly)
+      const [agentStream, serverStream] = createStreamPair();
+      const agentConnection = new AgentConnection(agentStream, { name: 'Replay Agent' });
+      server.acceptConnection(serverStream);
+
+      // Connect and register the agent
+      await agentConnection.connect();
+
+      const eventsBefore = server.eventHistory.length;
+
+      // Trigger abrupt disconnect (causally links disconnect -> unregister)
+      agentStream.writable.close();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Replay events after the initial ones
+      const [clientStream, clientServerStream] = createStreamPair();
+      const client = new ClientConnection(clientStream, { name: 'Replayer' });
+      server.acceptConnection(clientServerStream);
+      await client.connect();
+
+      const replayResult = await client.replay({ limit: 100 });
+
+      // Find unregister event in replay
+      const unregisterEvent = replayResult.events.find(
+        (e) => e.event.type === EVENT_TYPES.AGENT_UNREGISTERED
+      );
+
+      expect(unregisterEvent).toBeDefined();
+      // causedBy should be populated in replay results
+      expect(unregisterEvent!.causedBy).toBeDefined();
+      expect(unregisterEvent!.causedBy!.length).toBeGreaterThan(0);
+
+      await client.disconnect();
+    });
+
+    it('does not include causedBy for clean agent unregister', async () => {
+      const agent = await TestAgent.create(server, { name: 'Clean Agent' });
+
+      const eventsBefore = server.eventHistory.length;
+
+      // Clean disconnect goes through explicit unregister first
+      await agent.disconnect();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const newEvents = server.eventHistory.slice(eventsBefore);
+
+      // Find the unregister event (should happen BEFORE disconnect for clean unregister)
+      const unregisterEvent = newEvents.find(
+        (e) => e.event.type === EVENT_TYPES.AGENT_UNREGISTERED
+      );
+
+      expect(unregisterEvent).toBeDefined();
+      // Clean unregister has no causedBy (it's the initiating action)
+      expect(unregisterEvent!.causedBy).toBeUndefined();
+    });
+  });
 });

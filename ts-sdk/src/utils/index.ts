@@ -15,3 +15,12 @@ export {
   createRetryPolicy,
   sleep,
 } from './retry';
+
+export {
+  CausalEventBuffer,
+  type CausalEvent,
+  type CausalEventBufferOptions,
+  type CausalBufferPushResult,
+  validateCausalOrder,
+  sortCausalOrder,
+} from './causal-buffer';

@@ -145,6 +145,13 @@ export {
   retryable,
   createRetryPolicy,
   sleep,
+  // Causal ordering utilities
+  CausalEventBuffer,
+  type CausalEvent,
+  type CausalEventBufferOptions,
+  type CausalBufferPushResult,
+  validateCausalOrder,
+  sortCausalOrder,
 } from './utils';
 
 // ===========================================================================

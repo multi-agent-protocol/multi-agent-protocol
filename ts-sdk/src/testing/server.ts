@@ -45,6 +45,13 @@ import {
   type ReplayResponseResult,
 } from '../types';
 import {
+  type SystemExposure,
+  type PermissionContext,
+  filterVisibleAgents,
+  filterVisibleScopes,
+  isEventTypeExposed,
+} from '../permissions';
+import {
   buildConnectResponse,
   buildSendResponse,
   buildAgentsRegisterResponse,
@@ -92,6 +99,8 @@ export interface TestServerOptions {
   capabilities?: ParticipantCapabilities;
   /** Maximum number of events to retain for replay. Default: 10000 */
   maxEventHistory?: number;
+  /** System exposure configuration for permission filtering */
+  exposure?: SystemExposure;
 }
 
 /**
@@ -101,6 +110,8 @@ interface StoredEvent {
   eventId: string;
   timestamp: number;
   event: Event;
+  /** Event IDs that caused this event */
+  causedBy?: string[];
 }
 
 /**
@@ -117,6 +128,12 @@ export class TestServer {
   readonly #messages: Message[] = [];
   readonly #eventHistory: StoredEvent[] = [];
   readonly #maxEventHistory: number;
+
+  /**
+   * Tracks recent event IDs for causal linking.
+   * Key format: "type:source" or "type:messageId" for message events
+   */
+  readonly #recentEventIds: Map<string, string> = new Map();
 
   #sessionId: SessionId;
   #nextParticipantId = 1;
@@ -184,8 +201,11 @@ export class TestServer {
 
   /**
    * Emit an event to subscribers
+   * @param event - The event to emit (without id/timestamp)
+   * @param causedBy - Optional array of event IDs that caused this event
+   * @returns The generated event ID
    */
-  emitEvent(event: Omit<Event, 'id' | 'timestamp'>): void {
+  emitEvent(event: Omit<Event, 'id' | 'timestamp'>, causedBy?: string[]): string {
     const eventId = ulid();
     const timestamp = Date.now();
     const fullEvent: Event = {
@@ -194,8 +214,27 @@ export class TestServer {
       ...event,
     };
 
+    // Check system exposure for this event type
+    if (!isEventTypeExposed(this.#options.exposure, event.type)) {
+      // Event type is hidden - don't emit or store
+      return eventId;
+    }
+
     // Store in event history for replay
-    this.#eventHistory.push({ eventId, timestamp, event: fullEvent });
+    this.#eventHistory.push({ eventId, timestamp, event: fullEvent, causedBy });
+
+    // Track this event ID for future causal linking
+    const trackingKey = event.source ? `${event.type}:${event.source}` : event.type;
+    this.#recentEventIds.set(trackingKey, eventId);
+
+    // Also track by specific data fields for certain event types
+    const eventData = event.data as Record<string, unknown> | undefined;
+    if (eventData?.messageId) {
+      this.#recentEventIds.set(`message:${eventData.messageId}`, eventId);
+    }
+    if (eventData?.agentId) {
+      this.#recentEventIds.set(`${event.type}:agent:${eventData.agentId}`, eventId);
+    }
 
     // Evict oldest events if we exceed the limit
     while (this.#eventHistory.length > this.#maxEventHistory) {
@@ -213,10 +252,13 @@ export class TestServer {
             eventId,
             timestamp,
             event: fullEvent,
+            causedBy,
           });
         }
       }
     }
+
+    return eventId;
   }
 
   /**
@@ -267,13 +309,13 @@ export class TestServer {
       // =======================================================================
 
       case OBSERVATION_METHODS.AGENTS_LIST:
-        return this.#handleAgentsList(params as AgentsListRequestParams | undefined);
+        return this.#handleAgentsList(connection, params as AgentsListRequestParams | undefined);
 
       case OBSERVATION_METHODS.AGENTS_GET:
         return this.#handleAgentsGet(params as { agentId: AgentId; include?: { children?: boolean; descendants?: boolean } });
 
       case OBSERVATION_METHODS.SCOPES_LIST:
-        return this.#handleScopesList();
+        return this.#handleScopesList(connection);
 
       // =======================================================================
       // Lifecycle Methods
@@ -400,6 +442,13 @@ export class TestServer {
       this.#subscriptions.delete(subId);
     }
 
+    // Emit participant disconnected event FIRST (this is the cause)
+    const disconnectEventId = this.emitEvent({
+      type: EVENT_TYPES.PARTICIPANT_DISCONNECTED,
+      source: participantId,
+      data: { participantId, participantType: participant.type },
+    });
+
     // Handle agents owned by this participant based on policy
     const ownedAgents = Array.from(this.#agents.values()).filter((a) => a.ownerId === participantId);
 
@@ -407,39 +456,37 @@ export class TestServer {
       const agentBehavior = policy?.agentBehavior ?? 'unregister';
 
       if (agentBehavior === 'unregister') {
-        // Unregister the agent and all descendants
-        this.#terminateAgentTree(agent.id);
+        // Unregister the agent and all descendants, caused by disconnect
+        this.#terminateAgentTree(agent.id, [disconnectEventId]);
       } else if (agentBehavior === 'orphan') {
         // Mark agent as orphaned by setting ownerId to null
         const previousOwner = agent.ownerId;
         (agent as { ownerId: ParticipantId | null }).ownerId = null;
-        this.emitEvent({
-          type: EVENT_TYPES.AGENT_ORPHANED,
-          source: agent.id,
-          data: { agentId: agent.id, previousOwner },
-        });
+        this.emitEvent(
+          {
+            type: EVENT_TYPES.AGENT_ORPHANED,
+            source: agent.id,
+            data: { agentId: agent.id, previousOwner },
+          },
+          [disconnectEventId] // Caused by the disconnect event
+        );
       }
       // 'grace-period' policy: would implement timeout logic in a real server
     }
-
-    // Emit participant disconnected event
-    this.emitEvent({
-      type: EVENT_TYPES.PARTICIPANT_DISCONNECTED,
-      source: participantId,
-      data: { participantId, participantType: participant.type },
-    });
 
     this.#participants.delete(participantId);
   }
 
   /**
    * Terminate an agent and all its descendants
+   * @param agentId - Agent to terminate
+   * @param causedBy - Event IDs that caused this termination (e.g., disconnect event)
    */
-  #terminateAgentTree(agentId: AgentId): void {
+  #terminateAgentTree(agentId: AgentId, causedBy?: string[]): void {
     // Find and terminate children first
     const children = Array.from(this.#agents.values()).filter((a) => a.parent === agentId);
     for (const child of children) {
-      this.#terminateAgentTree(child.id);
+      this.#terminateAgentTree(child.id, causedBy);
     }
 
     // Then terminate this agent
@@ -452,16 +499,25 @@ export class TestServer {
         scope.members.delete(agentId);
       }
 
-      this.emitEvent({
-        type: EVENT_TYPES.AGENT_UNREGISTERED,
-        source: agentId,
-        data: { agentId, reason: 'owner_disconnected' },
-      });
+      this.emitEvent(
+        {
+          type: EVENT_TYPES.AGENT_UNREGISTERED,
+          source: agentId,
+          data: { agentId, reason: 'owner_disconnected' },
+        },
+        causedBy
+      );
     }
   }
 
-  #handleAgentsList(params?: AgentsListRequestParams): { agents: Agent[] } {
+  #handleAgentsList(connection: BaseConnection, params?: AgentsListRequestParams): { agents: Agent[] } {
     let agents = Array.from(this.#agents.values());
+
+    // Apply permission filtering if exposure is configured
+    const permissionContext = this.#buildPermissionContext(connection);
+    if (permissionContext) {
+      agents = filterVisibleAgents(agents, permissionContext);
+    }
 
     if (params?.filter) {
       const { states, roles, scopes, parent } = params.filter;
@@ -657,6 +713,7 @@ export class TestServer {
         eventId: e.eventId,
         timestamp: e.timestamp,
         event: e.event,
+        causedBy: e.causedBy,
       })),
       hasMore,
       totalCount: this.#eventHistory.length,
@@ -806,8 +863,15 @@ export class TestServer {
     return { stopping: true, agent };
   }
 
-  #handleScopesList(): { scopes: Scope[] } {
-    const scopes = Array.from(this.#scopes.values()).map(({ members, ...scope }) => scope);
+  #handleScopesList(connection: BaseConnection): { scopes: Scope[] } {
+    let scopes: Scope[] = Array.from(this.#scopes.values()).map(({ members, ...scope }) => scope);
+
+    // Apply permission filtering if exposure is configured
+    const permissionContext = this.#buildPermissionContext(connection);
+    if (permissionContext) {
+      scopes = filterVisibleScopes(scopes, permissionContext);
+    }
+
     return buildScopesListResponse(scopes);
   }
 
@@ -911,6 +975,64 @@ export class TestServer {
   // ===========================================================================
   // Helpers
   // ===========================================================================
+
+  /**
+   * Build a permission context for a connection.
+   * Returns undefined if no exposure configuration is set.
+   */
+  #buildPermissionContext(connection: BaseConnection): PermissionContext | undefined {
+    if (!this.#options.exposure) {
+      return undefined;
+    }
+
+    // Find the participant for this connection
+    let participant: ParticipantConnection | undefined;
+    for (const p of this.#participants.values()) {
+      if (p.connection === connection) {
+        participant = p;
+        break;
+      }
+    }
+
+    if (!participant) {
+      return undefined;
+    }
+
+    // Get owned agent IDs
+    const ownedAgentIds: AgentId[] = [];
+    for (const agent of this.#agents.values()) {
+      if (agent.ownerId === participant.id) {
+        ownedAgentIds.push(agent.id);
+      }
+    }
+
+    // Build scope membership map
+    const scopeMembership = new Map<ScopeId, AgentId[]>();
+    for (const [scopeId, scope] of this.#scopes) {
+      const memberAgentIds = Array.from(scope.members).filter((agentId) =>
+        ownedAgentIds.includes(agentId)
+      );
+      if (memberAgentIds.length > 0) {
+        scopeMembership.set(scopeId, memberAgentIds);
+      }
+    }
+
+    return {
+      system: { exposure: this.#options.exposure },
+      participant: {
+        id: participant.id,
+        type: participant.type,
+        capabilities: this.#options.capabilities ?? {
+          observation: { canObserve: true, canQuery: true },
+          messaging: { canSend: true, canReceive: true, canBroadcast: true },
+          lifecycle: { canSpawn: true, canRegister: true, canUnregister: true, canStop: true, canSteer: true },
+          scopes: { canCreateScopes: true, canManageScopes: true },
+        },
+      },
+      ownedAgentIds,
+      scopeMembership,
+    };
+  }
 
   #resolveAddress(address: Address, senderAgentId?: AgentId): ParticipantId[] {
     if (typeof address === 'string') {
