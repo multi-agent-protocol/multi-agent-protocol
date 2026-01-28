@@ -10,10 +10,19 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./schema": {
+      "import": "./schema/schema.json",
+      "require": "./schema/schema.json"
+    },
+    "./schema/meta": {
+      "import": "./schema/meta.json",
+      "require": "./schema/meta.json"
     }
   },
   "files": [
     "dist",
+    "schema",
     "README.md",
     "LICENSE"
   ],
@@ -30,10 +39,8 @@
     "multi-agent",
     "agent",
     "protocol",
-    "message-routing",
-    "ai-agents",
-    "mcp",
-    "a2a"
+    "swarm",
+    "messaging"
   ],
   "author": "Alex Ngai",
   "license": "MIT",
