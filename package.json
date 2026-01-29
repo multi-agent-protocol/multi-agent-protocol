@@ -1,15 +1,30 @@
 {
   "name": "multi-agent-protocol",
   "version": "0.0.2",
-  "private": true,
   "description": "Multi-Agent Protocol (MAP) - A protocol for observing, coordinating, and routing messages within multi-agent AI systems",
+  "type": "module",
+  "main": "./schema/schema.json",
+  "exports": {
+    ".": "./schema/schema.json",
+    "./schema": "./schema/schema.json",
+    "./meta": "./schema/meta.json"
+  },
+  "files": [
+    "schema",
+    "docs",
+    "README.md"
+  ],
   "workspaces": [
     "ts-sdk"
   ],
   "scripts": {
     "build": "npm run build --workspace=ts-sdk",
     "test": "npm run test --workspace=ts-sdk",
-    "typecheck": "npm run typecheck --workspace=ts-sdk"
+    "typecheck": "npm run typecheck --workspace=ts-sdk",
+    "publish:npm": "npm publish --access public",
+    "version:patch": "npm version patch && git push && git push --tags",
+    "version:minor": "npm version minor && git push && git push --tags",
+    "version:major": "npm version major && git push && git push --tags"
   },
   "keywords": [
     "multi-agent",
@@ -17,7 +32,9 @@
     "protocol",
     "map",
     "swarm",
-    "messaging"
+    "messaging",
+    "json-schema",
+    "specification"
   ],
   "author": "Alex Ngai",
   "license": "MIT",
@@ -31,5 +48,8 @@
   "homepage": "https://github.com/alexngai/multi-agent-protocol#readme",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

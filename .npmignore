@@ -1,18 +1,14 @@
-# Source files (we publish compiled dist/)
-src/
-tsconfig.json
-tsup.config.ts
+# Workspaces (published separately)
+ts-sdk/
+
+# Reference implementations (not published)
+references/
 
 # Development
 .git/
 .github/
 .vscode/
 .idea/
-
-# Tests
-**/*.test.ts
-coverage/
-vitest.config.ts
 
 # Misc
 .DS_Store

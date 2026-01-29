@@ -34,7 +34,7 @@
     "version:patch": "npm version patch && git push && git push --tags",
     "version:minor": "npm version minor && git push && git push --tags",
     "version:major": "npm version major && git push && git push --tags",
-    "publish:npm": "npm run build && npm publish"
+    "publish:npm": "npm run build && npm publish --access public"
   },
   "keywords": [
     "multi-agent",
@@ -72,5 +72,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
