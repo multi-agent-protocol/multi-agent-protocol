@@ -24,16 +24,16 @@ MAP provides a standardized way for:
 
 | Package | Description |
 |---------|-------------|
-| [@anthropic/map-sdk](./ts-sdk) | TypeScript SDK for MAP |
+| [@multi-agent-protocol/sdk](./ts-sdk) | TypeScript SDK for MAP |
 
 ## Quick Start
 
 ```bash
-npm install @anthropic/map-sdk
+npm install @multi-agent-protocol/sdk
 ```
 
 ```typescript
-import { ClientConnection, createStreamPair } from '@anthropic/map-sdk';
+import { ClientConnection, createStreamPair } from '@multi-agent-protocol/sdk';
 
 // Connect to a MAP server
 const client = new ClientConnection(stream, { name: 'My Client' });

@@ -1,11 +1,11 @@
-# @anthropic/map-sdk
+# @multi-agent-protocol/sdk
 
 TypeScript SDK for the Multi-Agent Protocol (MAP) - a JSON-RPC based protocol for observing, coordinating, and routing messages within multi-agent AI systems.
 
 ## Installation
 
 ```bash
-npm install @anthropic/map-sdk
+npm install @multi-agent-protocol/sdk
 ```
 
 ## Features
@@ -19,7 +19,7 @@ The SDK provides specialized connection classes for different participant types:
 - **`GatewayConnection`** - For federation between MAP systems
 
 ```typescript
-import { ClientConnection, AgentConnection, GatewayConnection } from '@anthropic/map-sdk';
+import { ClientConnection, AgentConnection, GatewayConnection } from '@multi-agent-protocol/sdk';
 ```
 
 ### Streaming & Subscriptions
@@ -97,7 +97,7 @@ import {
   canMessageAgent, 
   filterVisibleAgents,
   resolveAgentPermissions 
-} from '@anthropic/map-sdk';
+} from '@multi-agent-protocol/sdk';
 
 // Check if a participant can see an agent
 const canSee = canSeeAgent(systemConfig, callerAgent, targetAgent);
@@ -114,7 +114,7 @@ const permissions = resolveAgentPermissions(agent, permissionConfig);
 Connect multiple MAP systems with envelope-based routing:
 
 ```typescript
-import { GatewayConnection, createFederationEnvelope } from '@anthropic/map-sdk';
+import { GatewayConnection, createFederationEnvelope } from '@multi-agent-protocol/sdk';
 
 const gateway = new GatewayConnection(stream, {
   name: 'Federation Gateway',
@@ -141,7 +141,7 @@ await gateway.routeToSystem('system-b', message);
 Buffer and release events in causal order:
 
 ```typescript
-import { CausalEventBuffer } from '@anthropic/map-sdk';
+import { CausalEventBuffer } from '@multi-agent-protocol/sdk';
 
 const buffer = new CausalEventBuffer({
   maxSize: 1000,
@@ -161,9 +161,9 @@ buffer.add(event); // Buffered until causedBy dependencies are released
 The SDK includes a `TestServer` for integration testing:
 
 ```typescript
-import { TestServer } from '@anthropic/map-sdk/testing';
-import { ClientConnection } from '@anthropic/map-sdk';
-import { createStreamPair } from '@anthropic/map-sdk';
+import { TestServer } from '@multi-agent-protocol/sdk/testing';
+import { ClientConnection } from '@multi-agent-protocol/sdk';
+import { createStreamPair } from '@multi-agent-protocol/sdk';
 
 const server = new TestServer({ name: 'Test Server' });
 const [clientStream, serverStream] = createStreamPair();

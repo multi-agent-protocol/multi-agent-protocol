@@ -3,22 +3,18 @@
  *
  * A protocol for client connection and internal message routing in multi-agent systems.
  *
- * @module @anthropic/map-sdk
+ * @module @multi-agent-protocol/sdk
  */
 
 // ===========================================================================
 // Types - Protocol types and constants
 // ===========================================================================
-export * from './types';
+export * from "./types";
 
 // ===========================================================================
 // Errors - Protocol error classes
 // ===========================================================================
-export {
-  MAPRequestError,
-  MAPConnectionError,
-  MAPTimeoutError,
-} from './errors';
+export { MAPRequestError, MAPConnectionError, MAPTimeoutError } from "./errors";
 
 // ===========================================================================
 // Stream - Transport layer utilities
@@ -29,7 +25,7 @@ export {
   ndJsonStream,
   websocketStream,
   createStreamPair,
-} from './stream';
+} from "./stream";
 
 // ===========================================================================
 // JSON-RPC - Wire protocol utilities
@@ -43,12 +39,12 @@ export {
   createNotification,
   createSuccessResponse,
   createErrorResponse,
-} from './jsonrpc';
+} from "./jsonrpc";
 
 // ===========================================================================
 // Subscription - Event subscription handling
 // ===========================================================================
-export { Subscription, createSubscription } from './subscription';
+export { Subscription, createSubscription } from "./subscription";
 
 // ===========================================================================
 // Connections - Role-specific connection classes
@@ -73,7 +69,7 @@ export {
   type AgentReconnectionEventHandler,
   GatewayConnection,
   type GatewayConnectionOptions,
-} from './connection';
+} from "./connection";
 
 // ===========================================================================
 // Router - Router interface (implementation not included)
@@ -88,12 +84,12 @@ export {
   type MAPRouterConfig,
   type MAPRouter,
   type MAPRouterFactory,
-} from './router';
+} from "./router";
 
 // ===========================================================================
 // Schema - Zod validators (optional, requires zod peer dependency)
 // ===========================================================================
-export * from './schema';
+export * from "./schema";
 
 // ===========================================================================
 // Protocol - Method registry and response builders
@@ -123,7 +119,7 @@ export {
   buildScopesLeaveResponse,
   buildSubscribeResponse,
   buildUnsubscribeResponse,
-} from './protocol';
+} from "./protocol";
 
 // ===========================================================================
 // Utils - Utility functions
@@ -152,7 +148,7 @@ export {
   type CausalBufferPushResult,
   validateCausalOrder,
   sortCausalOrder,
-} from './utils';
+} from "./utils";
 
 // ===========================================================================
 // Permissions - Permission utilities for 4-layer model
@@ -194,7 +190,7 @@ export {
   canAgentAcceptMessage,
   canAgentSeeAgent,
   canAgentMessageAgent,
-} from './permissions';
+} from "./permissions";
 
 // ===========================================================================
 // Federation - Federation envelope and routing utilities
@@ -213,4 +209,4 @@ export {
   // Outage buffer
   type PeerBufferStats,
   FederationOutageBuffer,
-} from './federation';
+} from "./federation";
