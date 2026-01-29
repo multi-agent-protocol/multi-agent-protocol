@@ -524,4 +524,458 @@ describe('Subscription', () => {
       expect(subscription.trackedEventIdCount).toBe(0);
     });
   });
+
+  // ===========================================================================
+  // Pause/Resume (Phase 2 - STREAM-004)
+  // ===========================================================================
+
+  describe('pause/resume', () => {
+    it('starts in active state', () => {
+      expect(subscription.state).toBe('active');
+      expect(subscription.isPaused).toBe(false);
+    });
+
+    it('pause() sets state to paused', () => {
+      subscription.pause();
+
+      expect(subscription.state).toBe('paused');
+      expect(subscription.isPaused).toBe(true);
+    });
+
+    it('resume() sets state to active', () => {
+      subscription.pause();
+      subscription.resume();
+
+      expect(subscription.state).toBe('active');
+      expect(subscription.isPaused).toBe(false);
+    });
+
+    it('pause() is idempotent', () => {
+      subscription.pause();
+      subscription.pause();
+
+      expect(subscription.state).toBe('paused');
+    });
+
+    it('resume() is idempotent', () => {
+      subscription.resume();
+      subscription.resume();
+
+      expect(subscription.state).toBe('active');
+    });
+
+    it('pause() is no-op when closed', async () => {
+      await subscription.unsubscribe();
+      subscription.pause();
+
+      expect(subscription.state).toBe('closed');
+    });
+
+    it('resume() is no-op when closed', async () => {
+      subscription.pause();
+      await subscription.unsubscribe();
+      subscription.resume();
+
+      expect(subscription.state).toBe('closed');
+    });
+
+    it('event handlers still receive events when paused', () => {
+      const handler = vi.fn();
+      subscription.on('event', handler);
+      subscription.pause();
+
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 0,
+        event: { type: 'agent.registered', timestamp: Date.now() },
+      });
+
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('events are buffered when paused', () => {
+      subscription.pause();
+
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 0,
+        event: { type: 'agent.registered', timestamp: 1 },
+      });
+
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 1,
+        event: { type: 'agent.registered', timestamp: 2 },
+      });
+
+      expect(subscription.bufferedCount).toBe(2);
+    });
+
+    it('async iterator waits while paused and resumes', async () => {
+      const events: Event[] = [];
+      let iteratorDone = false;
+
+      // Start consuming
+      const iteratorPromise = (async () => {
+        for await (const event of subscription) {
+          events.push(event);
+        }
+        iteratorDone = true;
+      })();
+
+      // Push first event
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 0,
+        event: { type: 'agent.registered', timestamp: 1 },
+      });
+
+      // Wait for first event to be received
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(events).toHaveLength(1);
+
+      // Pause
+      subscription.pause();
+
+      // Push event while paused (will be buffered)
+      subscription._pushEvent({
+        subscriptionId: 'sub-123',
+        sequenceNumber: 1,
+        event: { type: 'agent.registered', timestamp: 2 },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(events).toHaveLength(1); // Still 1, iterator is waiting
+
+      // Resume
+      subscription.resume();
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(events).toHaveLength(2); // Now received
+
+      // Close
+      subscription._close();
+      await iteratorPromise;
+
+      expect(iteratorDone).toBe(true);
+    });
+
+    it('close while paused properly terminates iterator', async () => {
+      const events: Event[] = [];
+
+      // Start consuming
+      const iteratorPromise = (async () => {
+        for await (const event of subscription) {
+          events.push(event);
+        }
+      })();
+
+      subscription.pause();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      subscription._close();
+      await iteratorPromise;
+
+      expect(subscription.isClosed).toBe(true);
+    });
+  });
+
+  // ===========================================================================
+  // Overflow Handling (Phase 2 - STREAM-005)
+  // ===========================================================================
+
+  describe('overflow handling', () => {
+    it('tracks totalDropped count', () => {
+      const smallBufferSub = createSubscription('sub-small', unsubscribeFn, {
+        bufferSize: 2,
+      });
+
+      expect(smallBufferSub.totalDropped).toBe(0);
+
+      // Fill buffer
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 0, event: { type: 'agent.registered', timestamp: 1 } });
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 1, event: { type: 'agent.registered', timestamp: 2 } });
+
+      // Overflow
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 2, event: { type: 'agent.registered', timestamp: 3 } });
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 3, event: { type: 'agent.registered', timestamp: 4 } });
+
+      expect(smallBufferSub.totalDropped).toBe(2);
+
+      smallBufferSub._close();
+    });
+
+    it('calls overflow handlers when buffer is full', () => {
+      const smallBufferSub = createSubscription('sub-small', unsubscribeFn, {
+        bufferSize: 2,
+      });
+
+      const overflowHandler = vi.fn();
+      smallBufferSub.on('overflow', overflowHandler);
+
+      // Fill buffer
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 0, event: { type: 'agent.registered', timestamp: 1 } });
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 1, event: { type: 'agent.registered', timestamp: 2 } });
+
+      expect(overflowHandler).not.toHaveBeenCalled();
+
+      // Overflow
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 2, eventId: 'evt-overflow', event: { type: 'agent.registered', timestamp: 3 } });
+
+      expect(overflowHandler).toHaveBeenCalledTimes(1);
+      expect(overflowHandler).toHaveBeenCalledWith(expect.objectContaining({
+        eventsDropped: 1,
+        totalDropped: 1,
+        newestDroppedId: 'evt-overflow',
+      }));
+
+      smallBufferSub._close();
+    });
+
+    it('tracks oldest and newest dropped eventIds', () => {
+      const smallBufferSub = createSubscription('sub-small', unsubscribeFn, {
+        bufferSize: 1,
+      });
+
+      const overflowHandler = vi.fn();
+      smallBufferSub.on('overflow', overflowHandler);
+
+      // Fill buffer
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 0, event: { type: 'agent.registered', timestamp: 1 } });
+
+      // First overflow
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 1, eventId: 'evt-first', event: { type: 'agent.registered', timestamp: 2 } });
+
+      expect(overflowHandler).toHaveBeenLastCalledWith(expect.objectContaining({
+        oldestDroppedId: 'evt-first',
+        newestDroppedId: 'evt-first',
+      }));
+
+      // Second overflow
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 2, eventId: 'evt-second', event: { type: 'agent.registered', timestamp: 3 } });
+
+      expect(overflowHandler).toHaveBeenLastCalledWith(expect.objectContaining({
+        oldestDroppedId: 'evt-first',
+        newestDroppedId: 'evt-second',
+        totalDropped: 2,
+      }));
+
+      smallBufferSub._close();
+    });
+
+    it('can remove overflow handlers with off', () => {
+      const smallBufferSub = createSubscription('sub-small', unsubscribeFn, {
+        bufferSize: 1,
+      });
+
+      const overflowHandler = vi.fn();
+      smallBufferSub.on('overflow', overflowHandler);
+      smallBufferSub.off('overflow', overflowHandler);
+
+      // Fill buffer
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 0, event: { type: 'agent.registered', timestamp: 1 } });
+      // Overflow
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 1, event: { type: 'agent.registered', timestamp: 2 } });
+
+      expect(overflowHandler).not.toHaveBeenCalled();
+
+      smallBufferSub._close();
+    });
+
+    it('catches overflow handler errors', () => {
+      const smallBufferSub = createSubscription('sub-small', unsubscribeFn, {
+        bufferSize: 1,
+      });
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      smallBufferSub.on('overflow', () => {
+        throw new Error('overflow handler error');
+      });
+
+      // Fill buffer
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 0, event: { type: 'agent.registered', timestamp: 1 } });
+      // Overflow
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 1, event: { type: 'agent.registered', timestamp: 2 } });
+
+      expect(consoleSpy).toHaveBeenCalled();
+      consoleSpy.mockRestore();
+
+      smallBufferSub._close();
+    });
+
+    it('overflow info includes timestamp', () => {
+      const smallBufferSub = createSubscription('sub-small', unsubscribeFn, {
+        bufferSize: 1,
+      });
+
+      const overflowHandler = vi.fn();
+      smallBufferSub.on('overflow', overflowHandler);
+
+      const beforeTime = Date.now();
+
+      // Fill and overflow
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 0, event: { type: 'agent.registered', timestamp: 1 } });
+      smallBufferSub._pushEvent({ subscriptionId: 'sub-small', sequenceNumber: 1, event: { type: 'agent.registered', timestamp: 2 } });
+
+      const afterTime = Date.now();
+
+      const overflowInfo = overflowHandler.mock.calls[0][0];
+      expect(overflowInfo.timestamp).toBeGreaterThanOrEqual(beforeTime);
+      expect(overflowInfo.timestamp).toBeLessThanOrEqual(afterTime);
+
+      smallBufferSub._close();
+    });
+  });
+
+  // ===========================================================================
+  // Acknowledgment Support (Phase 2 - STREAM-006)
+  // ===========================================================================
+
+  describe('acknowledgment support', () => {
+    it('supportsAck is false by default', () => {
+      expect(subscription.supportsAck).toBe(false);
+    });
+
+    it('supportsAck is false when sendAck is provided but server does not support', () => {
+      const sendAck = vi.fn();
+      const subWithAck = createSubscription('sub-ack', unsubscribeFn, {}, sendAck);
+
+      expect(subWithAck.supportsAck).toBe(false);
+
+      subWithAck._close();
+    });
+
+    it('supportsAck is true when sendAck is provided and server supports', () => {
+      const sendAck = vi.fn();
+      const subWithAck = createSubscription('sub-ack', unsubscribeFn, {}, sendAck);
+      subWithAck._setServerSupportsAck(true);
+
+      expect(subWithAck.supportsAck).toBe(true);
+
+      subWithAck._close();
+    });
+
+    it('ack() is no-op when supportsAck is false', () => {
+      const sendAck = vi.fn();
+      const subWithAck = createSubscription('sub-ack', unsubscribeFn, {}, sendAck);
+
+      // Push some events
+      subWithAck._pushEvent({
+        subscriptionId: 'sub-ack',
+        sequenceNumber: 0,
+        event: { type: 'agent.registered', timestamp: 1 },
+      });
+
+      subWithAck.ack();
+
+      expect(sendAck).not.toHaveBeenCalled();
+
+      subWithAck._close();
+    });
+
+    it('ack() sends acknowledgment when supported', () => {
+      const sendAck = vi.fn();
+      const subWithAck = createSubscription('sub-ack', unsubscribeFn, {}, sendAck);
+      subWithAck._setServerSupportsAck(true);
+
+      // Push some events
+      subWithAck._pushEvent({
+        subscriptionId: 'sub-ack',
+        sequenceNumber: 0,
+        event: { type: 'agent.registered', timestamp: 1 },
+      });
+
+      subWithAck._pushEvent({
+        subscriptionId: 'sub-ack',
+        sequenceNumber: 1,
+        event: { type: 'agent.registered', timestamp: 2 },
+      });
+
+      subWithAck.ack();
+
+      expect(sendAck).toHaveBeenCalledTimes(1);
+      expect(sendAck).toHaveBeenCalledWith({
+        subscriptionId: 'sub-ack',
+        upToSequence: 1,
+      });
+
+      subWithAck._close();
+    });
+
+    it('ack() uses provided sequence number', () => {
+      const sendAck = vi.fn();
+      const subWithAck = createSubscription('sub-ack', unsubscribeFn, {}, sendAck);
+      subWithAck._setServerSupportsAck(true);
+
+      // Push some events
+      subWithAck._pushEvent({
+        subscriptionId: 'sub-ack',
+        sequenceNumber: 0,
+        event: { type: 'agent.registered', timestamp: 1 },
+      });
+
+      subWithAck._pushEvent({
+        subscriptionId: 'sub-ack',
+        sequenceNumber: 1,
+        event: { type: 'agent.registered', timestamp: 2 },
+      });
+
+      subWithAck._pushEvent({
+        subscriptionId: 'sub-ack',
+        sequenceNumber: 2,
+        event: { type: 'agent.registered', timestamp: 3 },
+      });
+
+      // Ack only up to sequence 1
+      subWithAck.ack(1);
+
+      expect(sendAck).toHaveBeenCalledWith({
+        subscriptionId: 'sub-ack',
+        upToSequence: 1,
+      });
+
+      subWithAck._close();
+    });
+
+    it('ack() is no-op when no events received', () => {
+      const sendAck = vi.fn();
+      const subWithAck = createSubscription('sub-ack', unsubscribeFn, {}, sendAck);
+      subWithAck._setServerSupportsAck(true);
+
+      subWithAck.ack();
+
+      expect(sendAck).not.toHaveBeenCalled();
+
+      subWithAck._close();
+    });
+
+    it('multiple acks can be sent', () => {
+      const sendAck = vi.fn();
+      const subWithAck = createSubscription('sub-ack', unsubscribeFn, {}, sendAck);
+      subWithAck._setServerSupportsAck(true);
+
+      // Push events
+      for (let i = 0; i < 5; i++) {
+        subWithAck._pushEvent({
+          subscriptionId: 'sub-ack',
+          sequenceNumber: i,
+          event: { type: 'agent.registered', timestamp: i },
+        });
+      }
+
+      // Send multiple acks
+      subWithAck.ack(1);
+      subWithAck.ack(3);
+      subWithAck.ack(4);
+
+      expect(sendAck).toHaveBeenCalledTimes(3);
+      expect(sendAck).toHaveBeenNthCalledWith(1, { subscriptionId: 'sub-ack', upToSequence: 1 });
+      expect(sendAck).toHaveBeenNthCalledWith(2, { subscriptionId: 'sub-ack', upToSequence: 3 });
+      expect(sendAck).toHaveBeenNthCalledWith(3, { subscriptionId: 'sub-ack', upToSequence: 4 });
+
+      subWithAck._close();
+    });
+  });
 });

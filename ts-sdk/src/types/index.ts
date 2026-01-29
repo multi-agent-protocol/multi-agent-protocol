@@ -64,6 +64,19 @@ export type ParticipantType = 'agent' | 'client' | 'system' | 'gateway';
 /** Transport binding type */
 export type TransportType = 'websocket' | 'stdio' | 'inprocess' | 'http-sse';
 
+/**
+ * Streaming capabilities for backpressure and flow control.
+ * Servers advertise these to indicate what features they support.
+ */
+export interface StreamingCapabilities {
+  /** Server can receive and process ack notifications */
+  supportsAck?: boolean;
+  /** Server will pause sending when client falls behind */
+  supportsFlowControl?: boolean;
+  /** Server supports pause/resume subscription state */
+  supportsPause?: boolean;
+}
+
 /** Capabilities of a participant, grouped by category */
 export interface ParticipantCapabilities {
   observation?: {
@@ -102,6 +115,8 @@ export interface ParticipantCapabilities {
     /** Can connect to and route to federated systems */
     canFederate?: boolean;
   };
+  /** Streaming/backpressure capabilities */
+  streaming?: StreamingCapabilities;
   _meta?: Meta;
 }
 
@@ -189,7 +204,28 @@ export interface Agent {
   state: AgentState;
   role?: string;
   scopes?: ScopeId[];
+
+  /**
+   * Simple visibility setting (legacy).
+   * @deprecated Use permissionOverrides.canSee.agents for more granular control
+   */
   visibility?: AgentVisibility;
+
+  /**
+   * Per-agent permission overrides.
+   * Merged on top of role-based defaults from system configuration.
+   * Only include fields that differ from the role default.
+   *
+   * @example
+   * ```typescript
+   * // Agent that accepts messages from clients (unlike role default)
+   * permissionOverrides: {
+   *   acceptsFrom: { clients: 'all' }
+   * }
+   * ```
+   */
+  permissionOverrides?: Partial<AgentPermissions>;
+
   lifecycle?: AgentLifecycle;
   capabilities?: ParticipantCapabilities;
   metadata?: Record<string, unknown>;
@@ -202,6 +238,193 @@ export interface Agent {
  */
 export function isOrphanedAgent(agent: Agent): boolean {
   return agent.ownerId === null;
+}
+
+// =============================================================================
+// Agent Permission Types
+// =============================================================================
+
+/**
+ * Rule for which agents this agent can see.
+ * - 'all': Can see any agent in the system
+ * - 'hierarchy': Can see parent, children, ancestors, descendants
+ * - 'scoped': Can see agents in the same scopes
+ * - 'direct': Can only see explicitly included agents
+ * - { include: [...] }: Explicit allowlist of agent IDs
+ */
+export type AgentVisibilityRule =
+  | 'all'
+  | 'hierarchy'
+  | 'scoped'
+  | 'direct'
+  | { include: AgentId[] };
+
+/**
+ * Rule for which scopes this agent can see.
+ * - 'all': Can see any scope
+ * - 'member': Can only see scopes they're a member of
+ * - { include: [...] }: Explicit allowlist of scope IDs
+ */
+export type ScopeVisibilityRule =
+  | 'all'
+  | 'member'
+  | { include: ScopeId[] };
+
+/**
+ * Rule for how much agent hierarchy structure this agent can see.
+ * - 'full': Can see the full agent hierarchy tree
+ * - 'local': Can see immediate parent and children only
+ * - 'none': Cannot see hierarchy relationships
+ */
+export type StructureVisibilityRule = 'full' | 'local' | 'none';
+
+/**
+ * Rule for which agents this agent can send messages to.
+ * - 'all': Can message any agent
+ * - 'hierarchy': Can message parent, children, ancestors, descendants
+ * - 'scoped': Can message agents in the same scopes
+ * - { include: [...] }: Explicit allowlist of agent IDs
+ */
+export type AgentMessagingRule =
+  | 'all'
+  | 'hierarchy'
+  | 'scoped'
+  | { include: AgentId[] };
+
+/**
+ * Rule for which scopes this agent can send messages to.
+ * - 'all': Can send to any scope
+ * - 'member': Can only send to scopes they're a member of
+ * - { include: [...] }: Explicit allowlist of scope IDs
+ */
+export type ScopeMessagingRule =
+  | 'all'
+  | 'member'
+  | { include: ScopeId[] };
+
+/**
+ * Rule for which agents this agent accepts messages from.
+ * - 'all': Accepts from any agent
+ * - 'hierarchy': Accepts from parent, children, ancestors, descendants
+ * - 'scoped': Accepts from agents in the same scopes
+ * - { include: [...] }: Explicit allowlist of agent IDs
+ */
+export type AgentAcceptanceRule =
+  | 'all'
+  | 'hierarchy'
+  | 'scoped'
+  | { include: AgentId[] };
+
+/**
+ * Rule for which clients this agent accepts messages from.
+ * - 'all': Accepts from any client
+ * - 'none': Does not accept from any client
+ * - { include: [...] }: Explicit allowlist of participant IDs
+ */
+export type ClientAcceptanceRule =
+  | 'all'
+  | 'none'
+  | { include: ParticipantId[] };
+
+/**
+ * Rule for which federated systems this agent accepts messages from.
+ * - 'all': Accepts from any federated system
+ * - 'none': Does not accept from any federated system
+ * - { include: [...] }: Explicit allowlist of system IDs
+ */
+export type SystemAcceptanceRule =
+  | 'all'
+  | 'none'
+  | { include: string[] };
+
+/**
+ * Permission configuration for an agent.
+ * Defines what the agent can see, who it can message, and who it accepts messages from.
+ *
+ * Used in two ways:
+ * 1. As role-based defaults in system configuration
+ * 2. As per-agent overrides via Agent.permissionOverrides
+ *
+ * @example
+ * ```typescript
+ * const workerPermissions: AgentPermissions = {
+ *   canSee: {
+ *     agents: 'hierarchy',
+ *     scopes: 'member',
+ *     structure: 'local',
+ *   },
+ *   canMessage: {
+ *     agents: 'hierarchy',
+ *     scopes: 'member',
+ *   },
+ *   acceptsFrom: {
+ *     agents: 'hierarchy',
+ *     clients: 'none',
+ *     systems: 'none',
+ *   },
+ * };
+ * ```
+ */
+export interface AgentPermissions {
+  /** Rules for what this agent can see */
+  canSee?: {
+    /** Which agents this agent can see */
+    agents?: AgentVisibilityRule;
+    /** Which scopes this agent can see */
+    scopes?: ScopeVisibilityRule;
+    /** How much hierarchy structure this agent can see */
+    structure?: StructureVisibilityRule;
+  };
+  /** Rules for who this agent can send messages to */
+  canMessage?: {
+    /** Which agents this agent can message */
+    agents?: AgentMessagingRule;
+    /** Which scopes this agent can send to */
+    scopes?: ScopeMessagingRule;
+  };
+  /** Rules for who this agent accepts messages from */
+  acceptsFrom?: {
+    /** Which agents this agent accepts messages from */
+    agents?: AgentAcceptanceRule;
+    /** Which clients this agent accepts messages from */
+    clients?: ClientAcceptanceRule;
+    /** Which federated systems this agent accepts messages from */
+    systems?: SystemAcceptanceRule;
+  };
+}
+
+/**
+ * System-level configuration for agent permissions.
+ * Defines default permissions and role-based permission templates.
+ *
+ * Resolution order:
+ * 1. Start with defaultPermissions
+ * 2. If agent has a role, deep merge rolePermissions[role]
+ * 3. Deep merge agent.permissionOverrides
+ *
+ * @example
+ * ```typescript
+ * const config: AgentPermissionConfig = {
+ *   defaultPermissions: {
+ *     canSee: { agents: 'hierarchy', scopes: 'member', structure: 'local' },
+ *     canMessage: { agents: 'hierarchy', scopes: 'member' },
+ *     acceptsFrom: { agents: 'hierarchy', clients: 'none', systems: 'none' },
+ *   },
+ *   rolePermissions: {
+ *     coordinator: {
+ *       canSee: { agents: 'all', scopes: 'all', structure: 'full' },
+ *       canMessage: { agents: 'all', scopes: 'all' },
+ *       acceptsFrom: { agents: 'all', clients: 'all', systems: 'none' },
+ *     },
+ *   },
+ * };
+ * ```
+ */
+export interface AgentPermissionConfig {
+  /** Default permissions for agents without a role or role-specific config */
+  defaultPermissions: AgentPermissions;
+  /** Role-based permission templates */
+  rolePermissions: Record<string, AgentPermissions>;
 }
 
 // =============================================================================
@@ -373,6 +596,10 @@ export const EVENT_TYPES = {
   SCOPE_DELETED: 'scope_deleted',
   SCOPE_MEMBER_JOINED: 'scope_member_joined',
   SCOPE_MEMBER_LEFT: 'scope_member_left',
+
+  // Permission events
+  PERMISSIONS_CLIENT_UPDATED: 'permissions_client_updated',
+  PERMISSIONS_AGENT_UPDATED: 'permissions_agent_updated',
 
   // System events
   SYSTEM_ERROR: 'system_error',
@@ -547,6 +774,57 @@ export interface Subscription {
   createdAt?: Timestamp;
   replayFrom?: Timestamp | string;
   _meta?: Meta;
+}
+
+// =============================================================================
+// Subscription Backpressure Types
+// =============================================================================
+
+/**
+ * State of a subscription's event delivery.
+ * - 'active': Events are being delivered normally
+ * - 'paused': Events are buffered but not delivered to the iterator
+ * - 'closed': Subscription is terminated
+ */
+export type SubscriptionState = 'active' | 'paused' | 'closed';
+
+/**
+ * Information about events dropped due to buffer overflow.
+ * Passed to overflow handlers when events cannot be buffered.
+ */
+export interface OverflowInfo {
+  /** Number of events dropped in this overflow batch */
+  eventsDropped: number;
+  /** Event ID of oldest dropped event (if available) */
+  oldestDroppedId?: string;
+  /** Event ID of newest dropped event (if available) */
+  newestDroppedId?: string;
+  /** Timestamp when overflow occurred */
+  timestamp: Timestamp;
+  /** Total events dropped since subscription started */
+  totalDropped: number;
+}
+
+/** Handler called when subscription buffer overflows */
+export type OverflowHandler = (info: OverflowInfo) => void;
+
+/**
+ * Parameters for acknowledging received events.
+ * Sent as a notification to inform the server of client progress.
+ * Enables optional server-side flow control.
+ */
+export interface SubscriptionAckParams {
+  /** Subscription being acknowledged */
+  subscriptionId: SubscriptionId;
+  /** Acknowledge all events up to and including this sequence number */
+  upToSequence: number;
+  _meta?: Meta;
+}
+
+/** Notification for subscription acknowledgment */
+export interface SubscriptionAckNotification extends MAPNotificationBase<SubscriptionAckParams> {
+  method: 'map/subscribe.ack';
+  params: SubscriptionAckParams;
 }
 
 // =============================================================================
@@ -902,6 +1180,11 @@ export interface AgentsUpdateRequestParams {
   agentId: AgentId;
   state?: AgentState;
   metadata?: Record<string, unknown>;
+  /**
+   * Permission overrides to apply to the agent.
+   * Merged on top of role-based defaults.
+   */
+  permissionOverrides?: Partial<AgentPermissions>;
   _meta?: Meta;
 }
 
@@ -1339,8 +1622,235 @@ export interface InjectResponseResult {
 }
 
 // =============================================================================
+// Permission Update Types
+// =============================================================================
+
+/**
+ * Parameters for updating client permissions.
+ * Only system/admin participants can update client permissions.
+ */
+export interface PermissionsUpdateRequestParams {
+  /** Client to update permissions for */
+  clientId: ParticipantId;
+  /** Partial permissions to merge with existing */
+  permissions: Partial<ParticipantCapabilities>;
+  _meta?: Meta;
+}
+
+export interface PermissionsUpdateRequest extends MAPRequestBase<PermissionsUpdateRequestParams> {
+  method: 'map/permissions/update';
+  params: PermissionsUpdateRequestParams;
+}
+
+export interface PermissionsUpdateResponseResult {
+  /** Whether update was applied */
+  success: boolean;
+  /** Effective permissions after update */
+  effectivePermissions: ParticipantCapabilities;
+  _meta?: Meta;
+}
+
+/**
+ * Event data for permissions_client_updated events.
+ * Emitted when a client's permissions are changed.
+ */
+export interface PermissionsClientUpdatedEventData {
+  /** Client whose permissions changed */
+  clientId: ParticipantId;
+  /** The permission changes that were applied */
+  changes: Partial<ParticipantCapabilities>;
+  /** Effective permissions after the update */
+  effectivePermissions: ParticipantCapabilities;
+  /** Participant who made the change */
+  updatedBy: ParticipantId;
+}
+
+/**
+ * Event data for permissions_agent_updated events.
+ * Emitted when an agent's permission overrides are changed.
+ */
+export interface PermissionsAgentUpdatedEventData {
+  /** Agent whose permissions changed */
+  agentId: AgentId;
+  /** The permission changes that were applied */
+  changes: Partial<AgentPermissions>;
+  /** Effective permissions after the update */
+  effectivePermissions: AgentPermissions;
+  /** Participant who made the change */
+  updatedBy: ParticipantId;
+}
+
+// =============================================================================
 // Federation Types
 // =============================================================================
+
+/**
+ * Metadata for federation routing and tracking.
+ * Included in every message routed between federated systems.
+ */
+export interface FederationMetadata {
+  /** System that originated this message */
+  sourceSystem: string;
+  /** Intended final destination system */
+  targetSystem: string;
+  /** Number of systems this message has traversed */
+  hopCount: number;
+  /** Maximum hops before rejection (prevents infinite loops) */
+  maxHops?: number;
+  /** Systems this message has traversed (for debugging/loop detection) */
+  path?: string[];
+  /** Timestamp when message was first sent (ms since epoch) */
+  originTimestamp: Timestamp;
+  /** Correlation ID for cross-system tracing */
+  correlationId?: string;
+  /**
+   * Signature for integrity verification.
+   * @todo Define signing algorithm and key management
+   */
+  signature?: string;
+}
+
+/**
+ * Envelope for messages routed between federated systems.
+ * Wraps the payload with routing metadata for tracking and loop prevention.
+ *
+ * @typeParam T - The payload type (typically Message)
+ *
+ * @example
+ * ```typescript
+ * const envelope: FederationEnvelope<Message> = {
+ *   payload: message,
+ *   federation: {
+ *     sourceSystem: 'alpha',
+ *     targetSystem: 'beta',
+ *     hopCount: 0,
+ *     originTimestamp: Date.now(),
+ *   },
+ * };
+ * ```
+ */
+export interface FederationEnvelope<T = unknown> {
+  /** The payload being routed */
+  payload: T;
+  /** Federation routing metadata */
+  federation: FederationMetadata;
+}
+
+/**
+ * Configuration for federation routing behavior.
+ * Used by gateways to control message routing policies.
+ */
+export interface FederationRoutingConfig {
+  /** This system's identifier */
+  systemId: string;
+  /** Maximum hops to accept (default: 10) */
+  maxHops?: number;
+  /** Whether to track full path for debugging (default: false) */
+  trackPath?: boolean;
+  /** Systems we're willing to route to (undefined = all) */
+  allowedTargets?: string[];
+  /** Systems we accept routes from (undefined = all) */
+  allowedSources?: string[];
+}
+
+// =============================================================================
+// Federation Reconnection Types
+// =============================================================================
+
+/**
+ * Configuration for buffering messages during federation outages.
+ * Messages are stored locally until the peer reconnects.
+ */
+export interface FederationBufferConfig {
+  /** Enable buffering of messages during disconnection (default: true) */
+  enabled?: boolean;
+  /** Maximum number of messages to buffer per peer (default: 1000) */
+  maxMessages?: number;
+  /** Maximum buffer size in bytes per peer (default: 10MB) */
+  maxBytes?: number;
+  /** Time to retain buffered messages in ms (default: 1 hour) */
+  retentionMs?: number;
+  /** Strategy when buffer is full */
+  overflowStrategy?: 'drop-oldest' | 'drop-newest' | 'reject';
+}
+
+/**
+ * Configuration for replaying events from event store on reconnection.
+ * Supplements buffer with persisted events.
+ */
+export interface FederationReplayConfig {
+  /** Enable replay from event store on reconnection (default: true) */
+  enabled?: boolean;
+  /** Maximum time window for replay in ms (default: 1 hour) */
+  maxReplayWindowMs?: number;
+  /** Maximum number of events to replay (default: 10000) */
+  maxReplayEvents?: number;
+  /** Filter for events to replay (optional) */
+  filter?: SubscriptionFilter;
+}
+
+/**
+ * Type of gateway reconnection event.
+ */
+export type GatewayReconnectionEventType =
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'reconnecting'
+  | 'reconnect_failed'
+  | 'buffer_overflow'
+  | 'replay_started'
+  | 'replay_completed';
+
+/**
+ * Event emitted during gateway reconnection lifecycle.
+ */
+export interface GatewayReconnectionEvent {
+  /** Type of reconnection event */
+  type: GatewayReconnectionEventType;
+  /** Target system ID */
+  systemId: string;
+  /** Timestamp of the event */
+  timestamp: Timestamp;
+  /** Current reconnection attempt (for reconnecting events) */
+  attempt?: number;
+  /** Error message (for disconnected/reconnect_failed) */
+  error?: string;
+  /** Number of buffered messages (for buffer_overflow) */
+  bufferedCount?: number;
+  /** Number of events being replayed (for replay_started/completed) */
+  replayCount?: number;
+  /** Duration of outage in ms (for connected after reconnect) */
+  outageDurationMs?: number;
+}
+
+/** Handler for gateway reconnection events */
+export type GatewayReconnectionEventHandler = (event: GatewayReconnectionEvent) => void;
+
+/**
+ * Options for gateway connection with reconnection support.
+ * Extends base connection options with federation-specific settings.
+ */
+export interface GatewayReconnectionOptions {
+  /** Enable automatic reconnection (default: true) */
+  autoReconnect?: boolean;
+  /** Initial delay before first reconnection attempt in ms (default: 1000) */
+  initialDelayMs?: number;
+  /** Maximum delay between reconnection attempts in ms (default: 30000) */
+  maxDelayMs?: number;
+  /** Backoff multiplier for exponential backoff (default: 2) */
+  backoffMultiplier?: number;
+  /** Maximum number of reconnection attempts (default: Infinity) */
+  maxRetries?: number;
+  /** Add random jitter to delays (default: true) */
+  jitter?: boolean;
+  /** Buffer configuration for outages */
+  buffer?: FederationBufferConfig;
+  /** Replay configuration for event store recovery */
+  replay?: FederationReplayConfig;
+  /** Handler for reconnection lifecycle events */
+  onReconnectionEvent?: GatewayReconnectionEventHandler;
+}
 
 export interface FederationConnectRequestParams {
   systemId: string;
@@ -1365,8 +1875,18 @@ export interface FederationConnectResponseResult {
 }
 
 export interface FederationRouteRequestParams {
+  /** Target system ID (for immediate next hop) */
   systemId: string;
-  message: Message;
+  /**
+   * Wrapped message with federation metadata.
+   * Use this for new implementations.
+   */
+  envelope?: FederationEnvelope<Message>;
+  /**
+   * Raw message (legacy format).
+   * @deprecated Use envelope instead for proper routing metadata
+   */
+  message?: Message;
   _meta?: Meta;
 }
 
@@ -1489,13 +2009,15 @@ export type MAPRequest =
   | ScopesJoinRequest
   | ScopesLeaveRequest
   | ScopesMembersRequest
+  // Permissions
+  | PermissionsUpdateRequest
   // Extension
   | InjectRequest
   | FederationConnectRequest
   | FederationRouteRequest;
 
 /** All MAP notification types */
-export type MAPNotification = EventNotification | MessageNotification;
+export type MAPNotification = EventNotification | MessageNotification | SubscriptionAckNotification;
 
 // =============================================================================
 // Method Constants (Reorganized by capability domain)
@@ -1561,6 +2083,11 @@ export const AUTH_METHODS = {
   AUTH_REFRESH: 'map/auth/refresh',
 } as const;
 
+/** Permission methods */
+export const PERMISSION_METHODS = {
+  PERMISSIONS_UPDATE: 'map/permissions/update',
+} as const;
+
 /** Federation methods */
 export const FEDERATION_METHODS = {
   FEDERATION_CONNECT: 'map/federation/connect',
@@ -1571,6 +2098,8 @@ export const FEDERATION_METHODS = {
 export const NOTIFICATION_METHODS = {
   EVENT: 'map/event',
   MESSAGE: 'map/message',
+  /** Client acknowledges received events (for backpressure) */
+  SUBSCRIBE_ACK: 'map/subscribe.ack',
 } as const;
 
 /** All MAP methods */
@@ -1583,6 +2112,7 @@ export const MAP_METHODS = {
   ...SCOPE_METHODS,
   ...SESSION_METHODS,
   ...AUTH_METHODS,
+  ...PERMISSION_METHODS,
   ...FEDERATION_METHODS,
 } as const;
 
@@ -1651,6 +2181,10 @@ export const FEDERATION_ERROR_CODES = {
   FEDERATION_SYSTEM_NOT_FOUND: 5001,
   FEDERATION_AUTH_FAILED: 5002,
   FEDERATION_ROUTE_REJECTED: 5003,
+  /** Message has already visited this system (loop detected) */
+  FEDERATION_LOOP_DETECTED: 5010,
+  /** Message exceeded maximum hop count */
+  FEDERATION_MAX_HOPS_EXCEEDED: 5011,
 } as const;
 
 /** All error codes */
@@ -1717,6 +2251,9 @@ export const CAPABILITY_REQUIREMENTS: Record<string, string[]> = {
 
   // Auth
   [AUTH_METHODS.AUTH_REFRESH]: [],
+
+  // Permissions (system-only, no capability check - enforced by participant type)
+  [PERMISSION_METHODS.PERMISSIONS_UPDATE]: [],
 
   // Federation
   [FEDERATION_METHODS.FEDERATION_CONNECT]: ['federation.canFederate'],

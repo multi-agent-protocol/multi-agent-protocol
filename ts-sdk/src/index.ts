@@ -164,6 +164,7 @@ export {
   type PermissionContext,
   type PermissionAction,
   type PermissionResult,
+  type AcceptanceContext,
   // Layer 1: System exposure
   isAgentExposed,
   isEventTypeExposed,
@@ -185,4 +186,31 @@ export {
   filterVisibleAgents,
   filterVisibleScopes,
   filterVisibleEvents,
+  // Agent permission resolution (hybrid model)
+  DEFAULT_AGENT_PERMISSION_CONFIG,
+  deepMergePermissions,
+  mapVisibilityToRule,
+  resolveAgentPermissions,
+  canAgentAcceptMessage,
+  canAgentSeeAgent,
+  canAgentMessageAgent,
 } from './permissions';
+
+// ===========================================================================
+// Federation - Federation envelope and routing utilities
+// ===========================================================================
+export {
+  // Envelope utilities
+  type CreateEnvelopeOptions,
+  type ProcessEnvelopeResult,
+  createFederationEnvelope,
+  processFederationEnvelope,
+  isEnvelopeAtDestination,
+  unwrapEnvelope,
+  getEnvelopeRoutingInfo,
+  isValidEnvelope,
+  withPayload,
+  // Outage buffer
+  type PeerBufferStats,
+  FederationOutageBuffer,
+} from './federation';

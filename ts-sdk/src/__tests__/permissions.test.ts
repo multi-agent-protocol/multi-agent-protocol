@@ -31,8 +31,16 @@ import {
   filterVisibleAgents,
   filterVisibleScopes,
   filterVisibleEvents,
+  // Agent permission resolution
+  DEFAULT_AGENT_PERMISSION_CONFIG,
+  deepMergePermissions,
+  mapVisibilityToRule,
+  resolveAgentPermissions,
+  canAgentAcceptMessage,
+  canAgentSeeAgent,
+  canAgentMessageAgent,
 } from '../permissions';
-import type { Agent, Scope, Event, ParticipantCapabilities } from '../types';
+import type { Agent, Scope, Event, ParticipantCapabilities, AgentPermissions, AgentPermissionConfig } from '../types';
 
 describe('Permission Utilities', () => {
   // ===========================================================================
@@ -582,6 +590,348 @@ describe('Permission Utilities', () => {
         ];
         const visible = filterVisibleEvents(events, context);
         expect(visible.map((e) => e.type)).toEqual(['agent_registered', 'message_sent']);
+      });
+    });
+  });
+
+  // ===========================================================================
+  // Agent Permission Resolution (Hybrid Model)
+  // ===========================================================================
+
+  describe('Agent Permission Resolution', () => {
+    describe('DEFAULT_AGENT_PERMISSION_CONFIG', () => {
+      it('has default permissions', () => {
+        expect(DEFAULT_AGENT_PERMISSION_CONFIG.defaultPermissions).toBeDefined();
+        expect(DEFAULT_AGENT_PERMISSION_CONFIG.defaultPermissions.canSee).toBeDefined();
+        expect(DEFAULT_AGENT_PERMISSION_CONFIG.defaultPermissions.canMessage).toBeDefined();
+        expect(DEFAULT_AGENT_PERMISSION_CONFIG.defaultPermissions.acceptsFrom).toBeDefined();
+      });
+
+      it('has rolePermissions object', () => {
+        expect(DEFAULT_AGENT_PERMISSION_CONFIG.rolePermissions).toBeDefined();
+      });
+    });
+
+    describe('deepMergePermissions', () => {
+      it('merges simple values', () => {
+        const base: AgentPermissions = {
+          canSee: { agents: 'all' },
+          canMessage: { agents: 'hierarchy' },
+        };
+        const override: Partial<AgentPermissions> = {
+          canMessage: { agents: 'all' },
+        };
+        const merged = deepMergePermissions(base, override);
+        expect(merged.canSee?.agents).toBe('all');
+        expect(merged.canMessage?.agents).toBe('all');
+      });
+
+      it('deep merges nested objects', () => {
+        const base: AgentPermissions = {
+          canSee: { agents: 'all', scopes: 'scoped' },
+        };
+        const override: Partial<AgentPermissions> = {
+          canSee: { structure: 'full' },
+        };
+        const merged = deepMergePermissions(base, override);
+        expect(merged.canSee?.agents).toBe('all');
+        expect(merged.canSee?.scopes).toBe('scoped');
+        expect(merged.canSee?.structure).toBe('full');
+      });
+    });
+
+    describe('mapVisibilityToRule', () => {
+      it('maps public to all', () => {
+        expect(mapVisibilityToRule('public')).toBe('all');
+      });
+
+      it('maps parent-only to hierarchy', () => {
+        expect(mapVisibilityToRule('parent-only')).toBe('hierarchy');
+      });
+
+      it('maps scope to scoped', () => {
+        expect(mapVisibilityToRule('scope')).toBe('scoped');
+      });
+
+      it('maps system to direct', () => {
+        expect(mapVisibilityToRule('system')).toBe('direct');
+      });
+    });
+
+    describe('resolveAgentPermissions', () => {
+      it('returns default permissions for agent with no role', () => {
+        const agent: Agent = { id: 'agent-1', state: 'running' };
+        const permissions = resolveAgentPermissions(agent);
+        expect(permissions).toBeDefined();
+        expect(permissions.canSee).toBeDefined();
+        expect(permissions.acceptsFrom).toBeDefined();
+      });
+
+      it('merges role permissions', () => {
+        const config: AgentPermissionConfig = {
+          defaultPermissions: {
+            canSee: { agents: 'all' },
+          },
+          rolePermissions: {
+            coordinator: {
+              canSee: { agents: 'hierarchy' },
+            },
+          },
+        };
+        const agent: Agent = { id: 'agent-1', state: 'running', role: 'coordinator' };
+        const permissions = resolveAgentPermissions(agent, config);
+        expect(permissions.canSee?.agents).toBe('hierarchy');
+      });
+
+      it('applies agent-specific overrides', () => {
+        const config: AgentPermissionConfig = {
+          defaultPermissions: {
+            canSee: { agents: 'all' },
+            canMessage: { agents: 'hierarchy' },
+          },
+          rolePermissions: {},
+        };
+        const agent: Agent = {
+          id: 'agent-1',
+          state: 'running',
+          permissionOverrides: {
+            canMessage: { agents: 'all' },
+          },
+        };
+        const permissions = resolveAgentPermissions(agent, config);
+        expect(permissions.canSee?.agents).toBe('all');
+        expect(permissions.canMessage?.agents).toBe('all');
+      });
+
+      it('overrides take precedence over role', () => {
+        const config: AgentPermissionConfig = {
+          defaultPermissions: {
+            canSee: { agents: 'all' },
+          },
+          rolePermissions: {
+            worker: {
+              canSee: { agents: 'scoped' },
+            },
+          },
+        };
+        const agent: Agent = {
+          id: 'agent-1',
+          state: 'running',
+          role: 'worker',
+          permissionOverrides: {
+            canSee: { agents: 'hierarchy' },
+          },
+        };
+        const permissions = resolveAgentPermissions(agent, config);
+        expect(permissions.canSee?.agents).toBe('hierarchy');
+      });
+
+      it('maps legacy visibility to canSee.agents', () => {
+        const agent: Agent = { id: 'agent-1', state: 'running', visibility: 'parent-only' };
+        const permissions = resolveAgentPermissions(agent);
+        expect(permissions.canSee?.agents).toBe('hierarchy');
+      });
+    });
+
+    describe('canAgentAcceptMessage', () => {
+      it('accepts from agents when acceptsFrom.agents = all', () => {
+        const agent: Agent = { id: 'agent-1', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { acceptsFrom: { agents: 'all' } },
+          rolePermissions: {},
+        };
+        expect(canAgentAcceptMessage(agent, { senderType: 'agent', senderId: 'client-1', senderAgentId: 'agent-2' }, config)).toBe(true);
+      });
+
+      it('accepts from clients when acceptsFrom.clients = all', () => {
+        const agent: Agent = { id: 'agent-1', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { acceptsFrom: { clients: 'all' } },
+          rolePermissions: {},
+        };
+        expect(canAgentAcceptMessage(agent, { senderType: 'client', senderId: 'client-1' }, config)).toBe(true);
+      });
+
+      it('rejects from clients when acceptsFrom.clients = none', () => {
+        const agent: Agent = { id: 'agent-1', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { acceptsFrom: { clients: 'none' } },
+          rolePermissions: {},
+        };
+        expect(canAgentAcceptMessage(agent, { senderType: 'client', senderId: 'client-1' }, config)).toBe(false);
+      });
+
+      it('accepts from hierarchy when acceptsFrom.agents = hierarchy and sender is parent', () => {
+        const agent: Agent = { id: 'agent-1', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { acceptsFrom: { agents: 'hierarchy' } },
+          rolePermissions: {},
+        };
+        expect(canAgentAcceptMessage(agent, {
+          senderType: 'agent',
+          senderId: 'client-1',
+          senderAgentId: 'parent-agent',
+          isParent: true,
+        }, config)).toBe(true);
+      });
+
+      it('rejects from non-hierarchy when acceptsFrom.agents = hierarchy', () => {
+        const agent: Agent = { id: 'agent-1', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { acceptsFrom: { agents: 'hierarchy' } },
+          rolePermissions: {},
+        };
+        expect(canAgentAcceptMessage(agent, {
+          senderType: 'agent',
+          senderId: 'client-1',
+          senderAgentId: 'other-agent',
+        }, config)).toBe(false);
+      });
+
+      it('accepts from scoped agents when acceptsFrom.agents = scoped and shares scope', () => {
+        const agent: Agent = { id: 'agent-1', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { acceptsFrom: { agents: 'scoped' } },
+          rolePermissions: {},
+        };
+        expect(canAgentAcceptMessage(agent, {
+          senderType: 'agent',
+          senderId: 'client-1',
+          senderAgentId: 'other-agent',
+          sharedScopes: ['scope-1'],
+        }, config)).toBe(true);
+      });
+
+      it('accepts from specific agents when using include list', () => {
+        const agent: Agent = { id: 'agent-1', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { acceptsFrom: { agents: { include: ['allowed-agent'] } } },
+          rolePermissions: {},
+        };
+        expect(canAgentAcceptMessage(agent, {
+          senderType: 'agent',
+          senderId: 'client-1',
+          senderAgentId: 'allowed-agent',
+        }, config)).toBe(true);
+        expect(canAgentAcceptMessage(agent, {
+          senderType: 'agent',
+          senderId: 'client-1',
+          senderAgentId: 'other-agent',
+        }, config)).toBe(false);
+      });
+    });
+
+    describe('canAgentSeeAgent', () => {
+      it('allows seeing when canSee.agents = all', () => {
+        const viewer: Agent = { id: 'viewer', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canSee: { agents: 'all' } },
+          rolePermissions: {},
+        };
+        expect(canAgentSeeAgent(viewer, 'target', {}, config)).toBe(true);
+      });
+
+      it('allows seeing hierarchy when canSee.agents = hierarchy and is parent', () => {
+        const viewer: Agent = { id: 'viewer', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canSee: { agents: 'hierarchy' } },
+          rolePermissions: {},
+        };
+        expect(canAgentSeeAgent(viewer, 'target', { isParent: true }, config)).toBe(true);
+      });
+
+      it('allows seeing hierarchy when canSee.agents = hierarchy and is child', () => {
+        const viewer: Agent = { id: 'viewer', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canSee: { agents: 'hierarchy' } },
+          rolePermissions: {},
+        };
+        expect(canAgentSeeAgent(viewer, 'target', { isChild: true }, config)).toBe(true);
+      });
+
+      it('denies seeing non-hierarchy when canSee.agents = hierarchy', () => {
+        const viewer: Agent = { id: 'viewer', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canSee: { agents: 'hierarchy' } },
+          rolePermissions: {},
+        };
+        expect(canAgentSeeAgent(viewer, 'target', {}, config)).toBe(false);
+      });
+
+      it('allows seeing scoped agents when canSee.agents = scoped and shares scope', () => {
+        const viewer: Agent = { id: 'viewer', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canSee: { agents: 'scoped' } },
+          rolePermissions: {},
+        };
+        expect(canAgentSeeAgent(viewer, 'target', { sharedScopes: ['scope-1'] }, config)).toBe(true);
+      });
+
+      it('denies seeing non-scoped when canSee.agents = scoped', () => {
+        const viewer: Agent = { id: 'viewer', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canSee: { agents: 'scoped' } },
+          rolePermissions: {},
+        };
+        expect(canAgentSeeAgent(viewer, 'target', {}, config)).toBe(false);
+      });
+
+      it('allows seeing specific agents when using include list', () => {
+        const viewer: Agent = { id: 'viewer', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canSee: { agents: { include: ['allowed-target'] } } },
+          rolePermissions: {},
+        };
+        expect(canAgentSeeAgent(viewer, 'allowed-target', {}, config)).toBe(true);
+        expect(canAgentSeeAgent(viewer, 'other-target', {}, config)).toBe(false);
+      });
+    });
+
+    describe('canAgentMessageAgent', () => {
+      it('allows messaging when canMessage.agents = all', () => {
+        const sender: Agent = { id: 'sender', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canMessage: { agents: 'all' } },
+          rolePermissions: {},
+        };
+        expect(canAgentMessageAgent(sender, 'target', {}, config)).toBe(true);
+      });
+
+      it('allows messaging hierarchy when canMessage.agents = hierarchy and is parent', () => {
+        const sender: Agent = { id: 'sender', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canMessage: { agents: 'hierarchy' } },
+          rolePermissions: {},
+        };
+        expect(canAgentMessageAgent(sender, 'target', { isParent: true }, config)).toBe(true);
+      });
+
+      it('denies messaging non-hierarchy when canMessage.agents = hierarchy', () => {
+        const sender: Agent = { id: 'sender', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canMessage: { agents: 'hierarchy' } },
+          rolePermissions: {},
+        };
+        expect(canAgentMessageAgent(sender, 'target', {}, config)).toBe(false);
+      });
+
+      it('allows messaging scoped agents when canMessage.agents = scoped and shares scope', () => {
+        const sender: Agent = { id: 'sender', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canMessage: { agents: 'scoped' } },
+          rolePermissions: {},
+        };
+        expect(canAgentMessageAgent(sender, 'target', { sharedScopes: ['scope-1'] }, config)).toBe(true);
+      });
+
+      it('allows messaging specific agents when using include list', () => {
+        const sender: Agent = { id: 'sender', state: 'running' };
+        const config: AgentPermissionConfig = {
+          defaultPermissions: { canMessage: { agents: { include: ['allowed-target'] } } },
+          rolePermissions: {},
+        };
+        expect(canAgentMessageAgent(sender, 'allowed-target', {}, config)).toBe(true);
+        expect(canAgentMessageAgent(sender, 'other-target', {}, config)).toBe(false);
       });
     });
   });

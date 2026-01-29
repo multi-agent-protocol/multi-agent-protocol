@@ -14,11 +14,19 @@
 import type {
   Agent,
   AgentId,
+  AgentPermissions,
+  AgentPermissionConfig,
+  AgentVisibilityRule,
+  AgentVisibility,
+  AgentAcceptanceRule,
+  ClientAcceptanceRule,
+  SystemAcceptanceRule,
   Scope,
   ScopeId,
   Event,
   EventType,
   ParticipantCapabilities,
+  ParticipantId,
   ParticipantType,
 } from '../types';
 import { getRequiredCapabilities, hasRequiredCapabilities } from '../protocol';
@@ -653,4 +661,382 @@ function matchGlob(value: string, pattern: string): boolean {
 
   const regex = new RegExp(`^${escaped}$`);
   return regex.test(value);
+}
+
+// =============================================================================
+// Agent Permission Resolution (Hybrid Model)
+// =============================================================================
+
+/**
+ * Deep clone an object (simple implementation for permission objects)
+ */
+function deepClone<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+/**
+ * Deep merge two permission objects.
+ * Second object's fields override first at the leaf level.
+ *
+ * @param base - Base permissions
+ * @param override - Override permissions (partial)
+ * @returns Merged permissions
+ */
+export function deepMergePermissions(
+  base: AgentPermissions,
+  override: Partial<AgentPermissions>
+): AgentPermissions {
+  const result: AgentPermissions = { ...base };
+
+  if (override.canSee) {
+    result.canSee = { ...base.canSee, ...override.canSee };
+  }
+  if (override.canMessage) {
+    result.canMessage = { ...base.canMessage, ...override.canMessage };
+  }
+  if (override.acceptsFrom) {
+    result.acceptsFrom = { ...base.acceptsFrom, ...override.acceptsFrom };
+  }
+
+  return result;
+}
+
+/**
+ * Map legacy AgentVisibility to AgentVisibilityRule.
+ *
+ * @param visibility - Legacy visibility value
+ * @returns Equivalent visibility rule
+ */
+export function mapVisibilityToRule(visibility: AgentVisibility): AgentVisibilityRule {
+  switch (visibility) {
+    case 'public':
+      return 'all';
+    case 'parent-only':
+      return 'hierarchy';
+    case 'scope':
+      return 'scoped';
+    case 'system':
+      return 'direct';
+    default:
+      return 'all';
+  }
+}
+
+/**
+ * Default agent permission configuration.
+ * Used when no configuration is provided.
+ */
+export const DEFAULT_AGENT_PERMISSION_CONFIG: AgentPermissionConfig = {
+  defaultPermissions: {
+    canSee: {
+      agents: 'all',
+      scopes: 'all',
+      structure: 'full',
+    },
+    canMessage: {
+      agents: 'all',
+      scopes: 'all',
+    },
+    acceptsFrom: {
+      agents: 'all',
+      clients: 'all',
+      systems: 'all',
+    },
+  },
+  rolePermissions: {},
+};
+
+/**
+ * Resolve effective permissions for an agent.
+ *
+ * Resolution order:
+ * 1. Start with system default permissions
+ * 2. If agent has a role, deep merge role permissions
+ * 3. Deep merge agent's permissionOverrides
+ * 4. (Backwards compat) Map legacy visibility field if no override
+ *
+ * @param agent - The agent to resolve permissions for
+ * @param config - System permission configuration
+ * @returns Resolved effective permissions
+ *
+ * @example
+ * ```typescript
+ * const config: AgentPermissionConfig = {
+ *   defaultPermissions: { canSee: { agents: 'all' } },
+ *   rolePermissions: {
+ *     worker: { canSee: { agents: 'hierarchy' } },
+ *   },
+ * };
+ *
+ * const agent = { id: 'a1', role: 'worker', ownerId: 'c1', state: 'active' };
+ * const perms = resolveAgentPermissions(agent, config);
+ * // perms.canSee.agents === 'hierarchy'
+ * ```
+ */
+export function resolveAgentPermissions(
+  agent: Agent,
+  config: AgentPermissionConfig = DEFAULT_AGENT_PERMISSION_CONFIG
+): AgentPermissions {
+  // Start with defaults
+  let permissions = deepClone(config.defaultPermissions);
+
+  // Apply role permissions
+  if (agent.role && config.rolePermissions[agent.role]) {
+    permissions = deepMergePermissions(permissions, config.rolePermissions[agent.role]);
+  }
+
+  // Apply agent overrides
+  if (agent.permissionOverrides) {
+    permissions = deepMergePermissions(permissions, agent.permissionOverrides);
+  }
+
+  // Backwards compatibility: map legacy visibility
+  if (agent.visibility && !agent.permissionOverrides?.canSee?.agents) {
+    permissions.canSee = permissions.canSee ?? {};
+    permissions.canSee.agents = mapVisibilityToRule(agent.visibility);
+  }
+
+  return permissions;
+}
+
+// =============================================================================
+// Agent Acceptance Checks
+// =============================================================================
+
+/**
+ * Context for checking if an agent accepts messages from a sender.
+ */
+export interface AcceptanceContext {
+  /** Type of the sender */
+  senderType: ParticipantType;
+  /** Participant ID of the sender */
+  senderId: ParticipantId;
+  /** If sender is an agent, its agent ID */
+  senderAgentId?: AgentId;
+  /** If sender is from a federated system, its system ID */
+  senderSystemId?: string;
+
+  // Hierarchy info for 'hierarchy' rules
+  /** Whether sender is the parent of target */
+  isParent?: boolean;
+  /** Whether sender is a child of target */
+  isChild?: boolean;
+  /** Whether sender is an ancestor of target */
+  isAncestor?: boolean;
+  /** Whether sender is a descendant of target */
+  isDescendant?: boolean;
+
+  // Scope info for 'scoped' rules
+  /** Scope IDs that both sender and target are members of */
+  sharedScopes?: ScopeId[];
+}
+
+/**
+ * Check if an agent acceptance rule allows the sender.
+ */
+function checkAgentAcceptance(
+  rule: AgentAcceptanceRule | undefined,
+  context: AcceptanceContext
+): boolean {
+  if (!rule || rule === 'all') return true;
+
+  if (rule === 'hierarchy') {
+    return (
+      context.isParent === true ||
+      context.isChild === true ||
+      context.isAncestor === true ||
+      context.isDescendant === true
+    );
+  }
+
+  if (rule === 'scoped') {
+    return (context.sharedScopes?.length ?? 0) > 0;
+  }
+
+  if (typeof rule === 'object' && 'include' in rule) {
+    return context.senderAgentId !== undefined && rule.include.includes(context.senderAgentId);
+  }
+
+  return false;
+}
+
+/**
+ * Check if a client acceptance rule allows the sender.
+ */
+function checkClientAcceptance(
+  rule: ClientAcceptanceRule | undefined,
+  senderId: ParticipantId
+): boolean {
+  if (!rule || rule === 'all') return true;
+  if (rule === 'none') return false;
+
+  if (typeof rule === 'object' && 'include' in rule) {
+    return rule.include.includes(senderId);
+  }
+
+  return false;
+}
+
+/**
+ * Check if a system acceptance rule allows the sender.
+ */
+function checkSystemAcceptance(
+  rule: SystemAcceptanceRule | undefined,
+  senderSystemId: string | undefined
+): boolean {
+  if (!rule || rule === 'all') return true;
+  if (rule === 'none') return false;
+
+  if (typeof rule === 'object' && 'include' in rule) {
+    return senderSystemId !== undefined && rule.include.includes(senderSystemId);
+  }
+
+  return false;
+}
+
+/**
+ * Check if an agent accepts messages from the given sender.
+ *
+ * Uses the agent's resolved permissions to determine if the sender
+ * is allowed based on sender type and acceptance rules.
+ *
+ * @param targetAgent - The agent that would receive the message
+ * @param context - Information about the sender
+ * @param config - System permission configuration
+ * @returns true if the agent accepts messages from this sender
+ *
+ * @example
+ * ```typescript
+ * const accepts = canAgentAcceptMessage(
+ *   targetAgent,
+ *   {
+ *     senderType: 'agent',
+ *     senderId: 'client-1',
+ *     senderAgentId: 'agent-2',
+ *     isParent: true,
+ *   },
+ *   config
+ * );
+ * ```
+ */
+export function canAgentAcceptMessage(
+  targetAgent: Agent,
+  context: AcceptanceContext,
+  config: AgentPermissionConfig = DEFAULT_AGENT_PERMISSION_CONFIG
+): boolean {
+  const permissions = resolveAgentPermissions(targetAgent, config);
+  const acceptsFrom = permissions.acceptsFrom;
+
+  // No restrictions = accept all
+  if (!acceptsFrom) return true;
+
+  // Check based on sender type
+  switch (context.senderType) {
+    case 'agent':
+      return checkAgentAcceptance(acceptsFrom.agents, context);
+    case 'client':
+      return checkClientAcceptance(acceptsFrom.clients, context.senderId);
+    case 'system':
+    case 'gateway':
+      return checkSystemAcceptance(acceptsFrom.systems, context.senderSystemId);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Check if an agent can see another agent based on permissions.
+ *
+ * @param viewerAgent - The agent trying to see
+ * @param targetAgentId - ID of the agent being viewed
+ * @param context - Hierarchy and scope context
+ * @param config - System permission configuration
+ * @returns true if viewer can see target
+ */
+export function canAgentSeeAgent(
+  viewerAgent: Agent,
+  targetAgentId: AgentId,
+  context: {
+    isParent?: boolean;
+    isChild?: boolean;
+    isAncestor?: boolean;
+    isDescendant?: boolean;
+    sharedScopes?: ScopeId[];
+  },
+  config: AgentPermissionConfig = DEFAULT_AGENT_PERMISSION_CONFIG
+): boolean {
+  const permissions = resolveAgentPermissions(viewerAgent, config);
+  const canSee = permissions.canSee?.agents;
+
+  if (!canSee || canSee === 'all') return true;
+
+  if (canSee === 'hierarchy') {
+    return (
+      context.isParent === true ||
+      context.isChild === true ||
+      context.isAncestor === true ||
+      context.isDescendant === true
+    );
+  }
+
+  if (canSee === 'scoped') {
+    return (context.sharedScopes?.length ?? 0) > 0;
+  }
+
+  if (canSee === 'direct') {
+    // Direct means explicit allowlist only
+    return false;
+  }
+
+  if (typeof canSee === 'object' && 'include' in canSee) {
+    return canSee.include.includes(targetAgentId);
+  }
+
+  return false;
+}
+
+/**
+ * Check if an agent can message another agent based on permissions.
+ *
+ * @param senderAgent - The agent sending the message
+ * @param targetAgentId - ID of the target agent
+ * @param context - Hierarchy and scope context
+ * @param config - System permission configuration
+ * @returns true if sender can message target
+ */
+export function canAgentMessageAgent(
+  senderAgent: Agent,
+  targetAgentId: AgentId,
+  context: {
+    isParent?: boolean;
+    isChild?: boolean;
+    isAncestor?: boolean;
+    isDescendant?: boolean;
+    sharedScopes?: ScopeId[];
+  },
+  config: AgentPermissionConfig = DEFAULT_AGENT_PERMISSION_CONFIG
+): boolean {
+  const permissions = resolveAgentPermissions(senderAgent, config);
+  const canMessage = permissions.canMessage?.agents;
+
+  if (!canMessage || canMessage === 'all') return true;
+
+  if (canMessage === 'hierarchy') {
+    return (
+      context.isParent === true ||
+      context.isChild === true ||
+      context.isAncestor === true ||
+      context.isDescendant === true
+    );
+  }
+
+  if (canMessage === 'scoped') {
+    return (context.sharedScopes?.length ?? 0) > 0;
+  }
+
+  if (typeof canMessage === 'object' && 'include' in canMessage) {
+    return canMessage.include.includes(targetAgentId);
+  }
+
+  return false;
 }
