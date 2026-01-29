@@ -210,3 +210,26 @@ export {
   type PeerBufferStats,
   FederationOutageBuffer,
 } from "./federation";
+
+// ===========================================================================
+// Addresses - Address utilities for message routing
+// ===========================================================================
+export {
+  // Convenience functions
+  toAgent,
+  toScope,
+  // Address validation
+  isAddress,
+  isAgentAddress,
+  isScopeAddress,
+  // Address parsing
+  formatAddress,
+  parseAddress,
+  extractId,
+  extractType,
+  // Types
+  type AddressType,
+  type AddressComponents,
+  // Errors
+  InvalidAddressError,
+} from "./server/messages/address";

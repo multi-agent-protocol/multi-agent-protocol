@@ -10,6 +10,7 @@ export type {
   SubscriptionStore,
   SubscriptionManager,
   SubscriptionManagerOptions,
+  ReplayOptions,
 } from "../types";
 
 // Implementations

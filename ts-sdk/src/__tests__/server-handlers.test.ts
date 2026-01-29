@@ -631,6 +631,114 @@ describe("Handler Factories", () => {
       expect(agents.get(agent.id)).toBeUndefined();
       expect(subscriptions.get(sub.id)).toBeUndefined();
     });
+
+    describe("reclaimAgents", () => {
+      it("should reclaim all agents when reclaimAgents is not specified", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          agents,
+        });
+
+        // Create agents
+        const agent1 = agents.register({ name: "Agent 1", sessionId: mockSession.id });
+        const agent2 = agents.register({ name: "Agent 2", sessionId: mockSession.id });
+        mockSession.agentIds.push(agent1.id, agent2.id);
+
+        const result = await handlers["map/connect"]({}, mockContext);
+
+        expect(result.reclaimedAgents).toHaveLength(2);
+        expect(result.reclaimedAgents).toContain(agent1.id);
+        expect(result.reclaimedAgents).toContain(agent2.id);
+      });
+
+      it("should reclaim only specified agents", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          agents,
+        });
+
+        // Create agents
+        const agent1 = agents.register({ name: "Agent 1", sessionId: mockSession.id });
+        const agent2 = agents.register({ name: "Agent 2", sessionId: mockSession.id });
+        mockSession.agentIds.push(agent1.id, agent2.id);
+
+        const result = await handlers["map/connect"](
+          { reclaimAgents: [agent1.id] },
+          mockContext
+        );
+
+        expect(result.reclaimedAgents).toHaveLength(1);
+        expect(result.reclaimedAgents).toContain(agent1.id);
+      });
+
+      it("should throw error if agent does not exist", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          agents,
+        });
+
+        await expect(
+          handlers["map/connect"](
+            { reclaimAgents: ["nonexistent-agent"] },
+            mockContext
+          )
+        ).rejects.toThrow("Agent not found: nonexistent-agent");
+      });
+
+      it("should throw error if agent belongs to different session", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          agents,
+        });
+
+        // Create agent in different session
+        const otherSession = sessions.create({ role: "client" });
+        const otherAgent = agents.register({
+          name: "Other Agent",
+          sessionId: otherSession.id,
+        });
+
+        await expect(
+          handlers["map/connect"](
+            { reclaimAgents: [otherAgent.id] },
+            mockContext
+          )
+        ).rejects.toThrow(`Agent ${otherAgent.id} belongs to different session`);
+      });
+
+      it("should report multiple errors for multiple invalid agents", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          agents,
+        });
+
+        // Create agent in different session
+        const otherSession = sessions.create({ role: "client" });
+        const otherAgent = agents.register({
+          name: "Other Agent",
+          sessionId: otherSession.id,
+        });
+
+        await expect(
+          handlers["map/connect"](
+            { reclaimAgents: ["nonexistent", otherAgent.id] },
+            mockContext
+          )
+        ).rejects.toThrow(/Agent not found.*belongs to different session/);
+      });
+
+      it("should return empty reclaimedAgents for new session", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          agents,
+        });
+
+        const result = await handlers["map/connect"]({}, mockContext);
+
+        expect(result.reclaimedAgents).toHaveLength(0);
+        expect(result.reconnected).toBe(false);
+      });
+    });
   });
 
   describe("combineHandlers", () => {

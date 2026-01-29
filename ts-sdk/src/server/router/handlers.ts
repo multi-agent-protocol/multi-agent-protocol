@@ -28,6 +28,18 @@ export interface ConnectionHandlerOptions {
 }
 
 /**
+ * Parameters for connect request.
+ */
+interface ConnectParams {
+  /**
+   * Specific agent IDs to reclaim on session resume.
+   * If provided, validates that these agents exist and belong to this session.
+   * If not provided, all session agents are reclaimed automatically.
+   */
+  reclaimAgents?: string[];
+}
+
+/**
  * Create handlers for connection-related methods.
  *
  * Methods:
@@ -41,10 +53,45 @@ export function createConnectionHandlers(
   const { sessions, agents, subscriptions, scopes, serverName, serverVersion } = options;
 
   return {
-    "map/connect": async (_params: unknown, ctx: HandlerContext) => {
+    "map/connect": async (params: unknown, ctx: HandlerContext) => {
+      const { reclaimAgents } = (params ?? {}) as ConnectParams;
+
       // Session is already created/resumed by RouterConnection.start()
       // Check if this is a resumed session by looking at whether it has pre-existing agents
       const isResumed = ctx.session.agentIds.length > 0;
+
+      // Track which agents were actually reclaimed
+      let reclaimedAgents: string[] = [];
+
+      // If reclaimAgents is specified, validate and reclaim only those agents
+      if (reclaimAgents && reclaimAgents.length > 0 && agents) {
+        const errors: string[] = [];
+
+        for (const agentId of reclaimAgents) {
+          const agent = agents.get(agentId);
+
+          if (!agent) {
+            errors.push(`Agent not found: ${agentId}`);
+            continue;
+          }
+
+          if (agent.sessionId !== ctx.session.id) {
+            errors.push(`Agent ${agentId} belongs to different session`);
+            continue;
+          }
+
+          // Agent exists and belongs to this session
+          reclaimedAgents.push(agentId);
+        }
+
+        // If any errors occurred, throw with all error messages
+        if (errors.length > 0) {
+          throw new Error(`Failed to reclaim agents: ${errors.join("; ")}`);
+        }
+      } else {
+        // No specific agents requested - all session agents are reclaimed
+        reclaimedAgents = [...ctx.session.agentIds];
+      }
 
       // Return protocol-compliant connect response
       return {
@@ -61,6 +108,7 @@ export function createConnectionHandlers(
         },
         reconnected: isResumed,
         ownedAgents: ctx.session.agentIds,
+        reclaimedAgents: reclaimedAgents,
       };
     },
 

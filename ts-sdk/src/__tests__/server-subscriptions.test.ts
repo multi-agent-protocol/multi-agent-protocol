@@ -157,6 +157,51 @@ describe("SubscriptionManagerImpl", () => {
 
       expect(manager.get(subscription.id)?.paused).toBe(false);
     });
+
+    it("should track pausedAt timestamp when paused", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: {},
+      });
+
+      const beforePause = Date.now();
+      manager.pause(subscription.id);
+      const afterPause = Date.now();
+
+      const pausedSub = manager.get(subscription.id);
+      expect(pausedSub?.pausedAt).toBeDefined();
+      expect(pausedSub?.pausedAt).toBeGreaterThanOrEqual(beforePause);
+      expect(pausedSub?.pausedAt).toBeLessThanOrEqual(afterPause);
+    });
+
+    it("should clear pausedAt timestamp when resumed", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: {},
+      });
+
+      manager.pause(subscription.id);
+      expect(manager.get(subscription.id)?.pausedAt).toBeDefined();
+
+      manager.resume(subscription.id);
+      expect(manager.get(subscription.id)?.pausedAt).toBeUndefined();
+    });
+
+    it("should not update pausedAt if already paused", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: {},
+      });
+
+      manager.pause(subscription.id);
+      const firstPausedAt = manager.get(subscription.id)?.pausedAt;
+
+      // Pause again - should not change pausedAt
+      manager.pause(subscription.id);
+      const secondPausedAt = manager.get(subscription.id)?.pausedAt;
+
+      expect(secondPausedAt).toBe(firstPausedAt);
+    });
   });
 
   describe("acknowledge", () => {
@@ -171,6 +216,90 @@ describe("SubscriptionManagerImpl", () => {
       expect(manager.get(subscription.id)?.lastEventId).toBe(
         "01HQJY3KCNP5VXWZ8M4R6T2G9B"
       );
+    });
+  });
+
+  describe("lastEventId tracking", () => {
+    it("should automatically track lastEventId when events are delivered", async () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["test.event"] },
+      });
+
+      // Initially no lastEventId
+      expect(manager.getLastEventId(subscription.id)).toBeUndefined();
+
+      const stream = manager.getEventStream(subscription.id);
+      const iterator = stream[Symbol.asyncIterator]();
+
+      // Emit and consume an event
+      const emitted = eventBus.emit({ type: "test.event", data: { value: 1 } });
+      await iterator.next();
+
+      // lastEventId should now be set to the delivered event's ID
+      expect(manager.getLastEventId(subscription.id)).toBe(emitted.id);
+    });
+
+    it("should update lastEventId with each delivered event", async () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: {},
+      });
+
+      const stream = manager.getEventStream(subscription.id);
+      const iterator = stream[Symbol.asyncIterator]();
+
+      // Emit and consume first event
+      const event1 = eventBus.emit({ type: "event.1", data: {} });
+      await iterator.next();
+      expect(manager.getLastEventId(subscription.id)).toBe(event1.id);
+
+      // Emit and consume second event
+      const event2 = eventBus.emit({ type: "event.2", data: {} });
+      await iterator.next();
+      expect(manager.getLastEventId(subscription.id)).toBe(event2.id);
+
+      // Emit and consume third event
+      const event3 = eventBus.emit({ type: "event.3", data: {} });
+      await iterator.next();
+      expect(manager.getLastEventId(subscription.id)).toBe(event3.id);
+    });
+
+    it("should return undefined for unknown subscription", () => {
+      expect(manager.getLastEventId("unknown-subscription")).toBeUndefined();
+    });
+
+    it("should preserve lastEventId set via startAfter", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: {},
+        startAfter: "01HQJY3KCNP5VXWZ8M4R6T2G9A",
+      });
+
+      expect(manager.getLastEventId(subscription.id)).toBe(
+        "01HQJY3KCNP5VXWZ8M4R6T2G9A"
+      );
+    });
+
+    it("should not update lastEventId for non-matching events", async () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["type.a"] },
+      });
+
+      const stream = manager.getEventStream(subscription.id);
+      const iterator = stream[Symbol.asyncIterator]();
+
+      // Emit matching event
+      const matchingEvent = eventBus.emit({ type: "type.a", data: {} });
+      await iterator.next();
+      expect(manager.getLastEventId(subscription.id)).toBe(matchingEvent.id);
+
+      // Emit non-matching event (won't be delivered)
+      eventBus.emit({ type: "type.b", data: {} });
+
+      // lastEventId should still be the matching event
+      expect(manager.getLastEventId(subscription.id)).toBe(matchingEvent.id);
     });
   });
 
@@ -860,6 +989,188 @@ describe("SubscriptionManagerImpl", () => {
         };
         expect(manager.match(event3)).not.toContain(subscription.id);
       });
+    });
+  });
+
+  describe("event replay", () => {
+    it("should replay events since lastEventId", async () => {
+      // Create a fresh manager for this test to avoid interference
+      const testEventBus = new EventBusImpl();
+      const testManager = new SubscriptionManagerImpl({ eventBus: testEventBus });
+
+      // Emit some events first
+      const event1 = testEventBus.emit({ type: "event.1", data: {} });
+      const event2 = testEventBus.emit({ type: "event.2", data: {} });
+      const event3 = testEventBus.emit({ type: "event.3", data: {} });
+
+      // Create subscription starting after event1
+      const subscription = testManager.create({
+        sessionId: "session-1",
+        filter: {},
+        startAfter: event1.id,
+      });
+
+      // Replay should get event2 and event3 (after event1)
+      const replayed = testManager.replayEvents(subscription.id);
+
+      expect(replayed).toHaveLength(2);
+      expect(replayed[0].id).toBe(event2.id);
+      expect(replayed[1].id).toBe(event3.id);
+    });
+
+    it("should respect maxReplayCount option", async () => {
+      // Create a fresh manager for this test to avoid interference
+      const testEventBus = new EventBusImpl();
+      const testManager = new SubscriptionManagerImpl({ eventBus: testEventBus });
+
+      // Emit 5 events
+      const events: MAPEvent[] = [];
+      for (let i = 0; i < 5; i++) {
+        events.push(testEventBus.emit({ type: `event.${i}`, data: {} }));
+      }
+
+      // Create subscription with startAfter set to first event
+      const subscription = testManager.create({
+        sessionId: "session-1",
+        filter: {},
+        startAfter: events[0].id,
+      });
+
+      // Replay with maxReplayCount of 2 - should get events[1] and events[2]
+      const replayed = testManager.replayEvents(subscription.id, { maxReplayCount: 2 });
+
+      expect(replayed).toHaveLength(2);
+      expect(replayed[0].id).toBe(events[1].id);
+      expect(replayed[1].id).toBe(events[2].id);
+    });
+
+    it("should respect maxReplayAgeMs option", async () => {
+      // Create an old event by manipulating the store directly
+      const oldEvent: MAPEvent = {
+        id: "old-event",
+        type: "old.event",
+        timestamp: Date.now() - 10 * 60 * 1000, // 10 minutes ago
+        data: {},
+      };
+      eventBus.store.append(oldEvent);
+
+      // Create a recent event
+      const recentEvent = eventBus.emit({ type: "recent.event", data: {} });
+
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: {},
+      });
+
+      // Replay with 5 minute max age - should only get recent event
+      const replayed = manager.replayEvents(subscription.id, {
+        maxReplayAgeMs: 5 * 60 * 1000,
+      });
+
+      expect(replayed.some((e) => e.id === recentEvent.id)).toBe(true);
+      expect(replayed.some((e) => e.id === oldEvent.id)).toBe(false);
+    });
+
+    it("should apply subscription filter when applyFilter is true", async () => {
+      eventBus.emit({ type: "type.a", data: {} });
+      const eventB = eventBus.emit({ type: "type.b", data: {} });
+      eventBus.emit({ type: "type.a", data: {} });
+
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["type.b"] },
+      });
+
+      const replayed = manager.replayEvents(subscription.id, { applyFilter: true });
+
+      // Should only get type.b events
+      expect(replayed).toHaveLength(1);
+      expect(replayed[0].id).toBe(eventB.id);
+    });
+
+    it("should replay all events when applyFilter is false", async () => {
+      const event1 = eventBus.emit({ type: "type.a", data: {} });
+      const event2 = eventBus.emit({ type: "type.b", data: {} });
+      const event3 = eventBus.emit({ type: "type.a", data: {} });
+
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["type.b"] }, // Filter only type.b
+      });
+
+      const replayed = manager.replayEvents(subscription.id, { applyFilter: false });
+
+      // Should get all events since filter is not applied
+      expect(replayed).toHaveLength(3);
+      expect(replayed[0].id).toBe(event1.id);
+      expect(replayed[1].id).toBe(event2.id);
+      expect(replayed[2].id).toBe(event3.id);
+    });
+
+    it("should emit replay started and completed events", async () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: {},
+      });
+
+      eventBus.emit({ type: "test.event", data: {} });
+
+      const emittedEvents: MAPEvent[] = [];
+      eventBus.on("subscription.replay.*", (event) => {
+        emittedEvents.push(event);
+      });
+
+      manager.replayEvents(subscription.id);
+
+      // Should have both started and completed events
+      expect(emittedEvents.some((e) => e.type === "subscription.replay.started")).toBe(
+        true
+      );
+      expect(emittedEvents.some((e) => e.type === "subscription.replay.completed")).toBe(
+        true
+      );
+    });
+
+    it("should return empty array for unknown subscription", () => {
+      const replayed = manager.replayEvents("unknown-subscription");
+      expect(replayed).toHaveLength(0);
+    });
+  });
+
+  describe("replaySessionEvents", () => {
+    it("should replay events to all subscriptions for a session", async () => {
+      // Emit events
+      const event1 = eventBus.emit({ type: "type.a", data: {} });
+      const event2 = eventBus.emit({ type: "type.b", data: {} });
+
+      // Create two subscriptions for the same session with different filters
+      const sub1 = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["type.a"] },
+      });
+      const sub2 = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["type.b"] },
+      });
+
+      // Also create subscription for different session
+      manager.create({
+        sessionId: "session-2",
+        filter: {},
+      });
+
+      const results = manager.replaySessionEvents("session-1");
+
+      expect(results.size).toBe(2);
+      expect(results.get(sub1.id)).toHaveLength(1);
+      expect(results.get(sub1.id)?.[0].id).toBe(event1.id);
+      expect(results.get(sub2.id)).toHaveLength(1);
+      expect(results.get(sub2.id)?.[0].id).toBe(event2.id);
+    });
+
+    it("should return empty map for session with no subscriptions", () => {
+      const results = manager.replaySessionEvents("no-subscriptions-session");
+      expect(results.size).toBe(0);
     });
   });
 

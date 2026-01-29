@@ -12,8 +12,12 @@ import type {
   EventBus,
   EventBusOptions,
 } from "../types";
-import { ulid } from "../../utils/ulid";
+import { monotonicFactory } from "../../utils/ulid";
 import { InMemoryEventStore } from "./stores/in-memory";
+
+// Use monotonic ULID generator to ensure IDs are always increasing
+// even when events are emitted within the same millisecond
+const generateUlid = monotonicFactory();
 
 /**
  * Internal subscription tracking
@@ -54,7 +58,7 @@ export class EventBusImpl implements EventBus {
   emit(event: Omit<MAPEvent, "id" | "timestamp">): MAPEvent {
     const completeEvent: MAPEvent = {
       ...event,
-      id: ulid(),
+      id: generateUlid(),
       timestamp: Date.now(),
     };
 

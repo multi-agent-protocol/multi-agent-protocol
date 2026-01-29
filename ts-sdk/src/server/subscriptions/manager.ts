@@ -15,6 +15,7 @@ import type {
   ScopeManager,
   CausalOrderingOptions,
   MultiCauseMode,
+  ReplayOptions,
 } from "../types";
 import { ulid } from "../../utils/ulid";
 import { CausalEventBuffer, type CausalEvent } from "../../utils/causal-buffer";
@@ -43,11 +44,19 @@ interface SubscriptionState {
  * - Pause/resume support
  * - Async iterable event streams
  */
+/** Default replay options */
+const DEFAULT_REPLAY_OPTIONS: Required<ReplayOptions> = {
+  maxReplayCount: 1000,
+  maxReplayAgeMs: 5 * 60 * 1000, // 5 minutes
+  applyFilter: true,
+};
+
 export class SubscriptionManagerImpl implements SubscriptionManager {
   private readonly eventBus: EventBus;
   private readonly store: SubscriptionStore;
   private readonly scopes?: ScopeManager;
   private readonly causalOrdering: Required<CausalOrderingOptions>;
+  private readonly defaultReplayOptions: Required<ReplayOptions>;
   private readonly states: Map<string, SubscriptionState> = new Map();
 
   constructor(options: SubscriptionManagerOptions) {
@@ -59,6 +68,10 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
       maxWaitMs: options.causalOrdering?.maxWaitMs ?? 5000,
       maxBufferSize: options.causalOrdering?.maxBufferSize ?? 1000,
       multiCauseMode: options.causalOrdering?.multiCauseMode ?? "all",
+    };
+    this.defaultReplayOptions = {
+      ...DEFAULT_REPLAY_OPTIONS,
+      ...options.defaultReplayOptions,
     };
   }
 
@@ -135,8 +148,9 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
    */
   pause(id: string): void {
     const subscription = this.store.get(id);
-    if (subscription) {
+    if (subscription && !subscription.paused) {
       subscription.paused = true;
+      subscription.pausedAt = Date.now();
       this.store.save(subscription);
     }
   }
@@ -146,8 +160,9 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
    */
   resume(id: string): void {
     const subscription = this.store.get(id);
-    if (subscription) {
+    if (subscription && subscription.paused) {
       subscription.paused = false;
+      subscription.pausedAt = undefined;
       this.store.save(subscription);
 
       // Flush any queued events
@@ -167,6 +182,137 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
       subscription.lastEventId = eventId;
       this.store.save(subscription);
     }
+  }
+
+  /**
+   * Get last delivered event ID for a subscription.
+   */
+  getLastEventId(id: string): string | undefined {
+    return this.store.get(id)?.lastEventId;
+  }
+
+  /**
+   * Replay missed events to a subscription since its lastEventId.
+   * Used on session resume to catch up on events that were missed during disconnect.
+   */
+  replayEvents(id: string, options?: ReplayOptions): MAPEvent[] {
+    const subscription = this.store.get(id);
+    if (!subscription) {
+      return [];
+    }
+
+    const opts: Required<ReplayOptions> = {
+      ...this.defaultReplayOptions,
+      ...options,
+    };
+
+    // Store original pause state and pause during replay
+    // This prevents the live event handler from interfering with replay
+    const wasPaused = subscription.paused;
+    subscription.paused = true;
+    this.store.save(subscription);
+
+    // Calculate minimum timestamp for replay
+    const minTimestamp = Date.now() - opts.maxReplayAgeMs;
+
+    // Query events since lastEventId BEFORE emitting any replay events
+    // to avoid the replay events themselves being included or affecting lastEventId
+    const events = this.eventBus.getEvents({
+      since: subscription.lastEventId,
+      limit: opts.maxReplayCount,
+    });
+
+    // Filter events by age and optionally by subscription filter
+    // Also filter out any subscription.replay.* events to avoid self-referential issues
+    const filteredEvents = events.filter((event) => {
+      // Skip replay events
+      if (event.type.startsWith("subscription.replay.")) {
+        return false;
+      }
+
+      // Skip events that are too old
+      if (event.timestamp < minTimestamp) {
+        return false;
+      }
+
+      // Apply subscription filter if enabled
+      if (opts.applyFilter && !this.matchesFilter(event, subscription.filter)) {
+        return false;
+      }
+
+      return true;
+    });
+
+    // Emit replay started event
+    this.eventBus.emit({
+      type: "subscription.replay.started",
+      data: {
+        subscriptionId: id,
+        sessionId: subscription.sessionId,
+        lastEventId: subscription.lastEventId,
+        options: opts,
+      },
+    });
+
+    // Deliver events to the subscription state
+    // Use a direct queue approach to avoid triggering the live event handler
+    const state = this.states.get(id);
+    if (state) {
+      for (const event of filteredEvents) {
+        // Directly queue events without going through deliverEvent
+        // to avoid lastEventId being updated prematurely by concurrent live events
+        if (state.resolvers.length > 0) {
+          const resolver = state.resolvers.shift()!;
+          resolver({ value: event, done: false });
+        } else {
+          state.eventQueue.push(event);
+        }
+      }
+
+      // Update lastEventId to the last replayed event
+      if (filteredEvents.length > 0) {
+        const lastEvent = filteredEvents[filteredEvents.length - 1];
+        subscription.lastEventId = lastEvent.id;
+      }
+
+      // Restore original pause state
+      subscription.paused = wasPaused;
+      this.store.save(subscription);
+      state.subscription = subscription;
+    } else {
+      // No state, just restore pause state
+      subscription.paused = wasPaused;
+      this.store.save(subscription);
+    }
+
+    // Emit replay completed event
+    this.eventBus.emit({
+      type: "subscription.replay.completed",
+      data: {
+        subscriptionId: id,
+        sessionId: subscription.sessionId,
+        replayedCount: filteredEvents.length,
+        lastReplayedEventId: filteredEvents[filteredEvents.length - 1]?.id,
+      },
+    });
+
+    return filteredEvents;
+  }
+
+  /**
+   * Replay missed events to all subscriptions for a session.
+   * Convenience method for session resume.
+   */
+  replaySessionEvents(sessionId: string, options?: ReplayOptions): Map<string, MAPEvent[]> {
+    const subscriptions = this.store.list({ sessionId });
+    const result = new Map<string, MAPEvent[]>();
+
+    for (const subscription of subscriptions) {
+      const events = this.replayEvents(subscription.id, options);
+      result.set(subscription.id, events);
+    }
+
+    return result;
   }
 
   /**
@@ -297,6 +443,14 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
    * Deliver an event to the subscription.
    */
   private deliverEvent(state: SubscriptionState, event: MAPEvent): void {
+    // Track last delivered event ID for replay support
+    const subscription = this.store.get(state.subscription.id);
+    if (subscription) {
+      subscription.lastEventId = event.id;
+      this.store.save(subscription);
+      state.subscription = subscription;
+    }
+
     // If there are waiting iterators, resolve the first one
     if (state.resolvers.length > 0) {
       const resolver = state.resolvers.shift()!;

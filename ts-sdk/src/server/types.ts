@@ -537,6 +537,8 @@ export interface ServerSubscription {
   lastEventId?: string;
   /** Whether delivery is paused */
   paused: boolean;
+  /** Timestamp when subscription was paused (undefined if not paused) */
+  pausedAt?: number;
 }
 
 /**
@@ -604,6 +606,23 @@ export interface SubscriptionManager {
   /** Update last delivered event ID */
   acknowledge(id: string, eventId: string): void;
 
+  /** Get last delivered event ID for a subscription */
+  getLastEventId(id: string): string | undefined;
+
+  /**
+   * Replay missed events to a subscription since its lastEventId.
+   * Used on session resume to catch up on events that were missed during disconnect.
+   * @returns Array of replayed events
+   */
+  replayEvents(id: string, options?: ReplayOptions): MAPEvent[];
+
+  /**
+   * Replay missed events to all subscriptions for a session.
+   * Convenience method for session resume.
+   * @returns Map of subscription ID to replayed events
+   */
+  replaySessionEvents(sessionId: string, options?: ReplayOptions): Map<string, MAPEvent[]>;
+
   /**
    * Find subscriptions that should receive an event.
    * @returns Subscription IDs that match
@@ -622,6 +641,33 @@ export interface SubscriptionManagerOptions {
   store?: SubscriptionStore;
   scopes?: ScopeManager;
   causalOrdering?: CausalOrderingOptions;
+  /** Default replay options when replaying events on session resume */
+  defaultReplayOptions?: ReplayOptions;
+}
+
+/**
+ * Options for event replay on session resume.
+ */
+export interface ReplayOptions {
+  /**
+   * Maximum number of events to replay per subscription.
+   * @default 1000
+   */
+  maxReplayCount?: number;
+
+  /**
+   * Maximum age of events to replay in milliseconds.
+   * Events older than this are skipped.
+   * @default 300000 (5 minutes)
+   */
+  maxReplayAgeMs?: number;
+
+  /**
+   * Filter replayed events by the subscription's filter.
+   * If false, replays all events since lastEventId.
+   * @default true
+   */
+  applyFilter?: boolean;
 }
 
 // =============================================================================
