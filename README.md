@@ -73,13 +73,9 @@ multi-agent-protocol/
 ├── schema/                 # JSON Schema and metadata
 │   ├── schema.json         # Protocol message schemas
 │   └── meta.json           # Method tiers and error codes
-├── ts-sdk/                 # TypeScript SDK implementation
-│   ├── src/                # Source code
-│   └── docs/               # SDK-specific docs (gap analysis)
-└── references/             # Reference implementations
-    ├── agent-client-protocol/  # ACP reference
-    ├── macro-agent/            # Multi-agent orchestration reference
-    └── typescript-sdk/         # Additional TS reference
+└── ts-sdk/                 # TypeScript SDK implementation
+    ├── src/                # Source code
+    └── docs/               # SDK-specific docs (gap analysis)
 ```
 
 ## Development

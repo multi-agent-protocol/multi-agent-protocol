@@ -1,6 +1,6 @@
 {
   "name": "@anthropic/map-sdk",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "description": "TypeScript SDK for the Multi-Agent Protocol (MAP)",
   "main": "dist/index.cjs",
@@ -30,7 +30,11 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "generate": "node scripts/generate.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "version:patch": "npm version patch && git push && git push --tags",
+    "version:minor": "npm version minor && git push && git push --tags",
+    "version:major": "npm version major && git push && git push --tags",
+    "publish:npm": "npm run build && npm publish"
   },
   "keywords": [
     "multi-agent",
