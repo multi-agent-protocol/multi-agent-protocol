@@ -272,6 +272,14 @@ export const METHOD_REGISTRY: Record<string, MethodInfo> = {
     capabilities: ['federation.canFederate'],
     description: 'Route message to federated system',
   },
+
+  // Notification methods (client → server)
+  'subscription/ack': {
+    method: 'map/subscribe.ack',
+    category: 'notification',
+    capabilities: [],
+    description: 'Acknowledge received events for backpressure flow control',
+  },
 } as const;
 
 /**

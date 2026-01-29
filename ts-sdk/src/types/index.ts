@@ -1147,6 +1147,8 @@ export interface AgentsRegisterRequestParams {
   visibility?: AgentVisibility;
   capabilities?: ParticipantCapabilities;
   metadata?: Record<string, unknown>;
+  /** Permission overrides merged on top of role-based defaults */
+  permissionOverrides?: Partial<AgentPermissions>;
   _meta?: Meta;
 }
 

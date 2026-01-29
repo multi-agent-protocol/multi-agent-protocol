@@ -15,12 +15,13 @@ import {
   STATE_METHODS,
   STEERING_METHODS,
   SCOPE_METHODS,
+  FEDERATION_METHODS,
   NOTIFICATION_METHODS,
+  PERMISSION_METHODS,
   PROTOCOL_VERSION,
   EVENT_TYPES,
   type Agent,
   type AgentId,
-  type AgentState,
   type Scope,
   type ScopeId,
   type SessionId,
@@ -28,6 +29,7 @@ import {
   type ParticipantCapabilities,
   type SubscriptionId,
   type SubscriptionFilter,
+  type SubscriptionAckParams,
   type Message,
   type MessageId,
   type Event,
@@ -43,7 +45,19 @@ import {
   type DisconnectPolicy,
   type ReplayRequestParams,
   type ReplayResponseResult,
+  type FederationRouteRequestParams,
+  type FederationRoutingConfig,
+  type FederationEnvelope,
+  type PermissionsUpdateRequestParams,
+  type PermissionsUpdateResponseResult,
+  type AgentPermissions,
+  type AgentsUpdateRequestParams,
 } from '../types';
+import {
+  processFederationEnvelope,
+  isValidEnvelope,
+  unwrapEnvelope,
+} from '../federation';
 import {
   type SystemExposure,
   type PermissionContext,
@@ -78,6 +92,8 @@ interface ParticipantConnection {
   connection: BaseConnection;
   subscriptions: Set<SubscriptionId>;
   agentId?: AgentId; // The agent ID if this participant registered as an agent
+  /** Current effective capabilities for this participant */
+  capabilities?: ParticipantCapabilities;
 }
 
 /**
@@ -88,6 +104,8 @@ interface ServerSubscription {
   participantId: ParticipantId;
   filter?: SubscriptionFilter;
   sequenceNumber: number;
+  /** Last acknowledged sequence number from client */
+  lastAckedSequence?: number;
 }
 
 /**
@@ -101,6 +119,8 @@ export interface TestServerOptions {
   maxEventHistory?: number;
   /** System exposure configuration for permission filtering */
   exposure?: SystemExposure;
+  /** Federation routing configuration for envelope validation */
+  federationRouting?: FederationRoutingConfig;
 }
 
 /**
@@ -338,9 +358,7 @@ export class TestServer {
       // =======================================================================
 
       case STATE_METHODS.AGENTS_UPDATE:
-        return this.#handleAgentsUpdate(
-          params as { agentId: AgentId; state?: AgentState; metadata?: Record<string, unknown> }
-        );
+        return this.#handleAgentsUpdate(connection, params as AgentsUpdateRequestParams);
 
       case STATE_METHODS.AGENTS_STOP:
         return this.#handleAgentsStop(params as { agentId: AgentId; reason?: string });
@@ -365,6 +383,30 @@ export class TestServer {
       case STEERING_METHODS.INJECT:
         return this.#handleInject(params as InjectRequestParams);
 
+      // =======================================================================
+      // Federation Methods
+      // =======================================================================
+
+      case FEDERATION_METHODS.FEDERATION_ROUTE:
+        return this.#handleFederationRoute(params as FederationRouteRequestParams);
+
+      // =======================================================================
+      // Notification Methods (client → server)
+      // =======================================================================
+
+      case NOTIFICATION_METHODS.SUBSCRIBE_ACK:
+        return this.#handleSubscriptionAck(params as SubscriptionAckParams);
+
+      // =======================================================================
+      // Permission Methods
+      // =======================================================================
+
+      case PERMISSION_METHODS.PERMISSIONS_UPDATE:
+        return this.#handlePermissionsUpdate(
+          connection,
+          params as PermissionsUpdateRequestParams
+        );
+
       default:
         throw MAPRequestError.methodNotFound(method);
     }
@@ -386,6 +428,7 @@ export class TestServer {
       name: params.name,
       connection,
       subscriptions: new Set(),
+      capabilities: params.capabilities,
     };
 
     this.#participants.set(participantId, participant);
@@ -411,6 +454,7 @@ export class TestServer {
         messaging: { canSend: true, canReceive: true, canBroadcast: true },
         lifecycle: { canSpawn: true, canRegister: true, canUnregister: true, canStop: true, canSteer: true },
         scopes: { canCreateScopes: true, canManageScopes: true },
+        streaming: { supportsAck: true, supportsPause: true },
       },
       systemInfo: {
         name: this.#options.name ?? 'Test MAP Server',
@@ -756,6 +800,7 @@ export class TestServer {
       visibility: params.visibility,
       capabilities: params.capabilities,
       metadata: params.metadata,
+      permissionOverrides: params.permissionOverrides,
       lifecycle: {
         createdAt: Date.now(),
       },
@@ -799,14 +844,22 @@ export class TestServer {
     return buildAgentsUnregisterResponse(agentCopy);
   }
 
-  #handleAgentsUpdate(params: {
-    agentId: AgentId;
-    state?: AgentState;
-    metadata?: Record<string, unknown>;
-  }): { agent: Agent } {
+  #handleAgentsUpdate(
+    connection: BaseConnection,
+    params: AgentsUpdateRequestParams
+  ): { agent: Agent } {
     const agent = this.#agents.get(params.agentId);
     if (!agent) {
       throw MAPRequestError.agentNotFound(params.agentId);
+    }
+
+    // Find the requesting participant (for event tracking)
+    let requestingParticipantId: ParticipantId | undefined;
+    for (const [id, p] of this.#participants) {
+      if (p.connection === connection) {
+        requestingParticipantId = id;
+        break;
+      }
     }
 
     const previousState = agent.state;
@@ -816,6 +869,47 @@ export class TestServer {
     }
     if (params.metadata) {
       agent.metadata = { ...agent.metadata, ...params.metadata };
+    }
+
+    // Handle permission overrides
+    if (params.permissionOverrides) {
+      // Merge with existing overrides
+      const existingOverrides = agent.permissionOverrides ?? {};
+      const newOverrides: Partial<AgentPermissions> = {};
+
+      // Deep merge each permission category
+      if (existingOverrides.canSee || params.permissionOverrides.canSee) {
+        newOverrides.canSee = {
+          ...existingOverrides.canSee,
+          ...params.permissionOverrides.canSee,
+        };
+      }
+      if (existingOverrides.canMessage || params.permissionOverrides.canMessage) {
+        newOverrides.canMessage = {
+          ...existingOverrides.canMessage,
+          ...params.permissionOverrides.canMessage,
+        };
+      }
+      if (existingOverrides.acceptsFrom || params.permissionOverrides.acceptsFrom) {
+        newOverrides.acceptsFrom = {
+          ...existingOverrides.acceptsFrom,
+          ...params.permissionOverrides.acceptsFrom,
+        };
+      }
+
+      agent.permissionOverrides = newOverrides;
+
+      // Emit permissions_agent_updated event
+      this.emitEvent({
+        type: EVENT_TYPES.PERMISSIONS_AGENT_UPDATED,
+        source: params.agentId,
+        data: {
+          agentId: params.agentId,
+          changes: params.permissionOverrides,
+          effectivePermissions: newOverrides as AgentPermissions,
+          updatedBy: requestingParticipantId,
+        },
+      });
     }
 
     // Emit state change event
@@ -1223,5 +1317,189 @@ export class TestServer {
     }
 
     return true;
+  }
+
+  // ===========================================================================
+  // Federation Method Handlers
+  // ===========================================================================
+
+  #handleFederationRoute(params: FederationRouteRequestParams): { routed: boolean; messageId?: MessageId } {
+    const { systemId, envelope, message } = params;
+
+    let actualMessage: Message;
+
+    // Handle envelope format (preferred)
+    if (envelope && isValidEnvelope(envelope)) {
+      // Validate routing if configured
+      if (this.#options.federationRouting) {
+        const result = processFederationEnvelope(
+          envelope as FederationEnvelope<Message>,
+          this.#options.federationRouting
+        );
+        if (!result.success) {
+          throw new MAPRequestError(result.errorCode, result.errorMessage);
+        }
+      }
+      actualMessage = unwrapEnvelope(envelope as FederationEnvelope<Message>);
+    } else if (message) {
+      // Backwards compatibility: plain message format
+      actualMessage = message;
+    } else {
+      throw MAPRequestError.invalidParams('Missing envelope or message');
+    }
+
+    // Store the message (for testing purposes)
+    this.#messages.push(actualMessage);
+
+    // Emit federation event
+    this.emitEvent({
+      type: EVENT_TYPES.MESSAGE_SENT,
+      source: actualMessage.from,
+      data: {
+        messageId: actualMessage.id,
+        from: actualMessage.from,
+        to: actualMessage.to,
+        federatedTo: systemId,
+      },
+    });
+
+    return { routed: true, messageId: actualMessage.id };
+  }
+
+  // ===========================================================================
+  // Notification Handlers
+  // ===========================================================================
+
+  #handleSubscriptionAck(params: SubscriptionAckParams): void {
+    const { subscriptionId, upToSequence } = params;
+    const subscription = this.#subscriptions.get(subscriptionId);
+    if (subscription) {
+      subscription.lastAckedSequence = upToSequence;
+    }
+    // Notifications don't return a response, but we need to return something
+    // to avoid errors. The connection layer handles notifications specially.
+  }
+
+  /**
+   * Get ack state for a subscription (for testing assertions)
+   */
+  getSubscriptionAckState(subscriptionId: SubscriptionId): { sequenceNumber: number; lastAckedSequence?: number } | undefined {
+    const subscription = this.#subscriptions.get(subscriptionId);
+    if (!subscription) return undefined;
+    return {
+      sequenceNumber: subscription.sequenceNumber,
+      lastAckedSequence: subscription.lastAckedSequence,
+    };
+  }
+
+  // ===========================================================================
+  // Permission Handlers
+  // ===========================================================================
+
+  /**
+   * Handle permissions update request.
+   * Updates client capabilities and emits permission update event.
+   */
+  #handlePermissionsUpdate(
+    connection: BaseConnection,
+    params: PermissionsUpdateRequestParams
+  ): PermissionsUpdateResponseResult {
+    const { clientId, permissions } = params;
+
+    // Find the target client
+    const targetParticipant = this.#participants.get(clientId);
+    if (!targetParticipant) {
+      throw MAPRequestError.invalidParams(`Client ${clientId} not found`);
+    }
+
+    // Find the requesting participant (for event tracking)
+    let requestingParticipantId: ParticipantId | undefined;
+    for (const [id, p] of this.#participants) {
+      if (p.connection === connection) {
+        requestingParticipantId = id;
+        break;
+      }
+    }
+
+    // Merge permissions with existing
+    const existingCapabilities = targetParticipant.capabilities ?? {};
+    const effectivePermissions: ParticipantCapabilities = {};
+
+    // Copy existing capabilities
+    if (existingCapabilities.observation) {
+      effectivePermissions.observation = { ...existingCapabilities.observation };
+    }
+    if (existingCapabilities.messaging) {
+      effectivePermissions.messaging = { ...existingCapabilities.messaging };
+    }
+    if (existingCapabilities.lifecycle) {
+      effectivePermissions.lifecycle = { ...existingCapabilities.lifecycle };
+    }
+    if (existingCapabilities.scopes) {
+      effectivePermissions.scopes = { ...existingCapabilities.scopes };
+    }
+    if (existingCapabilities.federation) {
+      effectivePermissions.federation = { ...existingCapabilities.federation };
+    }
+    if (existingCapabilities.streaming) {
+      effectivePermissions.streaming = { ...existingCapabilities.streaming };
+    }
+
+    // Merge in new permissions
+    if (permissions.observation) {
+      effectivePermissions.observation = {
+        ...effectivePermissions.observation,
+        ...permissions.observation,
+      };
+    }
+    if (permissions.messaging) {
+      effectivePermissions.messaging = {
+        ...effectivePermissions.messaging,
+        ...permissions.messaging,
+      };
+    }
+    if (permissions.lifecycle) {
+      effectivePermissions.lifecycle = {
+        ...effectivePermissions.lifecycle,
+        ...permissions.lifecycle,
+      };
+    }
+    if (permissions.scopes) {
+      effectivePermissions.scopes = {
+        ...effectivePermissions.scopes,
+        ...permissions.scopes,
+      };
+    }
+    if (permissions.federation) {
+      effectivePermissions.federation = {
+        ...effectivePermissions.federation,
+        ...permissions.federation,
+      };
+    }
+    if (permissions.streaming) {
+      effectivePermissions.streaming = {
+        ...effectivePermissions.streaming,
+        ...permissions.streaming,
+      };
+    }
+
+    // Update the participant's capabilities
+    targetParticipant.capabilities = effectivePermissions;
+
+    // Emit permissions_client_updated event
+    this.emitEvent({
+      type: EVENT_TYPES.PERMISSIONS_CLIENT_UPDATED,
+      data: {
+        clientId,
+        changes: permissions,
+        effectivePermissions,
+        changedBy: requestingParticipantId,
+      },
+    });
+
+    return {
+      success: true,
+      effectivePermissions,
+    };
   }
 }

@@ -56,6 +56,7 @@ import {
   type ReplayRequestParams,
   type ReplayResponseResult,
   type ReplayedEvent,
+  type SubscriptionAckParams,
 } from '../types';
 
 /**
@@ -485,11 +486,25 @@ export class ClientConnection {
       SubscribeResponseResult
     >(CORE_METHODS.SUBSCRIBE, params);
 
+    // Create sendAck callback if server supports it
+    const serverSupportsAck = this.#serverCapabilities?.streaming?.supportsAck === true;
+    const sendAck = serverSupportsAck
+      ? (ackParams: SubscriptionAckParams) => {
+          this.#connection.sendNotification(NOTIFICATION_METHODS.SUBSCRIBE_ACK, ackParams);
+        }
+      : undefined;
+
     const subscription = createSubscription(
       result.subscriptionId,
       () => this.unsubscribe(result.subscriptionId),
-      { filter }
+      { filter },
+      sendAck
     );
+
+    // Set server support flag on the subscription
+    if (serverSupportsAck) {
+      subscription._setServerSupportsAck(true);
+    }
 
     this.#subscriptions.set(result.subscriptionId, subscription);
 
