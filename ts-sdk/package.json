@@ -1,5 +1,5 @@
 {
-  "name": "@anthropic/map-sdk",
+  "name": "@multi-agent-protocol/sdk",
   "version": "0.0.2",
   "type": "module",
   "description": "TypeScript SDK for the Multi-Agent Protocol (MAP)",
