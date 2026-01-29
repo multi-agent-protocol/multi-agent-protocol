@@ -85,12 +85,23 @@ export function createScopeHandlers(options: ScopeHandlerOptions): HandlerRegist
     "map/scopes/create": async (params: unknown, ctx: HandlerContext) => {
       const { name, metadata, parentId } = params as CreateParams;
 
-      return scopes.create({
+      const scope = scopes.create({
         name,
         metadata,
         parentId,
         createdBy: ctx.session.id,
       });
+
+      // Return protocol-compliant response
+      return {
+        scope: {
+          id: scope.id,
+          name: scope.name,
+          metadata: scope.metadata,
+          parentId: scope.parentId,
+          createdBy: scope.createdBy,
+        },
+      };
     },
 
     "map/scopes/delete": async (params: unknown) => {
@@ -106,7 +117,17 @@ export function createScopeHandlers(options: ScopeHandlerOptions): HandlerRegist
 
     "map/scopes/list": async (params: unknown) => {
       const filter = params as ScopeFilter;
-      return scopes.list(filter);
+      const scopeList = scopes.list(filter);
+
+      // Return protocol-compliant response
+      return {
+        scopes: scopeList.map((s) => ({
+          id: s.id,
+          name: s.name,
+          metadata: s.metadata,
+          parentId: s.parentId,
+        })),
+      };
     },
 
     "map/scopes/get": async (params: unknown) => {
@@ -117,7 +138,15 @@ export function createScopeHandlers(options: ScopeHandlerOptions): HandlerRegist
         throw new Error(`Scope not found: ${scopeId}`);
       }
 
-      return scope;
+      // Return protocol-compliant response
+      return {
+        scope: {
+          id: scope.id,
+          name: scope.name,
+          metadata: scope.metadata,
+          parentId: scope.parentId,
+        },
+      };
     },
 
     "map/scopes/join": async (params: unknown) => {
@@ -134,7 +163,9 @@ export function createScopeHandlers(options: ScopeHandlerOptions): HandlerRegist
 
     "map/scopes/members": async (params: unknown) => {
       const { scopeId, includeDescendants } = params as GetMembersParams;
-      return scopes.getMembers(scopeId, { includeDescendants });
+      const members = scopes.getMembers(scopeId, { includeDescendants });
+      // Return protocol-compliant response
+      return { members };
     },
   };
 }

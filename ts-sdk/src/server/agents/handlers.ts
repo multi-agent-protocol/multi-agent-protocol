@@ -68,6 +68,15 @@ interface UpdateMetadataParams {
 }
 
 /**
+ * Parameters for combined agent update (protocol-compliant).
+ */
+interface UpdateParams {
+  agentId: string;
+  state?: ServerAgentState;
+  metadata?: Record<string, unknown>;
+}
+
+/**
  * Create handlers for agent-related methods.
  *
  * Methods:
@@ -75,8 +84,9 @@ interface UpdateMetadataParams {
  * - `map/agents/unregister` - Unregister an agent
  * - `map/agents/list` - List agents with optional filters
  * - `map/agents/get` - Get a specific agent
- * - `map/agents/update/state` - Update agent state
- * - `map/agents/update/metadata` - Update agent metadata
+ * - `map/agents/update` - Update agent state and/or metadata (protocol method)
+ * - `map/agents/update/state` - Update agent state (legacy)
+ * - `map/agents/update/metadata` - Update agent metadata (legacy)
  */
 export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegistry {
   const { agents } = options;
@@ -85,7 +95,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
     "map/agents/register": async (params: unknown, ctx: HandlerContext) => {
       const { name, role, metadata } = params as RegisterParams;
 
-      const agent = agents.register({
+      const registeredAgent = agents.register({
         name,
         role,
         metadata,
@@ -93,9 +103,19 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
       });
 
       // Track agent in session
-      ctx.session.agentIds.push(agent.id);
+      ctx.session.agentIds.push(registeredAgent.id);
 
-      return agent;
+      // Return protocol-compliant response with agent wrapped
+      return {
+        agent: {
+          id: registeredAgent.id,
+          name: registeredAgent.name,
+          role: registeredAgent.role,
+          state: registeredAgent.state,
+          metadata: registeredAgent.metadata,
+          visibility: "public",
+        },
+      };
     },
 
     "map/agents/unregister": async (params: unknown, ctx: HandlerContext) => {
@@ -117,7 +137,19 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
 
     "map/agents/list": async (params: unknown) => {
       const filter = params as ListParams;
-      return agents.list(filter);
+      const agentList = agents.list(filter);
+
+      // Return protocol-compliant response
+      return {
+        agents: agentList.map((a) => ({
+          id: a.id,
+          name: a.name,
+          role: a.role,
+          state: a.state,
+          metadata: a.metadata,
+          visibility: "public",
+        })),
+      };
     },
 
     "map/agents/get": async (params: unknown) => {
@@ -128,7 +160,48 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         throw new Error(`Agent not found: ${agentId}`);
       }
 
-      return agent;
+      // Return protocol-compliant response
+      return {
+        agent: {
+          id: agent.id,
+          name: agent.name,
+          role: agent.role,
+          state: agent.state,
+          metadata: agent.metadata,
+          visibility: "public",
+        },
+      };
+    },
+
+    "map/agents/update": async (params: unknown) => {
+      const { agentId, state, metadata } = params as UpdateParams;
+
+      let agent = agents.get(agentId);
+      if (!agent) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+
+      // Update state if provided
+      if (state !== undefined) {
+        agent = agents.updateState(agentId, state);
+      }
+
+      // Update metadata if provided
+      if (metadata !== undefined) {
+        agent = agents.updateMetadata(agentId, metadata);
+      }
+
+      // Return protocol-compliant response
+      return {
+        agent: {
+          id: agent.id,
+          name: agent.name,
+          role: agent.role,
+          state: agent.state,
+          metadata: agent.metadata,
+          visibility: "public",
+        },
+      };
     },
 
     "map/agents/update/state": async (params: unknown) => {

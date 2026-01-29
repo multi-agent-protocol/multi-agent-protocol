@@ -440,35 +440,35 @@ describe("Server SDK Integration", () => {
       };
 
       // Register agent via handler
-      const agent = await handlers["map/agents/register"](
+      const agentResult = await handlers["map/agents/register"](
         { name: "Full Stack Agent", role: "worker" },
         ctx
       );
-      expect(agent).toBeDefined();
+      expect(agentResult.agent).toBeDefined();
 
       // Create scope
-      const scope = await handlers["map/scopes/create"](
+      const scopeResult = await handlers["map/scopes/create"](
         { name: "Work Room" },
         ctx
       );
-      expect(scope).toBeDefined();
+      expect(scopeResult.scope).toBeDefined();
 
       // Join scope
       await handlers["map/scopes/join"](
-        { scopeId: (scope as ServerScope).id, agentId: (agent as RegisteredAgent).id },
+        { scopeId: scopeResult.scope.id, agentId: agentResult.agent.id },
         ctx
       );
 
       // Verify membership
-      const members = scopes.getMembers((scope as ServerScope).id);
-      expect(members).toContain((agent as RegisteredAgent).id);
+      const members = scopes.getMembers(scopeResult.scope.id);
+      expect(members).toContain(agentResult.agent.id);
 
       // Subscribe to events
       const sub = await handlers["map/subscribe"](
         { filter: { eventTypes: ["agent.registered"] } },
         ctx
       );
-      expect(sub).toBeDefined();
+      expect(sub.subscriptionId).toBeDefined();
     });
   });
 });

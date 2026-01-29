@@ -89,7 +89,8 @@ export function createSubscriptionHandlers(
       // Track subscription in session
       ctx.session.subscriptionIds.push(subscription.id);
 
-      return subscription;
+      // Return protocol-compliant response
+      return { subscriptionId: subscription.id };
     },
 
     "map/unsubscribe": async (params: unknown, ctx: HandlerContext) => {

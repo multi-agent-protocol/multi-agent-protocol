@@ -55,27 +55,30 @@ describe("Handler Factories", () => {
         mockContext
       );
 
-      expect(result.name).toBe("Test Agent");
-      expect(result.role).toBe("worker");
-      expect(result.sessionId).toBe(mockSession.id);
-      expect(mockSession.agentIds).toContain(result.id);
+      expect(result.agent.name).toBe("Test Agent");
+      expect(result.agent.role).toBe("worker");
+      expect(mockSession.agentIds).toContain(result.agent.id);
+
+      // Verify agent was created correctly in the registry
+      const agent = agents.get(result.agent.id);
+      expect(agent?.sessionId).toBe(mockSession.id);
     });
 
     it("should unregister an agent", async () => {
       const handlers = createAgentHandlers({ agents });
 
-      const agent = await handlers["map/agents/register"](
+      const agentResult = await handlers["map/agents/register"](
         { name: "Test Agent" },
         mockContext
       );
 
       const result = await handlers["map/agents/unregister"](
-        { agentId: agent.id },
+        { agentId: agentResult.agent.id },
         mockContext
       );
 
       expect(result.success).toBe(true);
-      expect(agents.get(agent.id)).toBeUndefined();
+      expect(agents.get(agentResult.agent.id)).toBeUndefined();
     });
 
     it("should list agents", async () => {
@@ -88,13 +91,13 @@ describe("Handler Factories", () => {
       );
 
       const all = await handlers["map/agents/list"]({}, mockContext);
-      expect(all).toHaveLength(2);
+      expect(all.agents).toHaveLength(2);
 
       const workers = await handlers["map/agents/list"](
         { role: "worker" },
         mockContext
       );
-      expect(workers).toHaveLength(1);
+      expect(workers.agents).toHaveLength(1);
     });
 
     it("should get an agent", async () => {
@@ -106,24 +109,24 @@ describe("Handler Factories", () => {
       );
 
       const result = await handlers["map/agents/get"](
-        { agentId: created.id },
+        { agentId: created.agent.id },
         mockContext
       );
 
-      expect(result.id).toBe(created.id);
-      expect(result.name).toBe("Test Agent");
+      expect(result.agent.id).toBe(created.agent.id);
+      expect(result.agent.name).toBe("Test Agent");
     });
 
     it("should update agent state", async () => {
       const handlers = createAgentHandlers({ agents });
 
-      const agent = await handlers["map/agents/register"](
+      const agentResult = await handlers["map/agents/register"](
         { name: "Test Agent" },
         mockContext
       );
 
       const result = await handlers["map/agents/update/state"](
-        { agentId: agent.id, state: "busy" },
+        { agentId: agentResult.agent.id, state: "busy" },
         mockContext
       );
 
@@ -133,13 +136,13 @@ describe("Handler Factories", () => {
     it("should update agent metadata", async () => {
       const handlers = createAgentHandlers({ agents });
 
-      const agent = await handlers["map/agents/register"](
+      const agentResult = await handlers["map/agents/register"](
         { name: "Test Agent", metadata: { foo: "bar" } },
         mockContext
       );
 
       const result = await handlers["map/agents/update/metadata"](
-        { agentId: agent.id, metadata: { baz: "qux" } },
+        { agentId: agentResult.agent.id, metadata: { baz: "qux" } },
         mockContext
       );
 
@@ -156,42 +159,42 @@ describe("Handler Factories", () => {
         mockContext
       );
 
-      expect(result.name).toBe("Test Scope");
-      expect(result.metadata).toEqual({ key: "value" });
-      expect(result.createdBy).toBe(mockSession.id);
+      expect(result.scope.name).toBe("Test Scope");
+      expect(result.scope.metadata).toEqual({ key: "value" });
+      expect(result.scope.createdBy).toBe(mockSession.id);
     });
 
     it("should create child scope", async () => {
       const handlers = createScopeHandlers({ scopes });
 
-      const parent = await handlers["map/scopes/create"](
+      const parentResult = await handlers["map/scopes/create"](
         { name: "Parent" },
         mockContext
       );
 
-      const child = await handlers["map/scopes/create"](
-        { name: "Child", parentId: parent.id },
+      const childResult = await handlers["map/scopes/create"](
+        { name: "Child", parentId: parentResult.scope.id },
         mockContext
       );
 
-      expect(child.parentId).toBe(parent.id);
+      expect(childResult.scope.parentId).toBe(parentResult.scope.id);
     });
 
     it("should delete a scope", async () => {
       const handlers = createScopeHandlers({ scopes });
 
-      const scope = await handlers["map/scopes/create"](
+      const scopeResult = await handlers["map/scopes/create"](
         { name: "Test" },
         mockContext
       );
 
       const result = await handlers["map/scopes/delete"](
-        { scopeId: scope.id },
+        { scopeId: scopeResult.scope.id },
         mockContext
       );
 
       expect(result.success).toBe(true);
-      expect(scopes.get(scope.id)).toBeUndefined();
+      expect(scopes.get(scopeResult.scope.id)).toBeUndefined();
     });
 
     it("should list scopes", async () => {
@@ -201,7 +204,7 @@ describe("Handler Factories", () => {
       await handlers["map/scopes/create"]({ name: "Scope 2" }, mockContext);
 
       const result = await handlers["map/scopes/list"]({}, mockContext);
-      expect(result).toHaveLength(2);
+      expect(result.scopes).toHaveLength(2);
     });
 
     it("should get a scope", async () => {
@@ -213,17 +216,17 @@ describe("Handler Factories", () => {
       );
 
       const result = await handlers["map/scopes/get"](
-        { scopeId: created.id },
+        { scopeId: created.scope.id },
         mockContext
       );
 
-      expect(result.id).toBe(created.id);
+      expect(result.scope.id).toBe(created.scope.id);
     });
 
     it("should join and leave scope", async () => {
       const handlers = createScopeHandlers({ scopes });
 
-      const scope = await handlers["map/scopes/create"](
+      const scopeResult = await handlers["map/scopes/create"](
         { name: "Test" },
         mockContext
       );
@@ -234,24 +237,24 @@ describe("Handler Factories", () => {
       });
 
       await handlers["map/scopes/join"](
-        { scopeId: scope.id, agentId: agent.id },
+        { scopeId: scopeResult.scope.id, agentId: agent.id },
         mockContext
       );
 
-      expect(scopes.getMembers(scope.id)).toContain(agent.id);
+      expect(scopes.getMembers(scopeResult.scope.id)).toContain(agent.id);
 
       await handlers["map/scopes/leave"](
-        { scopeId: scope.id, agentId: agent.id },
+        { scopeId: scopeResult.scope.id, agentId: agent.id },
         mockContext
       );
 
-      expect(scopes.getMembers(scope.id)).not.toContain(agent.id);
+      expect(scopes.getMembers(scopeResult.scope.id)).not.toContain(agent.id);
     });
 
     it("should get scope members", async () => {
       const handlers = createScopeHandlers({ scopes });
 
-      const scope = await handlers["map/scopes/create"](
+      const scopeResult = await handlers["map/scopes/create"](
         { name: "Test" },
         mockContext
       );
@@ -265,16 +268,16 @@ describe("Handler Factories", () => {
         sessionId: mockSession.id,
       });
 
-      scopes.join(scope.id, agent1.id);
-      scopes.join(scope.id, agent2.id);
+      scopes.join(scopeResult.scope.id, agent1.id);
+      scopes.join(scopeResult.scope.id, agent2.id);
 
-      const members = await handlers["map/scopes/members"](
-        { scopeId: scope.id },
+      const result = await handlers["map/scopes/members"](
+        { scopeId: scopeResult.scope.id },
         mockContext
       );
 
-      expect(members).toContain(agent1.id);
-      expect(members).toContain(agent2.id);
+      expect(result.members).toContain(agent1.id);
+      expect(result.members).toContain(agent2.id);
     });
   });
 
@@ -287,10 +290,15 @@ describe("Handler Factories", () => {
         mockContext
       );
 
-      expect(result.id).toBeDefined();
-      expect(result.sessionId).toBe(mockSession.id);
-      expect(result.filter.eventTypes).toEqual(["test.event"]);
-      expect(mockSession.subscriptionIds).toContain(result.id);
+      // Check protocol-compliant response
+      expect(result.subscriptionId).toBeDefined();
+      expect(mockSession.subscriptionIds).toContain(result.subscriptionId);
+
+      // Verify subscription was created correctly in the manager
+      const sub = subscriptions.get(result.subscriptionId);
+      expect(sub).toBeDefined();
+      expect(sub?.sessionId).toBe(mockSession.id);
+      expect(sub?.filter.eventTypes).toEqual(["test.event"]);
     });
 
     it("should unsubscribe", async () => {
@@ -302,12 +310,12 @@ describe("Handler Factories", () => {
       );
 
       const result = await handlers["map/unsubscribe"](
-        { subscriptionId: sub.id },
+        { subscriptionId: sub.subscriptionId },
         mockContext
       );
 
       expect(result.success).toBe(true);
-      expect(subscriptions.get(sub.id)).toBeUndefined();
+      expect(subscriptions.get(sub.subscriptionId)).toBeUndefined();
     });
 
     it("should replay events", async () => {
@@ -323,7 +331,7 @@ describe("Handler Factories", () => {
       );
 
       const events = await handlers["map/replay"](
-        { subscriptionId: sub.id },
+        { subscriptionId: sub.subscriptionId },
         mockContext
       );
 
@@ -337,12 +345,12 @@ describe("Handler Factories", () => {
       const event = eventBus.emit({ type: "test", data: {} });
 
       const result = await handlers["map/ack"](
-        { subscriptionId: sub.id, eventId: event.id },
+        { subscriptionId: sub.subscriptionId, eventId: event.id },
         mockContext
       );
 
       expect(result.success).toBe(true);
-      expect(subscriptions.get(sub.id)?.lastEventId).toBe(event.id);
+      expect(subscriptions.get(sub.subscriptionId)?.lastEventId).toBe(event.id);
     });
 
     it("should pause and resume", async () => {
@@ -350,11 +358,11 @@ describe("Handler Factories", () => {
 
       const sub = await handlers["map/subscribe"]({ filter: {} }, mockContext);
 
-      await handlers["map/pause"]({ subscriptionId: sub.id }, mockContext);
-      expect(subscriptions.get(sub.id)?.paused).toBe(true);
+      await handlers["map/pause"]({ subscriptionId: sub.subscriptionId }, mockContext);
+      expect(subscriptions.get(sub.subscriptionId)?.paused).toBe(true);
 
-      await handlers["map/resume"]({ subscriptionId: sub.id }, mockContext);
-      expect(subscriptions.get(sub.id)?.paused).toBe(false);
+      await handlers["map/resume"]({ subscriptionId: sub.subscriptionId }, mockContext);
+      expect(subscriptions.get(sub.subscriptionId)?.paused).toBe(false);
     });
   });
 
@@ -383,8 +391,9 @@ describe("Handler Factories", () => {
         mockContext
       );
 
-      expect(result.from).toBe(agent.id);
-      expect(result.to).toBe(receiver.id);
+      // Check protocol-compliant response
+      expect(result.messageId).toBeDefined();
+      expect(typeof result.messageId).toBe("string");
     });
 
     it("should send message to scope", async () => {
@@ -414,8 +423,9 @@ describe("Handler Factories", () => {
         mockContext
       );
 
-      expect(result.from).toBe(sender.id);
-      expect(result.to).toBe(scope.id);
+      // Check protocol-compliant response
+      expect(result.messageId).toBeDefined();
+      expect(typeof result.messageId).toBe("string");
       // Should be delivered to receiver (sender excluded)
       expect(deliveredMessages.some((m) => m.agentId === receiver.id)).toBe(
         true

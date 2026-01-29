@@ -54,6 +54,275 @@ function handleConnection(stream: BidirectionalStream) {
 }
 ```
 
+## Wiring Events and Messages
+
+The building blocks are independent components that need to be wired together for a complete server. This section explains how to connect them so that:
+
+- **Events** flow from the EventBus to client subscriptions
+- **Messages** are delivered to the correct agent connections
+
+### Connection Tracking
+
+First, you need to track active connections so you can route events and messages to the right clients:
+
+```typescript
+// Track connections by session ID
+const connectionsBySession = new Map<string, RouterConnectionImpl>();
+
+// Track which agents belong to which connection
+const connectionsByAgent = new Map<string, RouterConnectionImpl>();
+
+function handleConnection(stream: BidirectionalStream, role: "client" | "agent") {
+  const connection = new RouterConnectionImpl({
+    stream,
+    handlers,
+    sessions,
+    role,
+  });
+
+  connection.start();
+
+  // Track by session once connected
+  // RouterConnectionImpl creates a session internally
+  const session = connection.session;
+  if (session) {
+    connectionsBySession.set(session.id, connection);
+  }
+
+  // Clean up on close
+  connection.onClose(() => {
+    if (session) {
+      connectionsBySession.delete(session.id);
+      // Remove agent mappings for this session
+      for (const agentId of session.agentIds) {
+        connectionsByAgent.delete(agentId);
+      }
+    }
+  });
+
+  return connection;
+}
+```
+
+### Event Delivery Wiring
+
+Events emitted by building blocks need to be delivered to clients with matching subscriptions. Wire the EventBus to push events to client connections:
+
+```typescript
+import { NOTIFICATION_METHODS } from "@anthropic/multi-agent-protocol";
+
+// Track sequence numbers per subscription for ordering
+const subscriptionSequences = new Map<string, number>();
+
+// Wire event delivery
+eventBus.on("*", (event) => {
+  // Find subscriptions that match this event
+  const matchingSubIds = subscriptions.match(event);
+
+  for (const subId of matchingSubIds) {
+    const subscription = subscriptions.get(subId);
+    if (!subscription || subscription.paused) continue;
+
+    // Find the connection for this subscription's session
+    const connection = connectionsBySession.get(subscription.sessionId);
+    if (!connection) continue;
+
+    // Increment sequence number for ordering
+    const seq = (subscriptionSequences.get(subId) ?? 0) + 1;
+    subscriptionSequences.set(subId, seq);
+
+    // Send event notification to client
+    connection.notify(NOTIFICATION_METHODS.EVENT, {
+      subscriptionId: subId,
+      sequenceNumber: seq,
+      eventId: event.id,
+      timestamp: event.timestamp,
+      event,
+    }).catch(() => {
+      // Ignore errors for closed connections
+    });
+  }
+});
+```
+
+### Message Delivery Wiring
+
+Messages sent via the MessageRouter need to be delivered to the target agent's connection:
+
+```typescript
+// Wire message delivery
+messages.onDeliver((agentId, message) => {
+  const connection = connectionsByAgent.get(agentId);
+  if (!connection) {
+    // Agent not connected - message will be queued automatically
+    return;
+  }
+
+  // Send message notification to agent
+  connection.notify(NOTIFICATION_METHODS.MESSAGE, {
+    messageId: message.id,
+    from: message.from,
+    payload: message.payload,
+    timestamp: message.timestamp,
+    replyTo: message.replyTo,
+  }).catch(() => {
+    // Ignore errors for closed connections
+  });
+});
+```
+
+### Agent Registration Tracking
+
+When agents register, track their connection for message delivery:
+
+```typescript
+// Listen for agent registrations to update connection tracking
+eventBus.on("agent.registered", (event) => {
+  const { agent } = event.data;
+  const connection = connectionsBySession.get(agent.sessionId);
+  if (connection) {
+    connectionsByAgent.set(agent.id, connection);
+  }
+});
+
+// Clean up when agents unregister
+eventBus.on("agent.unregistered", (event) => {
+  const { agentId } = event.data;
+  connectionsByAgent.delete(agentId);
+});
+```
+
+### Complete Wiring Example
+
+Here's a complete example putting it all together:
+
+```typescript
+import {
+  EventBusImpl,
+  AgentRegistryImpl,
+  ScopeManagerImpl,
+  SessionManagerImpl,
+  SubscriptionManagerImpl,
+  MessageRouterImpl,
+  RouterConnectionImpl,
+  createConnectionHandlers,
+  createAgentHandlers,
+  createScopeHandlers,
+  createMessageHandlers,
+  createSubscriptionHandlers,
+  combineHandlers,
+  type MAPEvent,
+} from "@anthropic/multi-agent-protocol/server";
+import { NOTIFICATION_METHODS } from "@anthropic/multi-agent-protocol";
+
+// 1. Create building blocks
+const eventBus = new EventBusImpl();
+const sessions = new SessionManagerImpl({ eventBus });
+const agents = new AgentRegistryImpl({ eventBus });
+const scopes = new ScopeManagerImpl({ eventBus });
+const subscriptions = new SubscriptionManagerImpl({ eventBus, scopes });
+const messages = new MessageRouterImpl({ eventBus, agents, scopes });
+
+// 2. Combine handlers
+const handlers = combineHandlers(
+  createConnectionHandlers({ sessions }),
+  createAgentHandlers({ agents, eventBus }),
+  createScopeHandlers({ scopes, eventBus }),
+  createMessageHandlers({ messages, scopes }),
+  createSubscriptionHandlers({ subscriptions, eventBus })
+);
+
+// 3. Connection tracking
+const connectionsBySession = new Map<string, RouterConnectionImpl>();
+const connectionsByAgent = new Map<string, RouterConnectionImpl>();
+const subscriptionSequences = new Map<string, number>();
+
+// 4. Wire event delivery
+eventBus.on("*", (event: MAPEvent) => {
+  const matchingSubIds = subscriptions.match(event);
+  for (const subId of matchingSubIds) {
+    const subscription = subscriptions.get(subId);
+    if (!subscription || subscription.paused) continue;
+
+    const connection = connectionsBySession.get(subscription.sessionId);
+    if (!connection) continue;
+
+    const seq = (subscriptionSequences.get(subId) ?? 0) + 1;
+    subscriptionSequences.set(subId, seq);
+
+    connection.notify(NOTIFICATION_METHODS.EVENT, {
+      subscriptionId: subId,
+      sequenceNumber: seq,
+      eventId: event.id,
+      timestamp: event.timestamp,
+      event,
+    }).catch(() => {});
+  }
+});
+
+// 5. Wire message delivery
+messages.onDeliver((agentId, message) => {
+  const connection = connectionsByAgent.get(agentId);
+  if (!connection) return;
+
+  connection.notify(NOTIFICATION_METHODS.MESSAGE, {
+    messageId: message.id,
+    from: message.from,
+    payload: message.payload,
+    timestamp: message.timestamp,
+    replyTo: message.replyTo,
+  }).catch(() => {});
+});
+
+// 6. Track agent registrations
+eventBus.on("agent.registered", (event: MAPEvent) => {
+  const { agent } = event.data;
+  const connection = connectionsBySession.get(agent.sessionId);
+  if (connection) {
+    connectionsByAgent.set(agent.id, connection);
+  }
+});
+
+eventBus.on("agent.unregistered", (event: MAPEvent) => {
+  connectionsByAgent.delete(event.data.agentId);
+});
+
+// 7. Handle incoming connections
+function handleConnection(stream: BidirectionalStream, role: "client" | "agent") {
+  const connection = new RouterConnectionImpl({
+    stream,
+    handlers,
+    sessions,
+    role,
+  });
+
+  connection.start();
+
+  const session = connection.session;
+  if (session) {
+    connectionsBySession.set(session.id, connection);
+  }
+
+  connection.onClose(() => {
+    if (session) {
+      connectionsBySession.delete(session.id);
+      for (const agentId of session.agentIds) {
+        connectionsByAgent.delete(agentId);
+      }
+      subscriptionSequences.clear(); // Clean up sequence tracking
+    }
+  });
+
+  return connection;
+}
+
+// 8. Use with your transport (WebSocket, etc.)
+// wss.on("connection", (ws) => {
+//   const stream = createWebSocketStream(ws);
+//   handleConnection(stream, "agent");
+// });
+```
+
 ## Architecture
 
 ```

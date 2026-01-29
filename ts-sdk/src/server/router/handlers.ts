@@ -21,6 +21,10 @@ export interface ConnectionHandlerOptions {
   agents?: AgentRegistry;
   subscriptions?: SubscriptionManager;
   scopes?: ScopeManager;
+  /** Server name for connect response */
+  serverName?: string;
+  /** Server version for connect response */
+  serverVersion?: string;
 }
 
 /**
@@ -34,16 +38,26 @@ export interface ConnectionHandlerOptions {
 export function createConnectionHandlers(
   options: ConnectionHandlerOptions
 ): HandlerRegistry {
-  const { sessions, agents, subscriptions, scopes } = options;
+  const { sessions, agents, subscriptions, scopes, serverName, serverVersion } = options;
 
   return {
     "map/connect": async (_params: unknown, ctx: HandlerContext) => {
       // Session is already created by RouterConnection.start()
-      // Just return session info
+      // Return protocol-compliant connect response
       return {
+        protocolVersion: "2024-12",
         sessionId: ctx.session.id,
-        resumeToken: ctx.session.resumeToken,
-        connectedAt: ctx.session.connectedAt,
+        participantId: ctx.session.id, // Use session ID as participant ID
+        capabilities: {
+          roles: [ctx.session.role],
+          features: [],
+        },
+        systemInfo: {
+          name: serverName ?? "MAP Server",
+          version: serverVersion ?? "1.0.0",
+        },
+        reconnected: false,
+        ownedAgents: ctx.session.agentIds,
       };
     },
 

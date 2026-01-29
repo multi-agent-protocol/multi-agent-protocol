@@ -69,9 +69,10 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
             priority,
             ttlMs,
           });
-          results.push(message);
+          results.push(message.id);
         }
-        return { messages: results };
+        // Return protocol-compliant response
+        return { messageId: results[0], delivered: results };
       }
 
       // Check if 'to' is a scope ID by trying to get it
@@ -84,7 +85,8 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
           payload,
           excludeSender: true,
         });
-        return message;
+        // Return protocol-compliant response
+        return { messageId: message.id };
       }
 
       // Send to single agent
@@ -97,7 +99,8 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
         ttlMs,
       });
 
-      return message;
+      // Return protocol-compliant response
+      return { messageId: message.id };
     },
 
     "map/send/scope": async (params: unknown, ctx: HandlerContext) => {
@@ -114,7 +117,8 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
         includeDescendants,
       });
 
-      return message;
+      // Return protocol-compliant response
+      return { messageId: message.id };
     },
   };
 }
