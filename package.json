@@ -22,6 +22,7 @@
     "test": "npm run test --workspace=ts-sdk",
     "typecheck": "npm run typecheck --workspace=ts-sdk",
     "publish:npm": "npm publish --access public",
+    "prepublishOnly": "npm run build",
     "version:patch": "npm version patch && git push && git push --tags",
     "version:minor": "npm version minor && git push && git push --tags",
     "version:major": "npm version major && git push && git push --tags"
@@ -40,12 +41,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alexngai/multi-agent-protocol.git"
+    "url": "git+https://github.com/multi-agent-protocol/multi-agent-protocol.git"
   },
   "bugs": {
-    "url": "https://github.com/alexngai/multi-agent-protocol/issues"
+    "url": "https://github.com/multi-agent-protocol/multi-agent-protocol/issues"
   },
-  "homepage": "https://github.com/alexngai/multi-agent-protocol#readme",
+  "homepage": "https://github.com/multi-agent-protocol/multi-agent-protocol#readme",
   "engines": {
     "node": ">=18.0.0"
   },
