@@ -1,0 +1,2309 @@
+/**
+ * Multi-Agent Protocol (MAP) Type Definitions - v2
+ *
+ * Core type definitions matching the MAP JSON Schema.
+ * These types are the foundation for the TypeScript SDK.
+ *
+ * v2 Changes:
+ * - Fixed ERROR_CODES collision (FEDERATION_AUTH_FAILED)
+ * - Added Agent.ownerId for ownership tracking
+ * - Reorganized method constants by capability domain
+ * - Added EventInput type and createEvent() helper
+ * - Added disconnect policy and lifecycle events
+ * - Expanded subscription filters
+ * - Standardized response shapes (always return entities)
+ * - Added hierarchy expansion to agents/get
+ * - Added CAPABILITY_REQUIREMENTS mapping
+ * - Clarified message event data (no payloads)
+ */
+
+// =============================================================================
+// Primitive Types & Identifiers
+// =============================================================================
+
+/** Unique identifier for any participant (agent, client, system, gateway) */
+export type ParticipantId = string;
+
+/** Unique identifier for an agent */
+export type AgentId = string;
+
+/** Unique identifier for a scope */
+export type ScopeId = string;
+
+/** Unique identifier for a session */
+export type SessionId = string;
+
+/** Unique identifier for a message */
+export type MessageId = string;
+
+/** Unique identifier for a subscription */
+export type SubscriptionId = string;
+
+/** Identifier for correlating related messages */
+export type CorrelationId = string;
+
+/** JSON-RPC request ID */
+export type RequestId = string | number;
+
+/** MAP protocol version */
+export type ProtocolVersion = 1;
+
+/** Unix timestamp in milliseconds */
+export type Timestamp = number;
+
+/** Vendor extension metadata */
+export type Meta = Record<string, unknown>;
+
+// =============================================================================
+// Participant Types
+// =============================================================================
+
+/** Type of participant in the protocol */
+export type ParticipantType = 'agent' | 'client' | 'system' | 'gateway';
+
+/** Transport binding type */
+export type TransportType = 'websocket' | 'stdio' | 'inprocess' | 'http-sse';
+
+/**
+ * Streaming capabilities for backpressure and flow control.
+ * Servers advertise these to indicate what features they support.
+ */
+export interface StreamingCapabilities {
+  /** Server can receive and process ack notifications */
+  supportsAck?: boolean;
+  /** Server will pause sending when client falls behind */
+  supportsFlowControl?: boolean;
+  /** Server supports pause/resume subscription state */
+  supportsPause?: boolean;
+}
+
+/** Capabilities of a participant, grouped by category */
+export interface ParticipantCapabilities {
+  observation?: {
+    /** Can subscribe to event streams */
+    canObserve?: boolean;
+    /** Can query agents and structure */
+    canQuery?: boolean;
+  };
+  messaging?: {
+    /** Can send messages */
+    canSend?: boolean;
+    /** Can receive messages addressed to it */
+    canReceive?: boolean;
+    /** Can send to scopes/roles */
+    canBroadcast?: boolean;
+  };
+  lifecycle?: {
+    /** Can create child agents */
+    canSpawn?: boolean;
+    /** Can register agents (not as children) */
+    canRegister?: boolean;
+    /** Can remove agents */
+    canUnregister?: boolean;
+    /** Can inject context/control agents */
+    canSteer?: boolean;
+    /** Can request agent termination */
+    canStop?: boolean;
+  };
+  scopes?: {
+    /** Can create new scopes */
+    canCreateScopes?: boolean;
+    /** Can modify and delete scopes */
+    canManageScopes?: boolean;
+  };
+  federation?: {
+    /** Can connect to and route to federated systems */
+    canFederate?: boolean;
+  };
+  /** Streaming/backpressure capabilities */
+  streaming?: StreamingCapabilities;
+  _meta?: Meta;
+}
+
+/** A participant in the MAP protocol */
+export interface Participant {
+  id: ParticipantId;
+  type: ParticipantType;
+  name?: string;
+  capabilities?: ParticipantCapabilities;
+  transport?: TransportType;
+  sessionId?: SessionId;
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Agent Types
+// =============================================================================
+
+/**
+ * State of an agent.
+ * Standard states are enumerated; custom states use 'x-' prefix.
+ */
+export type AgentState =
+  | 'registered'
+  | 'active'
+  | 'busy'
+  | 'idle'
+  | 'suspended'
+  | 'stopping'
+  | 'stopped'
+  | 'failed'
+  | 'orphaned'
+  | `x-${string}`;
+
+/** Type of relationship between agents */
+export type AgentRelationshipType = 'peer' | 'supervisor' | 'supervised' | 'collaborator';
+
+/** A relationship between agents */
+export interface AgentRelationship {
+  type: AgentRelationshipType;
+  agentId: AgentId;
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+/** Lifecycle metadata for an agent */
+export interface AgentLifecycle {
+  createdAt?: Timestamp;
+  startedAt?: Timestamp;
+  stoppedAt?: Timestamp;
+  lastActiveAt?: Timestamp;
+  orphanedAt?: Timestamp;
+  exitCode?: number;
+  exitReason?: string;
+  _meta?: Meta;
+}
+
+/** Who can see this agent */
+export type AgentVisibility = 'public' | 'parent-only' | 'scope' | 'system';
+
+/** An agent in the multi-agent system */
+export interface Agent {
+  id: AgentId;
+
+  /**
+   * The participant that owns/controls this agent's connection.
+   * Used for message routing and cleanup on disconnect.
+   *
+   * - Non-null: Agent is owned by the specified participant
+   * - null: Agent is orphaned (owner disconnected with 'orphan' policy)
+   */
+  ownerId: ParticipantId | null;
+
+  name?: string;
+  description?: string;
+
+  /** Parent agent ID (for spawned agents) */
+  parent?: AgentId;
+
+  /** Child agent IDs (populated when queried with include.children) */
+  children?: AgentId[];
+
+  relationships?: AgentRelationship[];
+  state: AgentState;
+  role?: string;
+  scopes?: ScopeId[];
+
+  /**
+   * Simple visibility setting (legacy).
+   * @deprecated Use permissionOverrides.canSee.agents for more granular control
+   */
+  visibility?: AgentVisibility;
+
+  /**
+   * Per-agent permission overrides.
+   * Merged on top of role-based defaults from system configuration.
+   * Only include fields that differ from the role default.
+   *
+   * @example
+   * ```typescript
+   * // Agent that accepts messages from clients (unlike role default)
+   * permissionOverrides: {
+   *   acceptsFrom: { clients: 'all' }
+   * }
+   * ```
+   */
+  permissionOverrides?: Partial<AgentPermissions>;
+
+  lifecycle?: AgentLifecycle;
+  capabilities?: ParticipantCapabilities;
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+/**
+ * Check if an agent is orphaned (owner disconnected).
+ * Orphaned agents have `ownerId === null`.
+ */
+export function isOrphanedAgent(agent: Agent): boolean {
+  return agent.ownerId === null;
+}
+
+// =============================================================================
+// Agent Permission Types
+// =============================================================================
+
+/**
+ * Rule for which agents this agent can see.
+ * - 'all': Can see any agent in the system
+ * - 'hierarchy': Can see parent, children, ancestors, descendants
+ * - 'scoped': Can see agents in the same scopes
+ * - 'direct': Can only see explicitly included agents
+ * - { include: [...] }: Explicit allowlist of agent IDs
+ */
+export type AgentVisibilityRule =
+  | 'all'
+  | 'hierarchy'
+  | 'scoped'
+  | 'direct'
+  | { include: AgentId[] };
+
+/**
+ * Rule for which scopes this agent can see.
+ * - 'all': Can see any scope
+ * - 'member': Can only see scopes they're a member of
+ * - { include: [...] }: Explicit allowlist of scope IDs
+ */
+export type ScopeVisibilityRule =
+  | 'all'
+  | 'member'
+  | { include: ScopeId[] };
+
+/**
+ * Rule for how much agent hierarchy structure this agent can see.
+ * - 'full': Can see the full agent hierarchy tree
+ * - 'local': Can see immediate parent and children only
+ * - 'none': Cannot see hierarchy relationships
+ */
+export type StructureVisibilityRule = 'full' | 'local' | 'none';
+
+/**
+ * Rule for which agents this agent can send messages to.
+ * - 'all': Can message any agent
+ * - 'hierarchy': Can message parent, children, ancestors, descendants
+ * - 'scoped': Can message agents in the same scopes
+ * - { include: [...] }: Explicit allowlist of agent IDs
+ */
+export type AgentMessagingRule =
+  | 'all'
+  | 'hierarchy'
+  | 'scoped'
+  | { include: AgentId[] };
+
+/**
+ * Rule for which scopes this agent can send messages to.
+ * - 'all': Can send to any scope
+ * - 'member': Can only send to scopes they're a member of
+ * - { include: [...] }: Explicit allowlist of scope IDs
+ */
+export type ScopeMessagingRule =
+  | 'all'
+  | 'member'
+  | { include: ScopeId[] };
+
+/**
+ * Rule for which agents this agent accepts messages from.
+ * - 'all': Accepts from any agent
+ * - 'hierarchy': Accepts from parent, children, ancestors, descendants
+ * - 'scoped': Accepts from agents in the same scopes
+ * - { include: [...] }: Explicit allowlist of agent IDs
+ */
+export type AgentAcceptanceRule =
+  | 'all'
+  | 'hierarchy'
+  | 'scoped'
+  | { include: AgentId[] };
+
+/**
+ * Rule for which clients this agent accepts messages from.
+ * - 'all': Accepts from any client
+ * - 'none': Does not accept from any client
+ * - { include: [...] }: Explicit allowlist of participant IDs
+ */
+export type ClientAcceptanceRule =
+  | 'all'
+  | 'none'
+  | { include: ParticipantId[] };
+
+/**
+ * Rule for which federated systems this agent accepts messages from.
+ * - 'all': Accepts from any federated system
+ * - 'none': Does not accept from any federated system
+ * - { include: [...] }: Explicit allowlist of system IDs
+ */
+export type SystemAcceptanceRule =
+  | 'all'
+  | 'none'
+  | { include: string[] };
+
+/**
+ * Permission configuration for an agent.
+ * Defines what the agent can see, who it can message, and who it accepts messages from.
+ *
+ * Used in two ways:
+ * 1. As role-based defaults in system configuration
+ * 2. As per-agent overrides via Agent.permissionOverrides
+ *
+ * @example
+ * ```typescript
+ * const workerPermissions: AgentPermissions = {
+ *   canSee: {
+ *     agents: 'hierarchy',
+ *     scopes: 'member',
+ *     structure: 'local',
+ *   },
+ *   canMessage: {
+ *     agents: 'hierarchy',
+ *     scopes: 'member',
+ *   },
+ *   acceptsFrom: {
+ *     agents: 'hierarchy',
+ *     clients: 'none',
+ *     systems: 'none',
+ *   },
+ * };
+ * ```
+ */
+export interface AgentPermissions {
+  /** Rules for what this agent can see */
+  canSee?: {
+    /** Which agents this agent can see */
+    agents?: AgentVisibilityRule;
+    /** Which scopes this agent can see */
+    scopes?: ScopeVisibilityRule;
+    /** How much hierarchy structure this agent can see */
+    structure?: StructureVisibilityRule;
+  };
+  /** Rules for who this agent can send messages to */
+  canMessage?: {
+    /** Which agents this agent can message */
+    agents?: AgentMessagingRule;
+    /** Which scopes this agent can send to */
+    scopes?: ScopeMessagingRule;
+  };
+  /** Rules for who this agent accepts messages from */
+  acceptsFrom?: {
+    /** Which agents this agent accepts messages from */
+    agents?: AgentAcceptanceRule;
+    /** Which clients this agent accepts messages from */
+    clients?: ClientAcceptanceRule;
+    /** Which federated systems this agent accepts messages from */
+    systems?: SystemAcceptanceRule;
+  };
+}
+
+/**
+ * System-level configuration for agent permissions.
+ * Defines default permissions and role-based permission templates.
+ *
+ * Resolution order:
+ * 1. Start with defaultPermissions
+ * 2. If agent has a role, deep merge rolePermissions[role]
+ * 3. Deep merge agent.permissionOverrides
+ *
+ * @example
+ * ```typescript
+ * const config: AgentPermissionConfig = {
+ *   defaultPermissions: {
+ *     canSee: { agents: 'hierarchy', scopes: 'member', structure: 'local' },
+ *     canMessage: { agents: 'hierarchy', scopes: 'member' },
+ *     acceptsFrom: { agents: 'hierarchy', clients: 'none', systems: 'none' },
+ *   },
+ *   rolePermissions: {
+ *     coordinator: {
+ *       canSee: { agents: 'all', scopes: 'all', structure: 'full' },
+ *       canMessage: { agents: 'all', scopes: 'all' },
+ *       acceptsFrom: { agents: 'all', clients: 'all', systems: 'none' },
+ *     },
+ *   },
+ * };
+ * ```
+ */
+export interface AgentPermissionConfig {
+  /** Default permissions for agents without a role or role-specific config */
+  defaultPermissions: AgentPermissions;
+  /** Role-based permission templates */
+  rolePermissions: Record<string, AgentPermissions>;
+}
+
+// =============================================================================
+// Addressing Types
+// =============================================================================
+
+/** Address a single agent directly */
+export interface DirectAddress {
+  agent: AgentId;
+}
+
+/** Address multiple agents */
+export interface MultiAddress {
+  agents: AgentId[];
+}
+
+/** Address all agents in a scope */
+export interface ScopeAddress {
+  scope: ScopeId;
+}
+
+/** Address agents by role, optionally within a scope */
+export interface RoleAddress {
+  role: string;
+  within?: ScopeId;
+}
+
+/** Address relative to sender in hierarchy */
+export interface HierarchicalAddress {
+  parent?: true;
+  children?: true;
+  ancestors?: true;
+  descendants?: true;
+  siblings?: true;
+  depth?: number;
+}
+
+/** Address all agents in the system */
+export interface BroadcastAddress {
+  broadcast: true;
+}
+
+/** Address the system/router itself */
+export interface SystemAddress {
+  system: true;
+}
+
+/** Address any participant by ID or category */
+export interface ParticipantAddress {
+  participant?: ParticipantId;
+  participants?: 'all' | 'agents' | 'clients';
+}
+
+/** Address an agent in a federated system */
+export interface FederatedAddress {
+  system: string;
+  agent: AgentId;
+}
+
+/** Flexible addressing for any topology */
+export type Address =
+  | string
+  | DirectAddress
+  | MultiAddress
+  | ScopeAddress
+  | RoleAddress
+  | HierarchicalAddress
+  | BroadcastAddress
+  | SystemAddress
+  | ParticipantAddress
+  | FederatedAddress;
+
+// =============================================================================
+// Message Types
+// =============================================================================
+
+/** Message priority */
+export type MessagePriority = 'urgent' | 'high' | 'normal' | 'low';
+
+/** Message delivery guarantees */
+export type DeliverySemantics = 'fire-and-forget' | 'acknowledged' | 'guaranteed';
+
+/** Relationship context for the message */
+export type MessageRelationship = 'parent-to-child' | 'child-to-parent' | 'peer' | 'broadcast';
+
+/** Metadata for a message */
+export interface MessageMeta {
+  timestamp?: Timestamp;
+  relationship?: MessageRelationship;
+  expectsResponse?: boolean;
+  correlationId?: CorrelationId;
+  isResult?: boolean;
+  priority?: MessagePriority;
+  delivery?: DeliverySemantics;
+  ttlMs?: number;
+  _meta?: Meta;
+}
+
+/** A message in the multi-agent system */
+export interface Message<T = unknown> {
+  id: MessageId;
+  from: ParticipantId;
+  to: Address;
+  timestamp: Timestamp;
+  payload?: T;
+  meta?: MessageMeta;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Scope Types
+// =============================================================================
+
+/** Policy for joining a scope */
+export type JoinPolicy = 'open' | 'invite' | 'role' | 'system';
+
+/** Who can see the scope exists and its members */
+export type ScopeVisibility = 'public' | 'members' | 'system';
+
+/** Who can see messages sent to this scope */
+export type MessageVisibility = 'public' | 'members' | 'system';
+
+/** Who can send messages to this scope */
+export type SendPolicy = 'members' | 'any';
+
+/** A scope for grouping agents */
+export interface Scope {
+  id: ScopeId;
+  name?: string;
+  description?: string;
+  parent?: ScopeId;
+  joinPolicy?: JoinPolicy;
+  autoJoinRoles?: string[];
+  visibility?: ScopeVisibility;
+  messageVisibility?: MessageVisibility;
+  sendPolicy?: SendPolicy;
+  persistent?: boolean;
+  autoDelete?: boolean;
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Event Types
+// =============================================================================
+
+/**
+ * Event type constants.
+ * Use these instead of string literals for type safety and autocomplete.
+ */
+export const EVENT_TYPES = {
+  // Agent lifecycle events
+  AGENT_REGISTERED: 'agent_registered',
+  AGENT_UNREGISTERED: 'agent_unregistered',
+  AGENT_STATE_CHANGED: 'agent_state_changed',
+  AGENT_ORPHANED: 'agent_orphaned',
+
+  // Participant lifecycle events
+  PARTICIPANT_CONNECTED: 'participant_connected',
+  PARTICIPANT_DISCONNECTED: 'participant_disconnected',
+
+  // Message events
+  MESSAGE_SENT: 'message_sent',
+  MESSAGE_DELIVERED: 'message_delivered',
+  MESSAGE_FAILED: 'message_failed',
+
+  // Scope events
+  SCOPE_CREATED: 'scope_created',
+  SCOPE_DELETED: 'scope_deleted',
+  SCOPE_MEMBER_JOINED: 'scope_member_joined',
+  SCOPE_MEMBER_LEFT: 'scope_member_left',
+
+  // Permission events
+  PERMISSIONS_CLIENT_UPDATED: 'permissions_client_updated',
+  PERMISSIONS_AGENT_UPDATED: 'permissions_agent_updated',
+
+  // System events
+  SYSTEM_ERROR: 'system_error',
+
+  // Federation events
+  FEDERATION_CONNECTED: 'federation_connected',
+  FEDERATION_DISCONNECTED: 'federation_disconnected',
+} as const;
+
+/** Type of system event (derived from EVENT_TYPES) */
+export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];
+
+/**
+ * Input for creating events.
+ * id and timestamp are optional - server generates them.
+ */
+export interface EventInput {
+  type: EventType;
+  timestamp?: Timestamp;
+  source?: ParticipantId;
+  data?: Record<string, unknown>;
+  causedBy?: string[];
+  _meta?: Meta;
+}
+
+/**
+ * Wire event as sent to clients.
+ * id and timestamp are always present.
+ */
+export interface Event {
+  id: string;
+  type: EventType;
+  timestamp: Timestamp;
+  source?: ParticipantId;
+  data?: Record<string, unknown>;
+  causedBy?: string[];
+  _meta?: Meta;
+}
+
+/** Helper to create events with auto-generated id and timestamp */
+export function createEvent(input: EventInput): Event {
+  return {
+    id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: input.timestamp ?? Date.now(),
+    type: input.type,
+    source: input.source,
+    data: input.data,
+    causedBy: input.causedBy,
+    _meta: input._meta,
+  };
+}
+
+// =============================================================================
+// Subscription Types
+// =============================================================================
+
+/**
+ * Filter for event subscriptions.
+ *
+ * ## Combination Logic
+ *
+ * All specified fields are combined with **AND** logic:
+ * - An event must match ALL specified criteria to be delivered
+ * - Within array fields, values are combined with **OR** logic
+ * - Empty arrays (`[]`) are treated as "no filter" (matches any)
+ * - Undefined/omitted fields are treated as "no filter" (matches any)
+ *
+ * ## Examples
+ *
+ * ```typescript
+ * // Match agent_registered OR agent_unregistered events from agent-1 OR agent-2
+ * {
+ *   eventTypes: ['agent_registered', 'agent_unregistered'],
+ *   fromAgents: ['agent-1', 'agent-2']
+ * }
+ *
+ * // Match any event from agents with role 'worker' OR 'supervisor'
+ * { fromRoles: ['worker', 'supervisor'] }
+ *
+ * // Match scope events in scope-1 with metadata containing priority='high'
+ * {
+ *   scopes: ['scope-1'],
+ *   metadataMatch: { priority: 'high' }
+ * }
+ * ```
+ *
+ * ## Field Semantics
+ *
+ * | Field | Within-field | Cross-field | Description |
+ * |-------|--------------|-------------|-------------|
+ * | `eventTypes` | OR | AND | Event type is one of the listed types |
+ * | `agents` | OR | AND | Event relates to one of the listed agents (legacy) |
+ * | `fromAgents` | OR | AND | Event source is one of the listed agents |
+ * | `fromRoles` | OR | AND | Event source agent has one of the listed roles |
+ * | `roles` | OR | AND | Event relates to agents with one of the listed roles |
+ * | `scopes` | OR | AND | Event relates to one of the listed scopes |
+ * | `priorities` | OR | AND | Message priority is one of the listed levels |
+ * | `correlationIds` | OR | AND | Event has one of the listed correlation IDs |
+ * | `metadataMatch` | AND | AND | Event metadata contains ALL specified key-value pairs |
+ */
+export interface SubscriptionFilter {
+  /**
+   * Filter by agents the event relates to.
+   * @deprecated Use `fromAgents` for clearer semantics
+   */
+  agents?: AgentId[];
+
+  /**
+   * Filter by roles the event relates to.
+   * Matches events where the related agent has one of these roles.
+   */
+  roles?: string[];
+
+  /**
+   * Filter by scopes the event relates to.
+   * Matches events with scopeId in event.data matching one of these.
+   */
+  scopes?: ScopeId[];
+
+  /**
+   * Filter by event type.
+   * Use EVENT_TYPES constants: `eventTypes: [EVENT_TYPES.AGENT_REGISTERED]`
+   */
+  eventTypes?: EventType[];
+
+  /**
+   * Filter by message priority (for message events).
+   */
+  priorities?: MessagePriority[];
+
+  /**
+   * Filter by correlation ID.
+   * Matches events with correlationId in event.data matching one of these.
+   */
+  correlationIds?: CorrelationId[];
+
+  /**
+   * Filter by source agent ID.
+   * Matches events where event.source is one of these agent IDs.
+   */
+  fromAgents?: AgentId[];
+
+  /**
+   * Filter by source agent role.
+   * Matches events where the source agent has one of these roles.
+   */
+  fromRoles?: string[];
+
+  /**
+   * Filter by metadata key-value pairs.
+   * All specified pairs must match (AND logic within this field).
+   * Checks event.data.metadata for matching values.
+   */
+  metadataMatch?: Record<string, unknown>;
+
+  _meta?: Meta;
+}
+
+/** Options for subscriptions */
+export interface SubscriptionOptions {
+  /** Include full payloads in message events (default: false) */
+  includeMessagePayloads?: boolean;
+  /** Exclude events from own actions (default: false) */
+  excludeOwnEvents?: boolean;
+}
+
+/** An active event subscription */
+export interface Subscription {
+  id: SubscriptionId;
+  filter?: SubscriptionFilter;
+  options?: SubscriptionOptions;
+  createdAt?: Timestamp;
+  replayFrom?: Timestamp | string;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Subscription Backpressure Types
+// =============================================================================
+
+/**
+ * State of a subscription's event delivery.
+ * - 'active': Events are being delivered normally
+ * - 'paused': Events are buffered but not delivered to the iterator
+ * - 'closed': Subscription is terminated
+ */
+export type SubscriptionState = 'active' | 'paused' | 'closed';
+
+/**
+ * Information about events dropped due to buffer overflow.
+ * Passed to overflow handlers when events cannot be buffered.
+ */
+export interface OverflowInfo {
+  /** Number of events dropped in this overflow batch */
+  eventsDropped: number;
+  /** Event ID of oldest dropped event (if available) */
+  oldestDroppedId?: string;
+  /** Event ID of newest dropped event (if available) */
+  newestDroppedId?: string;
+  /** Timestamp when overflow occurred */
+  timestamp: Timestamp;
+  /** Total events dropped since subscription started */
+  totalDropped: number;
+}
+
+/** Handler called when subscription buffer overflows */
+export type OverflowHandler = (info: OverflowInfo) => void;
+
+/**
+ * Parameters for acknowledging received events.
+ * Sent as a notification to inform the server of client progress.
+ * Enables optional server-side flow control.
+ */
+export interface SubscriptionAckParams {
+  /** Subscription being acknowledged */
+  subscriptionId: SubscriptionId;
+  /** Acknowledge all events up to and including this sequence number */
+  upToSequence: number;
+  _meta?: Meta;
+}
+
+/** Notification for subscription acknowledgment */
+export interface SubscriptionAckNotification extends MAPNotificationBase<SubscriptionAckParams> {
+  method: 'map/subscribe.ack';
+  params: SubscriptionAckParams;
+}
+
+// =============================================================================
+// Message Event Data Types
+// =============================================================================
+
+/** Data for message_sent events (no payload for privacy) */
+export interface MessageSentEventData {
+  messageId: MessageId;
+  from: ParticipantId;
+  to: Address;
+  timestamp: Timestamp;
+  correlationId?: CorrelationId;
+  priority?: MessagePriority;
+}
+
+/** Data for message_delivered events (no payload for privacy) */
+export interface MessageDeliveredEventData {
+  messageId: MessageId;
+  from: ParticipantId;
+  deliveredTo: ParticipantId[];
+  timestamp: Timestamp;
+  correlationId?: CorrelationId;
+}
+
+/** Data for message_failed events */
+export interface MessageFailedEventData {
+  messageId: MessageId;
+  from: ParticipantId;
+  to: Address;
+  reason: string;
+  code?: number;
+}
+
+// =============================================================================
+// Error Types
+// =============================================================================
+
+/** Category of error for handling decisions */
+export type ErrorCategory =
+  | 'protocol'
+  | 'auth'
+  | 'routing'
+  | 'agent'
+  | 'resource'
+  | 'federation'
+  | 'internal';
+
+/** Structured error data */
+export interface MAPErrorData {
+  category?: ErrorCategory;
+  retryable?: boolean;
+  retryAfterMs?: number;
+  details?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+/** JSON-RPC 2.0 error object */
+export interface MAPError {
+  code: number;
+  message: string;
+  data?: MAPErrorData;
+}
+
+// =============================================================================
+// JSON-RPC Base Types
+// =============================================================================
+
+/** JSON-RPC version constant */
+export const JSONRPC_VERSION = '2.0' as const;
+
+/** Base JSON-RPC request */
+export interface MAPRequestBase<TParams = unknown> {
+  jsonrpc: '2.0';
+  id: RequestId;
+  method: string;
+  params?: TParams;
+}
+
+/** Base JSON-RPC response (success) */
+export interface MAPResponseSuccess<T = unknown> {
+  jsonrpc: '2.0';
+  id: RequestId;
+  result: T;
+}
+
+/** Base JSON-RPC response (error) */
+export interface MAPResponseError {
+  jsonrpc: '2.0';
+  id: RequestId;
+  error: MAPError;
+}
+
+/** JSON-RPC response (success or error) */
+export type MAPResponse<T = unknown> = MAPResponseSuccess<T> | MAPResponseError;
+
+/** Base JSON-RPC notification */
+export interface MAPNotificationBase<TParams = unknown> {
+  jsonrpc: '2.0';
+  method: string;
+  params?: TParams;
+}
+
+// =============================================================================
+// Session Types
+// =============================================================================
+
+export interface SessionInfo {
+  id: SessionId;
+  createdAt: Timestamp;
+  lastActiveAt?: Timestamp;
+  closedAt?: Timestamp;
+}
+
+// =============================================================================
+// Authentication Types
+// =============================================================================
+
+export type AuthMethod = 'bearer' | 'api-key' | 'mtls' | 'none';
+
+export interface AuthParams {
+  method: AuthMethod;
+  token?: string;
+}
+
+export interface FederationAuth {
+  method: 'bearer' | 'api-key' | 'mtls';
+  credentials?: string;
+}
+
+// =============================================================================
+// Connect Types
+// =============================================================================
+
+/** Policy for handling unexpected disconnection */
+export interface DisconnectPolicy {
+  /** What happens to agents on disconnect */
+  agentBehavior: 'unregister' | 'orphan' | 'grace-period';
+  /** Grace period before unregistering (ms) */
+  gracePeriodMs?: number;
+  /** Emit events to subscribers */
+  notifySubscribers?: boolean;
+}
+
+export interface ConnectRequestParams {
+  protocolVersion: ProtocolVersion;
+  participantType: ParticipantType;
+  participantId?: ParticipantId;
+  name?: string;
+  capabilities?: ParticipantCapabilities;
+  sessionId?: SessionId;
+  /** Reclaim orphaned agents from previous connection */
+  reclaimAgents?: AgentId[];
+  /** Policy for unexpected disconnect */
+  disconnectPolicy?: DisconnectPolicy;
+  auth?: AuthParams;
+  _meta?: Meta;
+}
+
+export interface ConnectRequest extends MAPRequestBase<ConnectRequestParams> {
+  method: 'map/connect';
+  params: ConnectRequestParams;
+}
+
+export interface ConnectResponseResult {
+  protocolVersion: ProtocolVersion;
+  sessionId: SessionId;
+  participantId: ParticipantId;
+  capabilities: ParticipantCapabilities;
+  systemInfo?: {
+    name?: string;
+    version?: string;
+  };
+  /** Is this a reconnection? */
+  reconnected?: boolean;
+  /** Reclaimed agents */
+  reclaimedAgents?: Agent[];
+  /** Currently owned agents */
+  ownedAgents?: AgentId[];
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Disconnect Types
+// =============================================================================
+
+export interface DisconnectRequestParams {
+  reason?: string;
+  _meta?: Meta;
+}
+
+export interface DisconnectRequest extends MAPRequestBase<DisconnectRequestParams> {
+  method: 'map/disconnect';
+  params?: DisconnectRequestParams;
+}
+
+export interface DisconnectResponseResult {
+  session: SessionInfo;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Session Request/Response Types
+// =============================================================================
+
+export interface SessionListRequestParams {
+  _meta?: Meta;
+}
+
+export interface SessionListRequest extends MAPRequestBase<SessionListRequestParams> {
+  method: 'map/session/list';
+  params?: SessionListRequestParams;
+}
+
+export interface SessionListResponseResult {
+  sessions: SessionInfo[];
+  _meta?: Meta;
+}
+
+export interface SessionLoadRequestParams {
+  sessionId: SessionId;
+  _meta?: Meta;
+}
+
+export interface SessionLoadRequest extends MAPRequestBase<SessionLoadRequestParams> {
+  method: 'map/session/load';
+  params: SessionLoadRequestParams;
+}
+
+export interface SessionLoadResponseResult {
+  sessionId: SessionId;
+  restored: boolean;
+  _meta?: Meta;
+}
+
+export interface SessionCloseRequestParams {
+  sessionId?: SessionId;
+  _meta?: Meta;
+}
+
+export interface SessionCloseRequest extends MAPRequestBase<SessionCloseRequestParams> {
+  method: 'map/session/close';
+  params?: SessionCloseRequestParams;
+}
+
+export interface SessionCloseResponseResult {
+  session: SessionInfo;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Agents Request/Response Types
+// =============================================================================
+
+export interface AgentsListFilter {
+  states?: AgentState[];
+  roles?: string[];
+  scopes?: ScopeId[];
+  parent?: AgentId;
+  hasChildren?: boolean;
+  ownerId?: ParticipantId;
+}
+
+export interface AgentsListRequestParams {
+  filter?: AgentsListFilter;
+  limit?: number;
+  cursor?: string;
+  _meta?: Meta;
+}
+
+export interface AgentsListRequest extends MAPRequestBase<AgentsListRequestParams> {
+  method: 'map/agents/list';
+  params?: AgentsListRequestParams;
+}
+
+export interface AgentsListResponseResult {
+  agents: Agent[];
+  nextCursor?: string;
+  _meta?: Meta;
+}
+
+/** Options for expanding related agents */
+export interface AgentIncludeOptions {
+  parent?: boolean;
+  children?: boolean;
+  siblings?: boolean;
+  ancestors?: boolean;
+  descendants?: boolean;
+  maxDepth?: number;
+}
+
+export interface AgentsGetRequestParams {
+  agentId: AgentId;
+  include?: AgentIncludeOptions;
+  _meta?: Meta;
+}
+
+export interface AgentsGetRequest extends MAPRequestBase<AgentsGetRequestParams> {
+  method: 'map/agents/get';
+  params: AgentsGetRequestParams;
+}
+
+export interface AgentsGetResponseResult {
+  agent: Agent;
+  parent?: Agent;
+  children?: Agent[];
+  siblings?: Agent[];
+  ancestors?: Agent[];
+  descendants?: Agent[];
+  _meta?: Meta;
+}
+
+export interface AgentsRegisterRequestParams {
+  agentId?: AgentId;
+  name?: string;
+  description?: string;
+  role?: string;
+  parent?: AgentId;
+  scopes?: ScopeId[];
+  visibility?: AgentVisibility;
+  capabilities?: ParticipantCapabilities;
+  metadata?: Record<string, unknown>;
+  /** Permission overrides merged on top of role-based defaults */
+  permissionOverrides?: Partial<AgentPermissions>;
+  _meta?: Meta;
+}
+
+export interface AgentsRegisterRequest extends MAPRequestBase<AgentsRegisterRequestParams> {
+  method: 'map/agents/register';
+  params?: AgentsRegisterRequestParams;
+}
+
+export interface AgentsRegisterResponseResult {
+  agent: Agent;
+  _meta?: Meta;
+}
+
+export interface AgentsUnregisterRequestParams {
+  agentId: AgentId;
+  reason?: string;
+  _meta?: Meta;
+}
+
+export interface AgentsUnregisterRequest extends MAPRequestBase<AgentsUnregisterRequestParams> {
+  method: 'map/agents/unregister';
+  params: AgentsUnregisterRequestParams;
+}
+
+export interface AgentsUnregisterResponseResult {
+  agent: Agent;
+  _meta?: Meta;
+}
+
+export interface AgentsUpdateRequestParams {
+  agentId: AgentId;
+  state?: AgentState;
+  metadata?: Record<string, unknown>;
+  /**
+   * Permission overrides to apply to the agent.
+   * Merged on top of role-based defaults.
+   */
+  permissionOverrides?: Partial<AgentPermissions>;
+  _meta?: Meta;
+}
+
+export interface AgentsUpdateRequest extends MAPRequestBase<AgentsUpdateRequestParams> {
+  method: 'map/agents/update';
+  params: AgentsUpdateRequestParams;
+}
+
+export interface AgentsUpdateResponseResult {
+  agent: Agent;
+  _meta?: Meta;
+}
+
+export interface AgentsSpawnRequestParams {
+  agentId?: AgentId;
+  name?: string;
+  description?: string;
+  role?: string;
+  parent?: AgentId;
+  scopes?: ScopeId[];
+  visibility?: AgentVisibility;
+  capabilities?: ParticipantCapabilities;
+  initialMessage?: Message;
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+export interface AgentsSpawnRequest extends MAPRequestBase<AgentsSpawnRequestParams> {
+  method: 'map/agents/spawn';
+  params?: AgentsSpawnRequestParams;
+}
+
+export interface AgentsSpawnResponseResult {
+  agent: Agent;
+  messageId?: MessageId;
+  _meta?: Meta;
+}
+
+export interface AgentsStopRequestParams {
+  agentId: AgentId;
+  reason?: string;
+  force?: boolean;
+  _meta?: Meta;
+}
+
+export interface AgentsStopRequest extends MAPRequestBase<AgentsStopRequestParams> {
+  method: 'map/agents/stop';
+  params: AgentsStopRequestParams;
+}
+
+export interface AgentsStopResponseResult {
+  agent: Agent;
+  _meta?: Meta;
+}
+
+export interface AgentsSuspendRequestParams {
+  agentId: AgentId;
+  reason?: string;
+  _meta?: Meta;
+}
+
+export interface AgentsSuspendRequest extends MAPRequestBase<AgentsSuspendRequestParams> {
+  method: 'map/agents/suspend';
+  params: AgentsSuspendRequestParams;
+}
+
+export interface AgentsSuspendResponseResult {
+  agent: Agent;
+  _meta?: Meta;
+}
+
+export interface AgentsResumeRequestParams {
+  agentId: AgentId;
+  _meta?: Meta;
+}
+
+export interface AgentsResumeRequest extends MAPRequestBase<AgentsResumeRequestParams> {
+  method: 'map/agents/resume';
+  params: AgentsResumeRequestParams;
+}
+
+export interface AgentsResumeResponseResult {
+  agent: Agent;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Send Types
+// =============================================================================
+
+export interface SendRequestParams {
+  to: Address;
+  payload?: unknown;
+  meta?: MessageMeta;
+  _meta?: Meta;
+}
+
+export interface SendRequest extends MAPRequestBase<SendRequestParams> {
+  method: 'map/send';
+  params: SendRequestParams;
+}
+
+export interface SendResponseResult {
+  messageId: MessageId;
+  delivered?: ParticipantId[];
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Subscribe Types
+// =============================================================================
+
+export interface SubscribeRequestParams {
+  filter?: SubscriptionFilter;
+  options?: SubscriptionOptions;
+  replayFrom?: Timestamp | string;
+  _meta?: Meta;
+}
+
+export interface SubscribeRequest extends MAPRequestBase<SubscribeRequestParams> {
+  method: 'map/subscribe';
+  params?: SubscribeRequestParams;
+}
+
+export interface SubscribeResponseResult {
+  subscriptionId: SubscriptionId;
+  _meta?: Meta;
+}
+
+export interface UnsubscribeRequestParams {
+  subscriptionId: SubscriptionId;
+  _meta?: Meta;
+}
+
+export interface UnsubscribeRequest extends MAPRequestBase<UnsubscribeRequestParams> {
+  method: 'map/unsubscribe';
+  params: UnsubscribeRequestParams;
+}
+
+export interface UnsubscribeResponseResult {
+  subscription: {
+    id: SubscriptionId;
+    closedAt: Timestamp;
+  };
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Replay Types
+// =============================================================================
+
+/**
+ * A replayed event with its envelope metadata.
+ */
+export interface ReplayedEvent {
+  /** Globally unique event ID (ULID format) */
+  eventId: string;
+  /** Server timestamp when event was originally processed */
+  timestamp: Timestamp;
+  /** Event IDs that causally precede this event */
+  causedBy?: string[];
+  /** The event payload */
+  event: Event;
+}
+
+/**
+ * Parameters for replaying historical events.
+ *
+ * Uses keyset pagination with `afterEventId` - pass the last eventId
+ * from the previous response to get the next page of results.
+ *
+ * @example
+ * ```typescript
+ * // Replay from a specific point
+ * const page1 = await client.replay({ limit: 100 });
+ * const page2 = await client.replay({
+ *   afterEventId: page1.events.at(-1)?.eventId,
+ *   limit: 100
+ * });
+ * ```
+ */
+export interface ReplayRequestParams {
+  /**
+   * Start after this eventId (exclusive).
+   * Used for keyset pagination - pass the last eventId from previous response.
+   */
+  afterEventId?: string;
+
+  /**
+   * Alternative: start from this timestamp (inclusive).
+   * If both afterEventId and fromTimestamp are provided, afterEventId takes precedence.
+   */
+  fromTimestamp?: Timestamp;
+
+  /**
+   * End at this timestamp (inclusive).
+   * If not provided, replays up to the most recent event.
+   */
+  toTimestamp?: Timestamp;
+
+  /**
+   * Filter events (same as subscription filter).
+   */
+  filter?: SubscriptionFilter;
+
+  /**
+   * Maximum number of events to return.
+   * Default: 100, Maximum: 1000
+   */
+  limit?: number;
+
+  _meta?: Meta;
+}
+
+export interface ReplayRequest extends MAPRequestBase<ReplayRequestParams> {
+  method: 'map/replay';
+  params?: ReplayRequestParams;
+}
+
+export interface ReplayResponseResult {
+  /** Replayed events in chronological order */
+  events: ReplayedEvent[];
+
+  /** Whether more events exist after the last returned event */
+  hasMore: boolean;
+
+  /**
+   * Total count of matching events (if known).
+   * May be omitted for performance reasons on large result sets.
+   */
+  totalCount?: number;
+
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Auth Types
+// =============================================================================
+
+export interface AuthRefreshRequestParams {
+  refreshToken: string;
+  _meta?: Meta;
+}
+
+export interface AuthRefreshRequest extends MAPRequestBase<AuthRefreshRequestParams> {
+  method: 'map/auth/refresh';
+  params: AuthRefreshRequestParams;
+}
+
+export interface AuthRefreshResponseResult {
+  accessToken: string;
+  expiresAt: Timestamp;
+  refreshToken?: string;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Scope Types
+// =============================================================================
+
+export interface ScopesListRequestParams {
+  parent?: ScopeId;
+  _meta?: Meta;
+}
+
+export interface ScopesListRequest extends MAPRequestBase<ScopesListRequestParams> {
+  method: 'map/scopes/list';
+  params?: ScopesListRequestParams;
+}
+
+export interface ScopesListResponseResult {
+  scopes: Scope[];
+  _meta?: Meta;
+}
+
+export interface ScopesGetRequestParams {
+  scopeId: ScopeId;
+  _meta?: Meta;
+}
+
+export interface ScopesGetRequest extends MAPRequestBase<ScopesGetRequestParams> {
+  method: 'map/scopes/get';
+  params: ScopesGetRequestParams;
+}
+
+export interface ScopesGetResponseResult {
+  scope: Scope;
+  _meta?: Meta;
+}
+
+export interface ScopesCreateRequestParams {
+  scopeId?: ScopeId;
+  name?: string;
+  description?: string;
+  parent?: ScopeId;
+  joinPolicy?: JoinPolicy;
+  autoJoinRoles?: string[];
+  visibility?: ScopeVisibility;
+  messageVisibility?: MessageVisibility;
+  sendPolicy?: SendPolicy;
+  persistent?: boolean;
+  autoDelete?: boolean;
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+export interface ScopesCreateRequest extends MAPRequestBase<ScopesCreateRequestParams> {
+  method: 'map/scopes/create';
+  params?: ScopesCreateRequestParams;
+}
+
+export interface ScopesCreateResponseResult {
+  scope: Scope;
+  _meta?: Meta;
+}
+
+export interface ScopesDeleteRequestParams {
+  scopeId: ScopeId;
+  _meta?: Meta;
+}
+
+export interface ScopesDeleteRequest extends MAPRequestBase<ScopesDeleteRequestParams> {
+  method: 'map/scopes/delete';
+  params: ScopesDeleteRequestParams;
+}
+
+export interface ScopesDeleteResponseResult {
+  scope: Scope;
+  _meta?: Meta;
+}
+
+export interface ScopesJoinRequestParams {
+  scopeId: ScopeId;
+  agentId: AgentId;
+  _meta?: Meta;
+}
+
+export interface ScopesJoinRequest extends MAPRequestBase<ScopesJoinRequestParams> {
+  method: 'map/scopes/join';
+  params: ScopesJoinRequestParams;
+}
+
+export interface ScopesJoinResponseResult {
+  scope: Scope;
+  agent: Agent;
+  _meta?: Meta;
+}
+
+export interface ScopesLeaveRequestParams {
+  scopeId: ScopeId;
+  agentId: AgentId;
+  _meta?: Meta;
+}
+
+export interface ScopesLeaveRequest extends MAPRequestBase<ScopesLeaveRequestParams> {
+  method: 'map/scopes/leave';
+  params: ScopesLeaveRequestParams;
+}
+
+export interface ScopesLeaveResponseResult {
+  scope: Scope;
+  agent: Agent;
+  _meta?: Meta;
+}
+
+export interface ScopesMembersRequestParams {
+  scopeId: ScopeId;
+  limit?: number;
+  cursor?: string;
+  _meta?: Meta;
+}
+
+export interface ScopesMembersRequest extends MAPRequestBase<ScopesMembersRequestParams> {
+  method: 'map/scopes/members';
+  params: ScopesMembersRequestParams;
+}
+
+export interface ScopesMembersResponseResult {
+  members: AgentId[];
+  nextCursor?: string;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Structure Graph Types
+// =============================================================================
+
+export interface StructureGraphRequestParams {
+  rootAgentId?: AgentId;
+  depth?: number;
+  includeRelationships?: boolean;
+  _meta?: Meta;
+}
+
+export interface StructureGraphRequest extends MAPRequestBase<StructureGraphRequestParams> {
+  method: 'map/structure/graph';
+  params?: StructureGraphRequestParams;
+}
+
+export interface GraphEdge {
+  from: AgentId;
+  to: AgentId;
+  type: 'parent-child' | 'peer' | 'supervisor' | 'collaborator';
+}
+
+export interface StructureGraphResponseResult {
+  nodes: Agent[];
+  edges: GraphEdge[];
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Inject Types
+// =============================================================================
+
+export type InjectDelivery = 'interrupt' | 'queue' | 'best-effort';
+export type InjectDeliveryResult = 'interrupt' | 'queue' | 'message';
+
+export interface InjectRequestParams {
+  agentId: AgentId;
+  content: unknown;
+  delivery?: InjectDelivery;
+  _meta?: Meta;
+}
+
+export interface InjectRequest extends MAPRequestBase<InjectRequestParams> {
+  method: 'map/inject';
+  params: InjectRequestParams;
+}
+
+export interface InjectResponseResult {
+  injected: boolean;
+  delivery?: InjectDeliveryResult;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Permission Update Types
+// =============================================================================
+
+/**
+ * Parameters for updating client permissions.
+ * Only system/admin participants can update client permissions.
+ */
+export interface PermissionsUpdateRequestParams {
+  /** Client to update permissions for */
+  clientId: ParticipantId;
+  /** Partial permissions to merge with existing */
+  permissions: Partial<ParticipantCapabilities>;
+  _meta?: Meta;
+}
+
+export interface PermissionsUpdateRequest extends MAPRequestBase<PermissionsUpdateRequestParams> {
+  method: 'map/permissions/update';
+  params: PermissionsUpdateRequestParams;
+}
+
+export interface PermissionsUpdateResponseResult {
+  /** Whether update was applied */
+  success: boolean;
+  /** Effective permissions after update */
+  effectivePermissions: ParticipantCapabilities;
+  _meta?: Meta;
+}
+
+/**
+ * Event data for permissions_client_updated events.
+ * Emitted when a client's permissions are changed.
+ */
+export interface PermissionsClientUpdatedEventData {
+  /** Client whose permissions changed */
+  clientId: ParticipantId;
+  /** The permission changes that were applied */
+  changes: Partial<ParticipantCapabilities>;
+  /** Effective permissions after the update */
+  effectivePermissions: ParticipantCapabilities;
+  /** Participant who made the change */
+  updatedBy: ParticipantId;
+}
+
+/**
+ * Event data for permissions_agent_updated events.
+ * Emitted when an agent's permission overrides are changed.
+ */
+export interface PermissionsAgentUpdatedEventData {
+  /** Agent whose permissions changed */
+  agentId: AgentId;
+  /** The permission changes that were applied */
+  changes: Partial<AgentPermissions>;
+  /** Effective permissions after the update */
+  effectivePermissions: AgentPermissions;
+  /** Participant who made the change */
+  updatedBy: ParticipantId;
+}
+
+// =============================================================================
+// Federation Types
+// =============================================================================
+
+/**
+ * Metadata for federation routing and tracking.
+ * Included in every message routed between federated systems.
+ */
+export interface FederationMetadata {
+  /** System that originated this message */
+  sourceSystem: string;
+  /** Intended final destination system */
+  targetSystem: string;
+  /** Number of systems this message has traversed */
+  hopCount: number;
+  /** Maximum hops before rejection (prevents infinite loops) */
+  maxHops?: number;
+  /** Systems this message has traversed (for debugging/loop detection) */
+  path?: string[];
+  /** Timestamp when message was first sent (ms since epoch) */
+  originTimestamp: Timestamp;
+  /** Correlation ID for cross-system tracing */
+  correlationId?: string;
+  /**
+   * Signature for integrity verification.
+   * @todo Define signing algorithm and key management
+   */
+  signature?: string;
+}
+
+/**
+ * Envelope for messages routed between federated systems.
+ * Wraps the payload with routing metadata for tracking and loop prevention.
+ *
+ * @typeParam T - The payload type (typically Message)
+ *
+ * @example
+ * ```typescript
+ * const envelope: FederationEnvelope<Message> = {
+ *   payload: message,
+ *   federation: {
+ *     sourceSystem: 'alpha',
+ *     targetSystem: 'beta',
+ *     hopCount: 0,
+ *     originTimestamp: Date.now(),
+ *   },
+ * };
+ * ```
+ */
+export interface FederationEnvelope<T = unknown> {
+  /** The payload being routed */
+  payload: T;
+  /** Federation routing metadata */
+  federation: FederationMetadata;
+}
+
+/**
+ * Configuration for federation routing behavior.
+ * Used by gateways to control message routing policies.
+ */
+export interface FederationRoutingConfig {
+  /** This system's identifier */
+  systemId: string;
+  /** Maximum hops to accept (default: 10) */
+  maxHops?: number;
+  /** Whether to track full path for debugging (default: false) */
+  trackPath?: boolean;
+  /** Systems we're willing to route to (undefined = all) */
+  allowedTargets?: string[];
+  /** Systems we accept routes from (undefined = all) */
+  allowedSources?: string[];
+}
+
+// =============================================================================
+// Federation Reconnection Types
+// =============================================================================
+
+/**
+ * Configuration for buffering messages during federation outages.
+ * Messages are stored locally until the peer reconnects.
+ */
+export interface FederationBufferConfig {
+  /** Enable buffering of messages during disconnection (default: true) */
+  enabled?: boolean;
+  /** Maximum number of messages to buffer per peer (default: 1000) */
+  maxMessages?: number;
+  /** Maximum buffer size in bytes per peer (default: 10MB) */
+  maxBytes?: number;
+  /** Time to retain buffered messages in ms (default: 1 hour) */
+  retentionMs?: number;
+  /** Strategy when buffer is full */
+  overflowStrategy?: 'drop-oldest' | 'drop-newest' | 'reject';
+}
+
+/**
+ * Configuration for replaying events from event store on reconnection.
+ * Supplements buffer with persisted events.
+ */
+export interface FederationReplayConfig {
+  /** Enable replay from event store on reconnection (default: true) */
+  enabled?: boolean;
+  /** Maximum time window for replay in ms (default: 1 hour) */
+  maxReplayWindowMs?: number;
+  /** Maximum number of events to replay (default: 10000) */
+  maxReplayEvents?: number;
+  /** Filter for events to replay (optional) */
+  filter?: SubscriptionFilter;
+}
+
+/**
+ * Type of gateway reconnection event.
+ */
+export type GatewayReconnectionEventType =
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'reconnecting'
+  | 'reconnect_failed'
+  | 'buffer_overflow'
+  | 'replay_started'
+  | 'replay_completed';
+
+/**
+ * Event emitted during gateway reconnection lifecycle.
+ */
+export interface GatewayReconnectionEvent {
+  /** Type of reconnection event */
+  type: GatewayReconnectionEventType;
+  /** Target system ID */
+  systemId: string;
+  /** Timestamp of the event */
+  timestamp: Timestamp;
+  /** Current reconnection attempt (for reconnecting events) */
+  attempt?: number;
+  /** Error message (for disconnected/reconnect_failed) */
+  error?: string;
+  /** Number of buffered messages (for buffer_overflow) */
+  bufferedCount?: number;
+  /** Number of events being replayed (for replay_started/completed) */
+  replayCount?: number;
+  /** Duration of outage in ms (for connected after reconnect) */
+  outageDurationMs?: number;
+}
+
+/** Handler for gateway reconnection events */
+export type GatewayReconnectionEventHandler = (event: GatewayReconnectionEvent) => void;
+
+/**
+ * Options for gateway connection with reconnection support.
+ * Extends base connection options with federation-specific settings.
+ */
+export interface GatewayReconnectionOptions {
+  /** Enable automatic reconnection (default: true) */
+  autoReconnect?: boolean;
+  /** Initial delay before first reconnection attempt in ms (default: 1000) */
+  initialDelayMs?: number;
+  /** Maximum delay between reconnection attempts in ms (default: 30000) */
+  maxDelayMs?: number;
+  /** Backoff multiplier for exponential backoff (default: 2) */
+  backoffMultiplier?: number;
+  /** Maximum number of reconnection attempts (default: Infinity) */
+  maxRetries?: number;
+  /** Add random jitter to delays (default: true) */
+  jitter?: boolean;
+  /** Buffer configuration for outages */
+  buffer?: FederationBufferConfig;
+  /** Replay configuration for event store recovery */
+  replay?: FederationReplayConfig;
+  /** Handler for reconnection lifecycle events */
+  onReconnectionEvent?: GatewayReconnectionEventHandler;
+}
+
+export interface FederationConnectRequestParams {
+  systemId: string;
+  endpoint: string;
+  auth?: FederationAuth;
+  _meta?: Meta;
+}
+
+export interface FederationConnectRequest extends MAPRequestBase<FederationConnectRequestParams> {
+  method: 'map/federation/connect';
+  params: FederationConnectRequestParams;
+}
+
+export interface FederationConnectResponseResult {
+  connected: boolean;
+  systemInfo?: {
+    name?: string;
+    version?: string;
+    capabilities?: ParticipantCapabilities;
+  };
+  _meta?: Meta;
+}
+
+export interface FederationRouteRequestParams {
+  /** Target system ID (for immediate next hop) */
+  systemId: string;
+  /**
+   * Wrapped message with federation metadata.
+   * Use this for new implementations.
+   */
+  envelope?: FederationEnvelope<Message>;
+  /**
+   * Raw message (legacy format).
+   * @deprecated Use envelope instead for proper routing metadata
+   */
+  message?: Message;
+  _meta?: Meta;
+}
+
+export interface FederationRouteRequest extends MAPRequestBase<FederationRouteRequestParams> {
+  method: 'map/federation/route';
+  params: FederationRouteRequestParams;
+}
+
+export interface FederationRouteResponseResult {
+  routed: boolean;
+  messageId?: MessageId;
+  _meta?: Meta;
+}
+
+// =============================================================================
+// Notification Types
+// =============================================================================
+
+/**
+ * Parameters for event notifications delivered to subscribers.
+ *
+ * The envelope contains both delivery metadata (subscriptionId, sequence)
+ * and optional fields for deduplication and causal ordering.
+ */
+export interface EventNotificationParams {
+  /** The subscription this event is being delivered to */
+  subscriptionId: SubscriptionId;
+
+  /** Monotonically increasing sequence number within this subscription */
+  sequenceNumber: number;
+
+  /**
+   * Globally unique event identifier (ULID format).
+   *
+   * Used for:
+   * - Deduplication (same event delivered multiple times)
+   * - Replay references (afterEventId in replay requests)
+   * - Causal tracking (referenced in causedBy arrays)
+   *
+   * Format: 26-character ULID, e.g., "01HQJY3KCNP5VXWZ8M4R6T2G9B"
+   *
+   * @remarks
+   * If not provided by the server, deduplication is skipped.
+   * New routers should always provide this field.
+   */
+  eventId?: string;
+
+  /**
+   * Server timestamp when the event was processed (milliseconds since epoch).
+   *
+   * This is the envelope-level timestamp, which may differ from event.timestamp
+   * if the event was queued or replayed.
+   */
+  timestamp?: Timestamp;
+
+  /**
+   * Event IDs of events that causally precede this event.
+   *
+   * Used for enforcing causal ordering - this event should not be
+   * processed until all events in causedBy have been processed.
+   *
+   * @example
+   * A message_delivered event would have causedBy: [messagesentEventId]
+   */
+  causedBy?: string[];
+
+  /** The event payload */
+  event: Event;
+
+  _meta?: Meta;
+}
+
+export interface EventNotification extends MAPNotificationBase<EventNotificationParams> {
+  method: 'map/event';
+  params: EventNotificationParams;
+}
+
+export interface MessageNotificationParams {
+  message: Message;
+  _meta?: Meta;
+}
+
+export interface MessageNotification extends MAPNotificationBase<MessageNotificationParams> {
+  method: 'map/message';
+  params: MessageNotificationParams;
+}
+
+// =============================================================================
+// Union Types for All Requests/Responses/Notifications
+// =============================================================================
+
+/** All MAP request types */
+export type MAPRequest =
+  // Core
+  | ConnectRequest
+  | DisconnectRequest
+  | SessionListRequest
+  | SessionLoadRequest
+  | SessionCloseRequest
+  | AgentsListRequest
+  | AgentsGetRequest
+  | SendRequest
+  | SubscribeRequest
+  | UnsubscribeRequest
+  | ReplayRequest
+  | AuthRefreshRequest
+  // Structure
+  | AgentsRegisterRequest
+  | AgentsSpawnRequest
+  | AgentsUnregisterRequest
+  | AgentsUpdateRequest
+  | AgentsStopRequest
+  | AgentsSuspendRequest
+  | AgentsResumeRequest
+  | StructureGraphRequest
+  | ScopesListRequest
+  | ScopesGetRequest
+  | ScopesCreateRequest
+  | ScopesDeleteRequest
+  | ScopesJoinRequest
+  | ScopesLeaveRequest
+  | ScopesMembersRequest
+  // Permissions
+  | PermissionsUpdateRequest
+  // Extension
+  | InjectRequest
+  | FederationConnectRequest
+  | FederationRouteRequest;
+
+/** All MAP notification types */
+export type MAPNotification = EventNotification | MessageNotification | SubscriptionAckNotification;
+
+// =============================================================================
+// Method Constants (Reorganized by capability domain)
+// =============================================================================
+
+/** Core methods - All implementations must support */
+export const CORE_METHODS = {
+  CONNECT: 'map/connect',
+  DISCONNECT: 'map/disconnect',
+  SEND: 'map/send',
+  SUBSCRIBE: 'map/subscribe',
+  UNSUBSCRIBE: 'map/unsubscribe',
+  REPLAY: 'map/replay',
+} as const;
+
+/** Observation methods - Query/read operations */
+export const OBSERVATION_METHODS = {
+  AGENTS_LIST: 'map/agents/list',
+  AGENTS_GET: 'map/agents/get',
+  SCOPES_LIST: 'map/scopes/list',
+  SCOPES_GET: 'map/scopes/get',
+  SCOPES_MEMBERS: 'map/scopes/members',
+  STRUCTURE_GRAPH: 'map/structure/graph',
+} as const;
+
+/** Lifecycle methods - Agent creation/destruction */
+export const LIFECYCLE_METHODS = {
+  AGENTS_REGISTER: 'map/agents/register',
+  AGENTS_UNREGISTER: 'map/agents/unregister',
+  AGENTS_SPAWN: 'map/agents/spawn',
+} as const;
+
+/** State methods - Agent state management */
+export const STATE_METHODS = {
+  AGENTS_UPDATE: 'map/agents/update',
+  AGENTS_SUSPEND: 'map/agents/suspend',
+  AGENTS_RESUME: 'map/agents/resume',
+  AGENTS_STOP: 'map/agents/stop',
+} as const;
+
+/** Steering methods - External control */
+export const STEERING_METHODS = {
+  INJECT: 'map/inject',
+} as const;
+
+/** Scope methods - Scope management */
+export const SCOPE_METHODS = {
+  SCOPES_CREATE: 'map/scopes/create',
+  SCOPES_DELETE: 'map/scopes/delete',
+  SCOPES_JOIN: 'map/scopes/join',
+  SCOPES_LEAVE: 'map/scopes/leave',
+} as const;
+
+/** Session methods */
+export const SESSION_METHODS = {
+  SESSION_LIST: 'map/session/list',
+  SESSION_LOAD: 'map/session/load',
+  SESSION_CLOSE: 'map/session/close',
+} as const;
+
+/** Auth methods */
+export const AUTH_METHODS = {
+  AUTH_REFRESH: 'map/auth/refresh',
+} as const;
+
+/** Permission methods */
+export const PERMISSION_METHODS = {
+  PERMISSIONS_UPDATE: 'map/permissions/update',
+} as const;
+
+/** Federation methods */
+export const FEDERATION_METHODS = {
+  FEDERATION_CONNECT: 'map/federation/connect',
+  FEDERATION_ROUTE: 'map/federation/route',
+} as const;
+
+/** Notification methods */
+export const NOTIFICATION_METHODS = {
+  EVENT: 'map/event',
+  MESSAGE: 'map/message',
+  /** Client acknowledges received events (for backpressure) */
+  SUBSCRIBE_ACK: 'map/subscribe.ack',
+} as const;
+
+/** All MAP methods */
+export const MAP_METHODS = {
+  ...CORE_METHODS,
+  ...OBSERVATION_METHODS,
+  ...LIFECYCLE_METHODS,
+  ...STATE_METHODS,
+  ...STEERING_METHODS,
+  ...SCOPE_METHODS,
+  ...SESSION_METHODS,
+  ...AUTH_METHODS,
+  ...PERMISSION_METHODS,
+  ...FEDERATION_METHODS,
+} as const;
+
+// Legacy aliases for backward compatibility
+export const STRUCTURE_METHODS = {
+  ...LIFECYCLE_METHODS,
+  ...STATE_METHODS,
+  ...SCOPE_METHODS,
+  STRUCTURE_GRAPH: OBSERVATION_METHODS.STRUCTURE_GRAPH,
+} as const;
+
+export const EXTENSION_METHODS = {
+  ...STEERING_METHODS,
+  ...FEDERATION_METHODS,
+} as const;
+
+// =============================================================================
+// Error Codes (Fixed: no collisions)
+// =============================================================================
+
+/** JSON-RPC standard error codes */
+export const PROTOCOL_ERROR_CODES = {
+  PARSE_ERROR: -32700,
+  INVALID_REQUEST: -32600,
+  METHOD_NOT_FOUND: -32601,
+  INVALID_PARAMS: -32602,
+  INTERNAL_ERROR: -32603,
+} as const;
+
+/** Authentication error codes */
+export const AUTH_ERROR_CODES = {
+  AUTH_REQUIRED: 1000,
+  AUTH_FAILED: 1001,
+  TOKEN_EXPIRED: 1002,
+  PERMISSION_DENIED: 1003,
+} as const;
+
+/** Routing error codes */
+export const ROUTING_ERROR_CODES = {
+  ADDRESS_NOT_FOUND: 2000,
+  AGENT_NOT_FOUND: 2001,
+  SCOPE_NOT_FOUND: 2002,
+  DELIVERY_FAILED: 2003,
+  ADDRESS_AMBIGUOUS: 2004,
+} as const;
+
+/** Agent error codes */
+export const AGENT_ERROR_CODES = {
+  AGENT_EXISTS: 3000,
+  STATE_INVALID: 3001,
+  NOT_RESPONDING: 3002,
+  TERMINATED: 3003,
+  SPAWN_FAILED: 3004,
+} as const;
+
+/** Resource error codes */
+export const RESOURCE_ERROR_CODES = {
+  EXHAUSTED: 4000,
+  RATE_LIMITED: 4001,
+  QUOTA_EXCEEDED: 4002,
+} as const;
+
+/** Federation error codes - prefixed to avoid collision with AUTH_FAILED */
+export const FEDERATION_ERROR_CODES = {
+  FEDERATION_UNAVAILABLE: 5000,
+  FEDERATION_SYSTEM_NOT_FOUND: 5001,
+  FEDERATION_AUTH_FAILED: 5002,
+  FEDERATION_ROUTE_REJECTED: 5003,
+  /** Message has already visited this system (loop detected) */
+  FEDERATION_LOOP_DETECTED: 5010,
+  /** Message exceeded maximum hop count */
+  FEDERATION_MAX_HOPS_EXCEEDED: 5011,
+} as const;
+
+/** All error codes */
+export const ERROR_CODES = {
+  ...PROTOCOL_ERROR_CODES,
+  ...AUTH_ERROR_CODES,
+  ...ROUTING_ERROR_CODES,
+  ...AGENT_ERROR_CODES,
+  ...RESOURCE_ERROR_CODES,
+  ...FEDERATION_ERROR_CODES,
+} as const;
+
+/** Protocol version */
+export const PROTOCOL_VERSION: ProtocolVersion = 1;
+
+// =============================================================================
+// Capability Requirements
+// =============================================================================
+
+/**
+ * Maps methods to required capabilities.
+ * Empty array means no special capability required.
+ */
+export const CAPABILITY_REQUIREMENTS: Record<string, string[]> = {
+  // Core
+  [CORE_METHODS.CONNECT]: [],
+  [CORE_METHODS.DISCONNECT]: [],
+  [CORE_METHODS.SEND]: ['messaging.canSend'],
+  [CORE_METHODS.SUBSCRIBE]: ['observation.canObserve'],
+  [CORE_METHODS.UNSUBSCRIBE]: ['observation.canObserve'],
+
+  // Observation
+  [OBSERVATION_METHODS.AGENTS_LIST]: ['observation.canQuery'],
+  [OBSERVATION_METHODS.AGENTS_GET]: ['observation.canQuery'],
+  [OBSERVATION_METHODS.SCOPES_LIST]: ['observation.canQuery'],
+  [OBSERVATION_METHODS.SCOPES_GET]: ['observation.canQuery'],
+  [OBSERVATION_METHODS.SCOPES_MEMBERS]: ['observation.canQuery'],
+  [OBSERVATION_METHODS.STRUCTURE_GRAPH]: ['observation.canQuery'],
+
+  // Lifecycle
+  [LIFECYCLE_METHODS.AGENTS_REGISTER]: ['lifecycle.canRegister'],
+  [LIFECYCLE_METHODS.AGENTS_UNREGISTER]: ['lifecycle.canUnregister'],
+  [LIFECYCLE_METHODS.AGENTS_SPAWN]: ['lifecycle.canSpawn'],
+
+  // State
+  [STATE_METHODS.AGENTS_UPDATE]: ['lifecycle.canRegister'],
+  [STATE_METHODS.AGENTS_SUSPEND]: ['lifecycle.canStop'],
+  [STATE_METHODS.AGENTS_RESUME]: ['lifecycle.canStop'],
+  [STATE_METHODS.AGENTS_STOP]: ['lifecycle.canStop'],
+
+  // Steering
+  [STEERING_METHODS.INJECT]: ['lifecycle.canSteer'],
+
+  // Scopes
+  [SCOPE_METHODS.SCOPES_CREATE]: ['scopes.canCreateScopes'],
+  [SCOPE_METHODS.SCOPES_DELETE]: ['scopes.canManageScopes'],
+  [SCOPE_METHODS.SCOPES_JOIN]: [],
+  [SCOPE_METHODS.SCOPES_LEAVE]: [],
+
+  // Session
+  [SESSION_METHODS.SESSION_LIST]: [],
+  [SESSION_METHODS.SESSION_LOAD]: [],
+  [SESSION_METHODS.SESSION_CLOSE]: [],
+
+  // Auth
+  [AUTH_METHODS.AUTH_REFRESH]: [],
+
+  // Permissions (system-only, no capability check - enforced by participant type)
+  [PERMISSION_METHODS.PERMISSIONS_UPDATE]: [],
+
+  // Federation
+  [FEDERATION_METHODS.FEDERATION_CONNECT]: ['federation.canFederate'],
+  [FEDERATION_METHODS.FEDERATION_ROUTE]: ['federation.canFederate'],
+} as const;
+
+// =============================================================================
+// Type Guards
+// =============================================================================
+
+/** Check if a response is an error response */
+export function isErrorResponse(response: MAPResponse): response is MAPResponseError {
+  return 'error' in response;
+}
+
+/** Check if a response is a success response */
+export function isSuccessResponse<T>(response: MAPResponse<T>): response is MAPResponseSuccess<T> {
+  return 'result' in response;
+}
+
+/** Check if an address is a direct address */
+export function isDirectAddress(address: Address): address is DirectAddress {
+  return typeof address === 'object' && 'agent' in address && !('system' in address);
+}
+
+/** Check if an address is a federated address */
+export function isFederatedAddress(address: Address): address is FederatedAddress {
+  return typeof address === 'object' && 'system' in address && 'agent' in address;
+}
+
+/** Check if an address is a scope address */
+export function isScopeAddress(address: Address): address is ScopeAddress {
+  return typeof address === 'object' && 'scope' in address;
+}
+
+/** Check if an address is a broadcast address */
+export function isBroadcastAddress(address: Address): address is BroadcastAddress {
+  return typeof address === 'object' && 'broadcast' in address;
+}
+
+/** Check if an address is a hierarchical address */
+export function isHierarchicalAddress(address: Address): address is HierarchicalAddress {
+  return (
+    typeof address === 'object' &&
+    ('parent' in address ||
+      'children' in address ||
+      'ancestors' in address ||
+      'descendants' in address ||
+      'siblings' in address)
+  );
+}

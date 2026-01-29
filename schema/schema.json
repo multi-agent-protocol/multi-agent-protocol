@@ -1,0 +1,1828 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/alexngai/multi-agent-protocol/schema/schema.json",
+  "title": "Multi-Agent Protocol Schema",
+  "description": "JSON Schema for the Multi-Agent Protocol (MAP) - a protocol for observing, coordinating, and routing messages within multi-agent AI systems",
+  "oneOf": [
+    { "$ref": "#/$defs/MAPRequest" },
+    { "$ref": "#/$defs/MAPResponse" },
+    { "$ref": "#/$defs/MAPNotification" }
+  ],
+  "$defs": {
+    "JsonRpcVersion": {
+      "type": "string",
+      "const": "2.0",
+      "description": "JSON-RPC version, always '2.0'"
+    },
+    "RequestId": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "integer" }
+      ],
+      "description": "Unique identifier for a request, used to correlate responses"
+    },
+    "MAPRequest": {
+      "type": "object",
+      "description": "A JSON-RPC 2.0 request message in MAP",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "type": "string" },
+        "params": { "type": "object" }
+      },
+      "required": ["jsonrpc", "id", "method"],
+      "additionalProperties": false,
+      "oneOf": [
+        { "$ref": "#/$defs/ConnectRequest" },
+        { "$ref": "#/$defs/DisconnectRequest" },
+        { "$ref": "#/$defs/SessionListRequest" },
+        { "$ref": "#/$defs/SessionLoadRequest" },
+        { "$ref": "#/$defs/SessionCloseRequest" },
+        { "$ref": "#/$defs/AgentsListRequest" },
+        { "$ref": "#/$defs/AgentsGetRequest" },
+        { "$ref": "#/$defs/AgentsRegisterRequest" },
+        { "$ref": "#/$defs/AgentsSpawnRequest" },
+        { "$ref": "#/$defs/AgentsUnregisterRequest" },
+        { "$ref": "#/$defs/AgentsUpdateRequest" },
+        { "$ref": "#/$defs/AgentsStopRequest" },
+        { "$ref": "#/$defs/AgentsSuspendRequest" },
+        { "$ref": "#/$defs/AgentsResumeRequest" },
+        { "$ref": "#/$defs/SendRequest" },
+        { "$ref": "#/$defs/SubscribeRequest" },
+        { "$ref": "#/$defs/UnsubscribeRequest" },
+        { "$ref": "#/$defs/ScopesListRequest" },
+        { "$ref": "#/$defs/ScopesGetRequest" },
+        { "$ref": "#/$defs/ScopesCreateRequest" },
+        { "$ref": "#/$defs/ScopesDeleteRequest" },
+        { "$ref": "#/$defs/ScopesJoinRequest" },
+        { "$ref": "#/$defs/ScopesLeaveRequest" },
+        { "$ref": "#/$defs/ScopesMembersRequest" },
+        { "$ref": "#/$defs/StructureGraphRequest" },
+        { "$ref": "#/$defs/AuthRefreshRequest" },
+        { "$ref": "#/$defs/InjectRequest" },
+        { "$ref": "#/$defs/FederationConnectRequest" },
+        { "$ref": "#/$defs/FederationRouteRequest" }
+      ]
+    },
+    "MAPResponse": {
+      "type": "object",
+      "description": "A JSON-RPC 2.0 response message in MAP",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" }
+      },
+      "required": ["jsonrpc", "id"],
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+            "id": { "$ref": "#/$defs/RequestId" },
+            "result": {}
+          },
+          "required": ["jsonrpc", "id", "result"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+            "id": { "$ref": "#/$defs/RequestId" },
+            "error": { "$ref": "#/$defs/MAPError" }
+          },
+          "required": ["jsonrpc", "id", "error"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MAPNotification": {
+      "type": "object",
+      "description": "A JSON-RPC 2.0 notification message in MAP (no response expected)",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "method": { "type": "string" },
+        "params": { "type": "object" }
+      },
+      "required": ["jsonrpc", "method"],
+      "additionalProperties": false,
+      "oneOf": [
+        { "$ref": "#/$defs/EventNotification" },
+        { "$ref": "#/$defs/MessageNotification" }
+      ]
+    },
+    "MAPError": {
+      "type": "object",
+      "description": "JSON-RPC 2.0 error object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "description": "Error code"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable error message"
+        },
+        "data": {
+          "description": "Additional error data",
+          "$ref": "#/$defs/MAPErrorData"
+        }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    },
+    "MAPErrorData": {
+      "type": "object",
+      "description": "Structured error data",
+      "properties": {
+        "category": { "$ref": "#/$defs/ErrorCategory" },
+        "retryable": { "type": "boolean" },
+        "retryAfterMs": { "type": "integer" },
+        "details": { "type": "object" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "additionalProperties": true
+    },
+    "ErrorCategory": {
+      "type": "string",
+      "enum": [
+        "protocol",
+        "auth",
+        "routing",
+        "agent",
+        "resource",
+        "federation",
+        "internal"
+      ],
+      "description": "Category of error for handling decisions"
+    },
+
+    "ParticipantId": {
+      "type": "string",
+      "description": "Unique identifier for any participant (agent, client, system, gateway)"
+    },
+    "AgentId": {
+      "type": "string",
+      "description": "Unique identifier for an agent"
+    },
+    "ScopeId": {
+      "type": "string",
+      "description": "Unique identifier for a scope"
+    },
+    "SessionId": {
+      "type": "string",
+      "description": "Unique identifier for a session"
+    },
+    "MessageId": {
+      "type": "string",
+      "description": "Unique identifier for a message"
+    },
+    "SubscriptionId": {
+      "type": "string",
+      "description": "Unique identifier for a subscription"
+    },
+    "CorrelationId": {
+      "type": "string",
+      "description": "Identifier for correlating related messages"
+    },
+    "ProtocolVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "MAP protocol version"
+    },
+    "Timestamp": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds"
+    },
+    "Meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Vendor extension metadata. Implementations MUST NOT assume specific keys."
+    },
+
+    "ParticipantType": {
+      "type": "string",
+      "enum": ["agent", "client", "system", "gateway"],
+      "description": "Type of participant in the protocol"
+    },
+    "ParticipantCapabilities": {
+      "type": "object",
+      "description": "Capabilities of a participant, grouped by category",
+      "properties": {
+        "observation": {
+          "type": "object",
+          "properties": {
+            "canObserve": {
+              "type": "boolean",
+              "description": "Can subscribe to event streams"
+            },
+            "canQuery": {
+              "type": "boolean",
+              "description": "Can query agents and structure"
+            }
+          },
+          "additionalProperties": false
+        },
+        "messaging": {
+          "type": "object",
+          "properties": {
+            "canSend": {
+              "type": "boolean",
+              "description": "Can send messages"
+            },
+            "canReceive": {
+              "type": "boolean",
+              "description": "Can receive messages addressed to it"
+            },
+            "canBroadcast": {
+              "type": "boolean",
+              "description": "Can send to scopes/roles"
+            }
+          },
+          "additionalProperties": false
+        },
+        "lifecycle": {
+          "type": "object",
+          "properties": {
+            "canSpawn": {
+              "type": "boolean",
+              "description": "Can create child agents"
+            },
+            "canRegister": {
+              "type": "boolean",
+              "description": "Can register agents (not as children)"
+            },
+            "canUnregister": {
+              "type": "boolean",
+              "description": "Can remove agents"
+            },
+            "canSteer": {
+              "type": "boolean",
+              "description": "Can inject context/control agents"
+            },
+            "canStop": {
+              "type": "boolean",
+              "description": "Can request agent termination"
+            }
+          },
+          "additionalProperties": false
+        },
+        "scopes": {
+          "type": "object",
+          "properties": {
+            "canCreateScopes": {
+              "type": "boolean",
+              "description": "Can create new scopes"
+            },
+            "canManageScopes": {
+              "type": "boolean",
+              "description": "Can modify and delete scopes"
+            }
+          },
+          "additionalProperties": false
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "additionalProperties": false
+    },
+    "TransportType": {
+      "type": "string",
+      "enum": ["websocket", "stdio", "inprocess", "http-sse"],
+      "description": "Transport binding type"
+    },
+    "Participant": {
+      "type": "object",
+      "description": "A participant in the MAP protocol",
+      "properties": {
+        "id": { "$ref": "#/$defs/ParticipantId" },
+        "type": { "$ref": "#/$defs/ParticipantType" },
+        "name": { "type": "string" },
+        "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+        "transport": { "$ref": "#/$defs/TransportType" },
+        "sessionId": { "$ref": "#/$defs/SessionId" },
+        "metadata": { "type": "object" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["id", "type"],
+      "additionalProperties": false
+    },
+
+    "AgentState": {
+      "type": "string",
+      "description": "State of an agent. Standard states are enumerated; custom states use 'x-' prefix.",
+      "oneOf": [
+        {
+          "enum": [
+            "registered",
+            "active",
+            "busy",
+            "idle",
+            "suspended",
+            "stopping",
+            "stopped",
+            "failed"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^x-[a-z][a-z0-9-]*$",
+          "description": "Custom state with x- prefix"
+        }
+      ]
+    },
+    "AgentRelationship": {
+      "type": "object",
+      "description": "A relationship between agents",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["peer", "supervisor", "supervised", "collaborator"],
+          "description": "Type of relationship"
+        },
+        "agentId": { "$ref": "#/$defs/AgentId" },
+        "metadata": { "type": "object" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["type", "agentId"],
+      "additionalProperties": false
+    },
+    "AgentLifecycle": {
+      "type": "object",
+      "description": "Lifecycle metadata for an agent",
+      "properties": {
+        "createdAt": { "$ref": "#/$defs/Timestamp" },
+        "startedAt": { "$ref": "#/$defs/Timestamp" },
+        "stoppedAt": { "$ref": "#/$defs/Timestamp" },
+        "lastActiveAt": { "$ref": "#/$defs/Timestamp" },
+        "exitCode": { "type": "integer" },
+        "exitReason": { "type": "string" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "additionalProperties": false
+    },
+    "AgentVisibility": {
+      "type": "string",
+      "enum": ["public", "parent-only", "scope", "system"],
+      "description": "Who can see this agent"
+    },
+    "Agent": {
+      "type": "object",
+      "description": "An agent in the multi-agent system",
+      "properties": {
+        "id": { "$ref": "#/$defs/AgentId" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "parent": { "$ref": "#/$defs/AgentId" },
+        "relationships": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AgentRelationship" }
+        },
+        "state": { "$ref": "#/$defs/AgentState" },
+        "role": { "type": "string" },
+        "scopes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ScopeId" }
+        },
+        "visibility": { "$ref": "#/$defs/AgentVisibility" },
+        "lifecycle": { "$ref": "#/$defs/AgentLifecycle" },
+        "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+        "metadata": { "type": "object" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["id", "state"],
+      "additionalProperties": false
+    },
+
+    "Address": {
+      "description": "Flexible addressing for any topology",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Shorthand: agent ID"
+        },
+        { "$ref": "#/$defs/DirectAddress" },
+        { "$ref": "#/$defs/MultiAddress" },
+        { "$ref": "#/$defs/ScopeAddress" },
+        { "$ref": "#/$defs/RoleAddress" },
+        { "$ref": "#/$defs/HierarchicalAddress" },
+        { "$ref": "#/$defs/BroadcastAddress" },
+        { "$ref": "#/$defs/SystemAddress" },
+        { "$ref": "#/$defs/ParticipantAddress" },
+        { "$ref": "#/$defs/FederatedAddress" }
+      ]
+    },
+    "DirectAddress": {
+      "type": "object",
+      "description": "Address a single agent directly",
+      "properties": {
+        "agent": { "$ref": "#/$defs/AgentId" }
+      },
+      "required": ["agent"],
+      "additionalProperties": false
+    },
+    "MultiAddress": {
+      "type": "object",
+      "description": "Address multiple agents",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AgentId" },
+          "minItems": 1
+        }
+      },
+      "required": ["agents"],
+      "additionalProperties": false
+    },
+    "ScopeAddress": {
+      "type": "object",
+      "description": "Address all agents in a scope",
+      "properties": {
+        "scope": { "$ref": "#/$defs/ScopeId" }
+      },
+      "required": ["scope"],
+      "additionalProperties": false
+    },
+    "RoleAddress": {
+      "type": "object",
+      "description": "Address agents by role, optionally within a scope",
+      "properties": {
+        "role": { "type": "string" },
+        "within": { "$ref": "#/$defs/ScopeId" }
+      },
+      "required": ["role"],
+      "additionalProperties": false
+    },
+    "HierarchicalAddress": {
+      "type": "object",
+      "description": "Address relative to sender in hierarchy",
+      "properties": {
+        "parent": {
+          "type": "boolean",
+          "const": true,
+          "description": "Address sender's parent"
+        },
+        "children": {
+          "type": "boolean",
+          "const": true,
+          "description": "Address sender's children"
+        },
+        "ancestors": {
+          "type": "boolean",
+          "const": true,
+          "description": "Address ancestors up the tree"
+        },
+        "descendants": {
+          "type": "boolean",
+          "const": true,
+          "description": "Address descendants down the tree"
+        },
+        "siblings": {
+          "type": "boolean",
+          "const": true,
+          "description": "Address agents with same parent"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Limit depth for children/ancestors/descendants"
+        }
+      },
+      "oneOf": [
+        { "required": ["parent"] },
+        { "required": ["children"] },
+        { "required": ["ancestors"] },
+        { "required": ["descendants"] },
+        { "required": ["siblings"] }
+      ],
+      "additionalProperties": false
+    },
+    "BroadcastAddress": {
+      "type": "object",
+      "description": "Address all agents in the system",
+      "properties": {
+        "broadcast": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": ["broadcast"],
+      "additionalProperties": false
+    },
+    "SystemAddress": {
+      "type": "object",
+      "description": "Address the system/router itself",
+      "properties": {
+        "system": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": ["system"],
+      "additionalProperties": false
+    },
+    "ParticipantAddress": {
+      "type": "object",
+      "description": "Address any participant by ID or category",
+      "properties": {
+        "participant": { "$ref": "#/$defs/ParticipantId" },
+        "participants": {
+          "type": "string",
+          "enum": ["all", "agents", "clients"]
+        }
+      },
+      "oneOf": [
+        { "required": ["participant"] },
+        { "required": ["participants"] }
+      ],
+      "additionalProperties": false
+    },
+    "FederatedAddress": {
+      "type": "object",
+      "description": "Address an agent in a federated system",
+      "properties": {
+        "system": {
+          "type": "string",
+          "description": "Target system identifier"
+        },
+        "agent": { "$ref": "#/$defs/AgentId" }
+      },
+      "required": ["system", "agent"],
+      "additionalProperties": false
+    },
+
+    "MessagePriority": {
+      "type": "string",
+      "enum": ["urgent", "high", "normal", "low"],
+      "default": "normal"
+    },
+    "DeliverySemantics": {
+      "type": "string",
+      "enum": ["fire-and-forget", "acknowledged", "guaranteed"],
+      "default": "fire-and-forget",
+      "description": "Message delivery guarantees"
+    },
+    "MessageRelationship": {
+      "type": "string",
+      "enum": ["parent-to-child", "child-to-parent", "peer", "broadcast"],
+      "description": "Relationship context for the message"
+    },
+    "MessageMeta": {
+      "type": "object",
+      "description": "Metadata for a message",
+      "properties": {
+        "timestamp": { "$ref": "#/$defs/Timestamp" },
+        "relationship": { "$ref": "#/$defs/MessageRelationship" },
+        "expectsResponse": { "type": "boolean" },
+        "correlationId": { "$ref": "#/$defs/CorrelationId" },
+        "isResult": { "type": "boolean" },
+        "priority": { "$ref": "#/$defs/MessagePriority" },
+        "delivery": { "$ref": "#/$defs/DeliverySemantics" },
+        "ttlMs": {
+          "type": "integer",
+          "description": "Time-to-live in milliseconds"
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "additionalProperties": false
+    },
+    "Message": {
+      "type": "object",
+      "description": "A message in the multi-agent system",
+      "properties": {
+        "id": { "$ref": "#/$defs/MessageId" },
+        "from": { "$ref": "#/$defs/ParticipantId" },
+        "to": { "$ref": "#/$defs/Address" },
+        "payload": {
+          "description": "Message payload - structure depends on use case"
+        },
+        "meta": { "$ref": "#/$defs/MessageMeta" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["id", "from", "to"],
+      "additionalProperties": false
+    },
+
+    "JoinPolicy": {
+      "type": "string",
+      "enum": ["open", "invite", "role", "system"],
+      "description": "Policy for joining a scope"
+    },
+    "ScopeVisibility": {
+      "type": "string",
+      "enum": ["public", "members", "system"],
+      "description": "Who can see the scope exists and its members"
+    },
+    "MessageVisibility": {
+      "type": "string",
+      "enum": ["public", "members", "system"],
+      "description": "Who can see messages sent to this scope"
+    },
+    "SendPolicy": {
+      "type": "string",
+      "enum": ["members", "any"],
+      "description": "Who can send messages to this scope"
+    },
+    "Scope": {
+      "type": "object",
+      "description": "A scope for grouping agents",
+      "properties": {
+        "id": { "$ref": "#/$defs/ScopeId" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "parent": { "$ref": "#/$defs/ScopeId" },
+        "joinPolicy": { "$ref": "#/$defs/JoinPolicy" },
+        "autoJoinRoles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Roles that auto-join this scope"
+        },
+        "visibility": { "$ref": "#/$defs/ScopeVisibility" },
+        "messageVisibility": { "$ref": "#/$defs/MessageVisibility" },
+        "sendPolicy": { "$ref": "#/$defs/SendPolicy" },
+        "persistent": {
+          "type": "boolean",
+          "default": true,
+          "description": "Survives system restart"
+        },
+        "autoDelete": {
+          "type": "boolean",
+          "default": false,
+          "description": "Delete when empty"
+        },
+        "metadata": { "type": "object" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+
+    "EventType": {
+      "type": "string",
+      "enum": [
+        "agent_registered",
+        "agent_state_changed",
+        "agent_unregistered",
+        "message_sent",
+        "message_delivered",
+        "message_failed",
+        "scope_created",
+        "scope_deleted",
+        "scope_member_joined",
+        "scope_member_left",
+        "system_error",
+        "federation_connected",
+        "federation_disconnected"
+      ],
+      "description": "Type of system event"
+    },
+    "Event": {
+      "type": "object",
+      "description": "A system event",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "$ref": "#/$defs/EventType" },
+        "timestamp": { "$ref": "#/$defs/Timestamp" },
+        "source": { "$ref": "#/$defs/ParticipantId" },
+        "data": {
+          "type": "object",
+          "description": "Event-specific data"
+        },
+        "causedBy": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "IDs of events that caused this one (causal ordering)"
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["id", "type", "timestamp"],
+      "additionalProperties": false
+    },
+    "SubscriptionFilter": {
+      "type": "object",
+      "description": "Filter for event subscriptions",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AgentId" },
+          "description": "Only events from these agents"
+        },
+        "roles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Only events from agents with these roles"
+        },
+        "scopes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ScopeId" },
+          "description": "Only events in these scopes"
+        },
+        "eventTypes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EventType" },
+          "description": "Only these event types"
+        },
+        "priorities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MessagePriority" },
+          "description": "Only events with these priorities"
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "additionalProperties": false
+    },
+    "Subscription": {
+      "type": "object",
+      "description": "An active event subscription",
+      "properties": {
+        "id": { "$ref": "#/$defs/SubscriptionId" },
+        "filter": { "$ref": "#/$defs/SubscriptionFilter" },
+        "createdAt": { "$ref": "#/$defs/Timestamp" },
+        "replayFrom": {
+          "oneOf": [
+            { "$ref": "#/$defs/Timestamp" },
+            { "type": "string", "description": "Event ID to replay from" }
+          ],
+          "description": "Replay missed events from this point"
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+
+    "ConnectRequest": {
+      "type": "object",
+      "x-method": "map/connect",
+      "x-tier": "core",
+      "description": "Connect to the MAP system and negotiate capabilities",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/connect" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "protocolVersion": { "$ref": "#/$defs/ProtocolVersion" },
+            "participantType": { "$ref": "#/$defs/ParticipantType" },
+            "participantId": { "$ref": "#/$defs/ParticipantId" },
+            "name": { "type": "string" },
+            "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+            "sessionId": {
+              "$ref": "#/$defs/SessionId",
+              "description": "Optional session to reconnect to"
+            },
+            "auth": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "enum": ["bearer", "api-key", "mtls", "none"]
+                },
+                "token": { "type": "string" }
+              }
+            },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["protocolVersion", "participantType"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "ConnectResponse": {
+      "type": "object",
+      "description": "Response to map/connect",
+      "properties": {
+        "protocolVersion": { "$ref": "#/$defs/ProtocolVersion" },
+        "sessionId": { "$ref": "#/$defs/SessionId" },
+        "participantId": { "$ref": "#/$defs/ParticipantId" },
+        "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+        "systemInfo": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          }
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["protocolVersion", "sessionId", "participantId", "capabilities"]
+    },
+    "DisconnectRequest": {
+      "type": "object",
+      "x-method": "map/disconnect",
+      "x-tier": "core",
+      "description": "Gracefully disconnect from the MAP system",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/disconnect" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "reason": { "type": "string" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "DisconnectResponse": {
+      "type": "object",
+      "description": "Response to map/disconnect",
+      "properties": {
+        "acknowledged": { "type": "boolean" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["acknowledged"]
+    },
+
+    "SessionListRequest": {
+      "type": "object",
+      "x-method": "map/session/list",
+      "x-tier": "core",
+      "description": "List participant's sessions",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/session/list" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "SessionListResponse": {
+      "type": "object",
+      "description": "Response to map/session/list",
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "$ref": "#/$defs/SessionId" },
+              "createdAt": { "$ref": "#/$defs/Timestamp" },
+              "lastActiveAt": { "$ref": "#/$defs/Timestamp" }
+            },
+            "required": ["id", "createdAt"]
+          }
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["sessions"]
+    },
+    "SessionLoadRequest": {
+      "type": "object",
+      "x-method": "map/session/load",
+      "x-tier": "core",
+      "description": "Load/reconnect to an existing session",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/session/load" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": { "$ref": "#/$defs/SessionId" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["sessionId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "SessionLoadResponse": {
+      "type": "object",
+      "description": "Response to map/session/load",
+      "properties": {
+        "sessionId": { "$ref": "#/$defs/SessionId" },
+        "restored": { "type": "boolean" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["sessionId", "restored"]
+    },
+    "SessionCloseRequest": {
+      "type": "object",
+      "x-method": "map/session/close",
+      "x-tier": "core",
+      "description": "Explicitly end a session",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/session/close" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": { "$ref": "#/$defs/SessionId" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "SessionCloseResponse": {
+      "type": "object",
+      "description": "Response to map/session/close",
+      "properties": {
+        "closed": { "type": "boolean" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["closed"]
+    },
+
+    "AgentsListRequest": {
+      "type": "object",
+      "x-method": "map/agents/list",
+      "x-tier": "core",
+      "description": "List agents with optional filters",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/agents/list" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "filter": {
+              "type": "object",
+              "properties": {
+                "states": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/AgentState" }
+                },
+                "roles": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/ScopeId" }
+                },
+                "parent": { "$ref": "#/$defs/AgentId" },
+                "hasChildren": { "type": "boolean" }
+              }
+            },
+            "limit": { "type": "integer", "minimum": 1 },
+            "cursor": { "type": "string" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "AgentsListResponse": {
+      "type": "object",
+      "description": "Response to map/agents/list",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Agent" }
+        },
+        "nextCursor": { "type": "string" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["agents"]
+    },
+    "AgentsGetRequest": {
+      "type": "object",
+      "x-method": "map/agents/get",
+      "x-tier": "core",
+      "description": "Get details for a single agent",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/agents/get" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["agentId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "AgentsGetResponse": {
+      "type": "object",
+      "description": "Response to map/agents/get",
+      "properties": {
+        "agent": { "$ref": "#/$defs/Agent" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["agent"]
+    },
+
+    "SendRequest": {
+      "type": "object",
+      "x-method": "map/send",
+      "x-tier": "core",
+      "description": "Send a message to an address",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/send" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "to": { "$ref": "#/$defs/Address" },
+            "payload": {},
+            "meta": { "$ref": "#/$defs/MessageMeta" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["to"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "SendResponse": {
+      "type": "object",
+      "description": "Response to map/send",
+      "properties": {
+        "messageId": { "$ref": "#/$defs/MessageId" },
+        "delivered": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ParticipantId" },
+          "description": "Participants the message was delivered to"
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["messageId"]
+    },
+
+    "SubscribeRequest": {
+      "type": "object",
+      "x-method": "map/subscribe",
+      "x-tier": "core",
+      "description": "Subscribe to event streams",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/subscribe" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "filter": { "$ref": "#/$defs/SubscriptionFilter" },
+            "replayFrom": {
+              "oneOf": [
+                { "$ref": "#/$defs/Timestamp" },
+                { "type": "string" }
+              ]
+            },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "SubscribeResponse": {
+      "type": "object",
+      "description": "Response to map/subscribe",
+      "properties": {
+        "subscriptionId": { "$ref": "#/$defs/SubscriptionId" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["subscriptionId"]
+    },
+    "UnsubscribeRequest": {
+      "type": "object",
+      "x-method": "map/unsubscribe",
+      "x-tier": "core",
+      "description": "Unsubscribe from event streams",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/unsubscribe" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "subscriptionId": { "$ref": "#/$defs/SubscriptionId" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["subscriptionId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "UnsubscribeResponse": {
+      "type": "object",
+      "description": "Response to map/unsubscribe",
+      "properties": {
+        "unsubscribed": { "type": "boolean" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["unsubscribed"]
+    },
+
+    "AuthRefreshRequest": {
+      "type": "object",
+      "x-method": "map/auth/refresh",
+      "x-tier": "core",
+      "description": "Refresh authentication token in-band",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/auth/refresh" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "refreshToken": { "type": "string" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["refreshToken"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "AuthRefreshResponse": {
+      "type": "object",
+      "description": "Response to map/auth/refresh",
+      "properties": {
+        "accessToken": { "type": "string" },
+        "expiresAt": { "$ref": "#/$defs/Timestamp" },
+        "refreshToken": { "type": "string" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["accessToken", "expiresAt"]
+    },
+
+    "AgentsRegisterRequest": {
+      "type": "object",
+      "x-method": "map/agents/register",
+      "x-tier": "structure",
+      "description": "Register a new agent in the system",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/agents/register" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "name": { "type": "string" },
+            "description": { "type": "string" },
+            "role": { "type": "string" },
+            "parent": { "$ref": "#/$defs/AgentId" },
+            "scopes": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ScopeId" }
+            },
+            "visibility": { "$ref": "#/$defs/AgentVisibility" },
+            "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+            "metadata": { "type": "object" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "AgentsRegisterResponse": {
+      "type": "object",
+      "description": "Response to map/agents/register",
+      "properties": {
+        "agent": { "$ref": "#/$defs/Agent" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["agent"]
+    },
+    "AgentsSpawnRequest": {
+      "type": "object",
+      "x-method": "map/agents/spawn",
+      "x-tier": "structure",
+      "description": "Register agent and assign initial task atomically",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/agents/spawn" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "name": { "type": "string" },
+            "description": { "type": "string" },
+            "role": { "type": "string" },
+            "parent": { "$ref": "#/$defs/AgentId" },
+            "scopes": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ScopeId" }
+            },
+            "visibility": { "$ref": "#/$defs/AgentVisibility" },
+            "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+            "initialMessage": { "$ref": "#/$defs/Message" },
+            "metadata": { "type": "object" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "AgentsSpawnResponse": {
+      "type": "object",
+      "description": "Response to map/agents/spawn",
+      "properties": {
+        "agent": { "$ref": "#/$defs/Agent" },
+        "messageId": { "$ref": "#/$defs/MessageId" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["agent"]
+    },
+    "AgentsUnregisterRequest": {
+      "type": "object",
+      "x-method": "map/agents/unregister",
+      "x-tier": "structure",
+      "description": "Remove an agent from the system",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/agents/unregister" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "reason": { "type": "string" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["agentId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "AgentsUnregisterResponse": {
+      "type": "object",
+      "description": "Response to map/agents/unregister",
+      "properties": {
+        "unregistered": { "type": "boolean" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["unregistered"]
+    },
+    "AgentsUpdateRequest": {
+      "type": "object",
+      "x-method": "map/agents/update",
+      "x-tier": "structure",
+      "description": "Update agent state or metadata",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/agents/update" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "state": { "$ref": "#/$defs/AgentState" },
+            "metadata": { "type": "object" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["agentId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "AgentsUpdateResponse": {
+      "type": "object",
+      "description": "Response to map/agents/update",
+      "properties": {
+        "agent": { "$ref": "#/$defs/Agent" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["agent"]
+    },
+    "AgentsStopRequest": {
+      "type": "object",
+      "x-method": "map/agents/stop",
+      "x-tier": "structure",
+      "description": "Request graceful agent stop",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/agents/stop" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "reason": { "type": "string" },
+            "force": { "type": "boolean", "default": false },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["agentId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "AgentsStopResponse": {
+      "type": "object",
+      "description": "Response to map/agents/stop",
+      "properties": {
+        "stopping": { "type": "boolean" },
+        "agent": { "$ref": "#/$defs/Agent" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["stopping"]
+    },
+    "AgentsSuspendRequest": {
+      "type": "object",
+      "x-method": "map/agents/suspend",
+      "x-tier": "structure",
+      "description": "Pause an agent",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/agents/suspend" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "reason": { "type": "string" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["agentId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "AgentsSuspendResponse": {
+      "type": "object",
+      "description": "Response to map/agents/suspend",
+      "properties": {
+        "suspended": { "type": "boolean" },
+        "agent": { "$ref": "#/$defs/Agent" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["suspended"]
+    },
+    "AgentsResumeRequest": {
+      "type": "object",
+      "x-method": "map/agents/resume",
+      "x-tier": "structure",
+      "description": "Resume a suspended agent",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/agents/resume" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["agentId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "AgentsResumeResponse": {
+      "type": "object",
+      "description": "Response to map/agents/resume",
+      "properties": {
+        "resumed": { "type": "boolean" },
+        "agent": { "$ref": "#/$defs/Agent" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["resumed"]
+    },
+
+    "StructureGraphRequest": {
+      "type": "object",
+      "x-method": "map/structure/graph",
+      "x-tier": "structure",
+      "description": "Get the agent relationship graph",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/structure/graph" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "rootAgentId": { "$ref": "#/$defs/AgentId" },
+            "depth": { "type": "integer", "minimum": 1 },
+            "includeRelationships": { "type": "boolean", "default": true },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "StructureGraphResponse": {
+      "type": "object",
+      "description": "Response to map/structure/graph",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Agent" }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": { "$ref": "#/$defs/AgentId" },
+              "to": { "$ref": "#/$defs/AgentId" },
+              "type": {
+                "type": "string",
+                "enum": ["parent-child", "peer", "supervisor", "collaborator"]
+              }
+            },
+            "required": ["from", "to", "type"]
+          }
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["nodes", "edges"]
+    },
+
+    "ScopesListRequest": {
+      "type": "object",
+      "x-method": "map/scopes/list",
+      "x-tier": "structure",
+      "description": "List all scopes",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/scopes/list" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "parent": { "$ref": "#/$defs/ScopeId" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "ScopesListResponse": {
+      "type": "object",
+      "description": "Response to map/scopes/list",
+      "properties": {
+        "scopes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Scope" }
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["scopes"]
+    },
+    "ScopesGetRequest": {
+      "type": "object",
+      "x-method": "map/scopes/get",
+      "x-tier": "structure",
+      "description": "Get details for a single scope",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/scopes/get" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "scopeId": { "$ref": "#/$defs/ScopeId" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["scopeId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "ScopesGetResponse": {
+      "type": "object",
+      "description": "Response to map/scopes/get",
+      "properties": {
+        "scope": { "$ref": "#/$defs/Scope" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["scope"]
+    },
+    "ScopesCreateRequest": {
+      "type": "object",
+      "x-method": "map/scopes/create",
+      "x-tier": "structure",
+      "description": "Create a new scope",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/scopes/create" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "scopeId": { "$ref": "#/$defs/ScopeId" },
+            "name": { "type": "string" },
+            "description": { "type": "string" },
+            "parent": { "$ref": "#/$defs/ScopeId" },
+            "joinPolicy": { "$ref": "#/$defs/JoinPolicy" },
+            "autoJoinRoles": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "visibility": { "$ref": "#/$defs/ScopeVisibility" },
+            "messageVisibility": { "$ref": "#/$defs/MessageVisibility" },
+            "sendPolicy": { "$ref": "#/$defs/SendPolicy" },
+            "persistent": { "type": "boolean" },
+            "autoDelete": { "type": "boolean" },
+            "metadata": { "type": "object" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "ScopesCreateResponse": {
+      "type": "object",
+      "description": "Response to map/scopes/create",
+      "properties": {
+        "scope": { "$ref": "#/$defs/Scope" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["scope"]
+    },
+    "ScopesDeleteRequest": {
+      "type": "object",
+      "x-method": "map/scopes/delete",
+      "x-tier": "structure",
+      "description": "Delete a scope",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/scopes/delete" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "scopeId": { "$ref": "#/$defs/ScopeId" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["scopeId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "ScopesDeleteResponse": {
+      "type": "object",
+      "description": "Response to map/scopes/delete",
+      "properties": {
+        "deleted": { "type": "boolean" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["deleted"]
+    },
+    "ScopesJoinRequest": {
+      "type": "object",
+      "x-method": "map/scopes/join",
+      "x-tier": "structure",
+      "description": "Add an agent to a scope",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/scopes/join" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "scopeId": { "$ref": "#/$defs/ScopeId" },
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["scopeId", "agentId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "ScopesJoinResponse": {
+      "type": "object",
+      "description": "Response to map/scopes/join",
+      "properties": {
+        "joined": { "type": "boolean" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["joined"]
+    },
+    "ScopesLeaveRequest": {
+      "type": "object",
+      "x-method": "map/scopes/leave",
+      "x-tier": "structure",
+      "description": "Remove an agent from a scope",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/scopes/leave" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "scopeId": { "$ref": "#/$defs/ScopeId" },
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["scopeId", "agentId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "ScopesLeaveResponse": {
+      "type": "object",
+      "description": "Response to map/scopes/leave",
+      "properties": {
+        "left": { "type": "boolean" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["left"]
+    },
+    "ScopesMembersRequest": {
+      "type": "object",
+      "x-method": "map/scopes/members",
+      "x-tier": "structure",
+      "description": "List members of a scope",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/scopes/members" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "scopeId": { "$ref": "#/$defs/ScopeId" },
+            "limit": { "type": "integer", "minimum": 1 },
+            "cursor": { "type": "string" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["scopeId"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "ScopesMembersResponse": {
+      "type": "object",
+      "description": "Response to map/scopes/members",
+      "properties": {
+        "members": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AgentId" }
+        },
+        "nextCursor": { "type": "string" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["members"]
+    },
+
+    "InjectRequest": {
+      "type": "object",
+      "x-method": "map/inject",
+      "x-tier": "extension",
+      "description": "Inject context into a running agent (steering)",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/inject" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "agentId": { "$ref": "#/$defs/AgentId" },
+            "content": {
+              "description": "Content to inject"
+            },
+            "delivery": {
+              "type": "string",
+              "enum": ["interrupt", "queue", "best-effort"],
+              "default": "best-effort",
+              "description": "How to deliver the injection"
+            },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["agentId", "content"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "InjectResponse": {
+      "type": "object",
+      "description": "Response to map/inject",
+      "properties": {
+        "injected": { "type": "boolean" },
+        "delivery": {
+          "type": "string",
+          "enum": ["interrupt", "queue", "message"],
+          "description": "Actual delivery method used"
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["injected"]
+    },
+
+    "FederationConnectRequest": {
+      "type": "object",
+      "x-method": "map/federation/connect",
+      "x-tier": "extension",
+      "description": "Connect to a peer MAP system",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/federation/connect" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "systemId": { "type": "string" },
+            "endpoint": { "type": "string", "format": "uri" },
+            "auth": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "enum": ["bearer", "api-key", "mtls"]
+                },
+                "credentials": { "type": "string" }
+              },
+              "required": ["method"]
+            },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["systemId", "endpoint"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "FederationConnectResponse": {
+      "type": "object",
+      "description": "Response to map/federation/connect",
+      "properties": {
+        "connected": { "type": "boolean" },
+        "systemInfo": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" },
+            "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" }
+          }
+        },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["connected"]
+    },
+    "FederationRouteRequest": {
+      "type": "object",
+      "x-method": "map/federation/route",
+      "x-tier": "extension",
+      "description": "Route a message to a federated system",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "map/federation/route" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "systemId": { "type": "string" },
+            "message": { "$ref": "#/$defs/Message" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["systemId", "message"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "FederationRouteResponse": {
+      "type": "object",
+      "description": "Response to map/federation/route",
+      "properties": {
+        "routed": { "type": "boolean" },
+        "messageId": { "$ref": "#/$defs/MessageId" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["routed"]
+    },
+
+    "EventNotification": {
+      "type": "object",
+      "x-method": "map/event",
+      "description": "System event notification (sent to subscribers)",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "method": { "const": "map/event" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "subscriptionId": { "$ref": "#/$defs/SubscriptionId" },
+            "sequenceNumber": {
+              "type": "integer",
+              "description": "Monotonic sequence for ordering"
+            },
+            "event": { "$ref": "#/$defs/Event" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["subscriptionId", "sequenceNumber", "event"]
+        }
+      },
+      "required": ["jsonrpc", "method", "params"]
+    },
+    "MessageNotification": {
+      "type": "object",
+      "x-method": "map/message",
+      "description": "Message delivery notification",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "method": { "const": "map/message" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "message": { "$ref": "#/$defs/Message" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["message"]
+        }
+      },
+      "required": ["jsonrpc", "method", "params"]
+    }
+  }
+}

@@ -1,39 +1,23 @@
 {
   "name": "multi-agent-protocol",
   "version": "0.0.1",
-  "description": "A protocol for client connection and internal message routing in multi-agent systems",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
+  "private": true,
+  "description": "Multi-Agent Protocol (MAP) - A protocol for observing, coordinating, and routing messages within multi-agent AI systems",
+  "workspaces": [
+    "ts-sdk"
   ],
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "lint": "eslint src/",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "build": "npm run build --workspace=ts-sdk",
+    "test": "npm run test --workspace=ts-sdk",
+    "typecheck": "npm run typecheck --workspace=ts-sdk"
   },
   "keywords": [
     "multi-agent",
     "agent",
     "protocol",
-    "message-routing",
-    "ai-agents",
-    "mcp",
-    "a2a"
+    "map",
+    "swarm",
+    "messaging"
   ],
   "author": "Alex Ngai",
   "license": "MIT",
@@ -45,12 +29,6 @@
     "url": "https://github.com/alexngai/multi-agent-protocol/issues"
   },
   "homepage": "https://github.com/alexngai/multi-agent-protocol#readme",
-  "devDependencies": {
-    "@types/node": "^20.11.0",
-    "tsup": "^8.0.1",
-    "typescript": "^5.3.3",
-    "vitest": "^1.2.0"
-  },
   "engines": {
     "node": ">=18.0.0"
   }
