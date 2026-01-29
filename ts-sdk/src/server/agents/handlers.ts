@@ -25,6 +25,8 @@ interface RegisterParams {
   name: string;
   role?: string;
   metadata?: Record<string, unknown>;
+  /** Capabilities this agent provides (for capability-based discovery) */
+  capabilities?: string[];
 }
 
 /**
@@ -49,6 +51,8 @@ interface ListParams {
   role?: string;
   sessionId?: string;
   scopeId?: string;
+  /** Filter by capability (supports glob patterns) */
+  capability?: string;
 }
 
 /**
@@ -93,13 +97,14 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
 
   return {
     "map/agents/register": async (params: unknown, ctx: HandlerContext) => {
-      const { name, role, metadata } = params as RegisterParams;
+      const { name, role, metadata, capabilities } = params as RegisterParams;
 
       const registeredAgent = agents.register({
         name,
         role,
         metadata,
         sessionId: ctx.session.id,
+        capabilities,
       });
 
       // Track agent in session
@@ -113,6 +118,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           role: registeredAgent.role,
           state: registeredAgent.state,
           metadata: registeredAgent.metadata,
+          capabilities: registeredAgent.capabilities,
           visibility: "public",
         },
       };
@@ -147,6 +153,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           role: a.role,
           state: a.state,
           metadata: a.metadata,
+          capabilities: a.capabilities,
           visibility: "public",
         })),
       };
@@ -168,6 +175,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           role: agent.role,
           state: agent.state,
           metadata: agent.metadata,
+          capabilities: agent.capabilities,
           visibility: "public",
         },
       };
@@ -199,6 +207,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           role: agent.role,
           state: agent.state,
           metadata: agent.metadata,
+          capabilities: agent.capabilities,
           visibility: "public",
         },
       };

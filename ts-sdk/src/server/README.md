@@ -421,6 +421,36 @@ const descendants = scopes.getDescendants(company.id); // [engineering, frontend
 const allMembers = scopes.getMembers(company.id, { includeDescendants: true });
 ```
 
+#### Hierarchy Semantics
+
+Scope hierarchy operations have explicit default behaviors:
+
+| Operation | Default Behavior | Options |
+|-----------|------------------|---------|
+| `delete(id)` | **Error** if has children | `deleteDescendants: true`, `orphanChildren: true` |
+| `getMembers(id)` | Direct members only | `includeDescendants: true` |
+| `isMember(scope, agent)` | Direct membership only | `checkAncestors: true` |
+
+```typescript
+import { SCOPE_HIERARCHY_DEFAULTS, ScopeHasChildrenError } from "@anthropic/multi-agent-protocol/server";
+
+// Delete scope with children - will throw by default
+try {
+  scopes.delete(parentScope.id);
+} catch (e) {
+  if (e instanceof ScopeHasChildrenError) {
+    // Must explicitly choose: cascade delete or orphan children
+    scopes.delete(parentScope.id, { deleteDescendants: true });
+    // or
+    scopes.delete(parentScope.id, { orphanChildren: true });
+  }
+}
+
+// Check default behaviors
+console.log(SCOPE_HIERARCHY_DEFAULTS.delete.withChildren); // "error"
+console.log(SCOPE_HIERARCHY_DEFAULTS.membership.cascadesDown); // false
+```
+
 ### SessionManager
 
 Tracks connections with resume support.
@@ -439,6 +469,31 @@ const result = sessions.resume(resumeToken);
 if (result.success) {
   console.log(`Resumed session: ${result.session.id}`);
 }
+```
+
+#### Resume Guarantees
+
+When a session is successfully resumed, the following state is **guaranteed to be preserved**:
+
+| State | Preserved | Notes |
+|-------|-----------|-------|
+| Session ID | ✅ Yes | Same ID after resume |
+| Agent IDs | ✅ Yes | All registered agents preserved |
+| Subscription IDs | ✅ Yes | All subscriptions preserved |
+| Session metadata | ✅ Yes | Custom metadata preserved |
+| Role | ✅ Yes | client/agent/gateway |
+| Scope memberships | ✅ Yes | Persists in ScopeStore |
+| Queued messages | ✅ Yes | Call `flushQueue()` to deliver |
+
+```typescript
+import { RESUME_GUARANTEES } from "@anthropic/multi-agent-protocol/server";
+
+// Default resume window
+console.log(RESUME_GUARANTEES.defaultWindowMs); // 300000 (5 minutes)
+
+// What's preserved
+console.log(RESUME_GUARANTEES.preserved);
+// ['sessionId', 'agentIds', 'subscriptionIds', 'metadata', 'role']
 ```
 
 ### SubscriptionManager
@@ -561,21 +616,34 @@ const handlers = routerToHandlers(router);
 
 ## Permissions
 
-Role-based access control with glob pattern matching:
+Role-based access control with glob pattern matching.
+
+### Baseline Permission Rules
+
+The SDK provides baseline permission rules as a starting point:
 
 ```typescript
-import { PermissionCheckerImpl, permissionMiddleware } from "@anthropic/multi-agent-protocol/server";
+import {
+  BASELINE_PERMISSION_RULES,
+  PermissionCheckerImpl,
+  permissionMiddleware,
+  createDefaultPermissionChecker,
+} from "@anthropic/multi-agent-protocol/server";
 
+// Option 1: Use the baseline directly
 const permissions = new PermissionCheckerImpl({
-  rules: [
-    { method: "map/agents/register", roles: ["agent"], allow: true },
-    { method: "map/agents/list", roles: ["client", "agent"], allow: true },
-    { method: "map/scopes/*", roles: ["agent"], allow: true },
-    { method: "map/send", roles: ["agent", "client"], allow: true },
-  ],
-  defaultAllow: false,
+  rules: BASELINE_PERMISSION_RULES,
 });
 
+// Option 2: Use the factory (adds your custom rules to baseline)
+const permissions = createDefaultPermissionChecker({
+  rules: [
+    // Add custom rules
+    { method: "custom/*", roles: ["agent"] },
+  ],
+});
+
+// Apply to connections
 const connection = new RouterConnectionImpl({
   stream,
   handlers,
@@ -584,6 +652,18 @@ const connection = new RouterConnectionImpl({
   middleware: [permissionMiddleware(permissions)],
 });
 ```
+
+### Baseline Rules
+
+| Method Pattern | Allowed Roles |
+|----------------|---------------|
+| `map/connect`, `map/disconnect` | client, agent, gateway |
+| `map/agents/register`, `map/agents/unregister` | agent |
+| `map/agents/list`, `map/agents/get` | client, agent, gateway |
+| `map/agents/update/*` | agent |
+| `map/scopes/*` | client, agent, gateway |
+| `map/send`, `map/send/*` | client, agent, gateway |
+| `map/subscribe`, `map/unsubscribe`, `map/replay` | client, agent, gateway |
 
 ## Resource Cleanup
 
@@ -597,6 +677,7 @@ const cleaner = new ResourceCleanerImpl({
   agents,
   subscriptions,
   messages,
+  scopes, // Optional: cleans up scope memberships when agents are unregistered
   thresholds: {
     sessionDisconnectMs: 5 * 60 * 1000, // 5 minutes
     intervalMs: 60 * 1000, // Run every minute

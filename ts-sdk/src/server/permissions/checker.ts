@@ -196,46 +196,77 @@ export class PermissionCheckerImpl implements PermissionChecker {
 }
 
 /**
- * Create a PermissionChecker with default rules for MAP methods.
+ * Baseline permission rules for MAP protocol methods.
+ *
+ * These rules define the recommended starting point for MAP server permissions:
+ * - Connection methods: available to all roles
+ * - Agent registration: only agents can register/unregister
+ * - Agent observation: all roles can list/get agents
+ * - Agent state changes: only agents can update their state
+ * - Scope operations: all roles can manage scopes
+ * - Messaging: all roles can send messages
+ * - Subscriptions: all roles can subscribe to events
+ *
+ * Use these rules as a starting point and customize as needed.
+ *
+ * @example
+ * ```typescript
+ * import { BASELINE_PERMISSION_RULES, PermissionCheckerImpl } from "@anthropic/multi-agent-protocol/server";
+ *
+ * const checker = new PermissionCheckerImpl({
+ *   rules: [
+ *     ...BASELINE_PERMISSION_RULES,
+ *     // Add custom rules
+ *     { method: "custom/*", roles: ["agent"] },
+ *   ],
+ * });
+ * ```
+ */
+export const BASELINE_PERMISSION_RULES: PermissionRule[] = [
+  // Connection methods - available to all
+  { method: "map/connect", roles: ["client", "agent", "gateway"] },
+  { method: "map/disconnect", roles: ["client", "agent", "gateway"] },
+  { method: "map/session/*", roles: ["client", "agent", "gateway"] },
+
+  // Agent registration - only agents can register
+  { method: "map/agents/register", roles: ["agent"] },
+  { method: "map/agents/unregister", roles: ["agent"] },
+
+  // Agent observation - clients and agents can observe
+  { method: "map/agents/list", roles: ["client", "agent", "gateway"] },
+  { method: "map/agents/get", roles: ["client", "agent", "gateway"] },
+
+  // Agent state changes - only the owning agent
+  { method: "map/agents/update", roles: ["agent"] },
+  { method: "map/agents/update/*", roles: ["agent"] },
+
+  // Scope operations - all participants
+  { method: "map/scopes/*", roles: ["client", "agent", "gateway"] },
+
+  // Messaging - all participants
+  { method: "map/send", roles: ["client", "agent", "gateway"] },
+  { method: "map/send/*", roles: ["client", "agent", "gateway"] },
+
+  // Subscriptions - all participants
+  { method: "map/subscribe", roles: ["client", "agent", "gateway"] },
+  { method: "map/unsubscribe", roles: ["client", "agent", "gateway"] },
+  { method: "map/replay", roles: ["client", "agent", "gateway"] },
+  { method: "map/ack", roles: ["client", "agent", "gateway"] },
+  { method: "map/pause", roles: ["client", "agent", "gateway"] },
+  { method: "map/resume", roles: ["client", "agent", "gateway"] },
+];
+
+/**
+ * Create a PermissionChecker with baseline rules for MAP methods.
+ *
+ * @param overrides Optional overrides for rules or default behavior
+ * @returns PermissionChecker instance with baseline + override rules
  */
 export function createDefaultPermissionChecker(
   overrides?: Partial<PermissionCheckerOptions>
 ): PermissionCheckerImpl {
-  const defaultRules: PermissionRule[] = [
-    // Connection methods - available to all
-    { method: "map/connect", roles: ["client", "agent", "gateway"] },
-    { method: "map/disconnect", roles: ["client", "agent", "gateway"] },
-    { method: "map/session/*", roles: ["client", "agent", "gateway"] },
-
-    // Agent registration - only agents can register
-    { method: "map/agents/register", roles: ["agent"] },
-    { method: "map/agents/unregister", roles: ["agent"] },
-
-    // Agent observation - clients and agents can observe
-    { method: "map/agents/list", roles: ["client", "agent", "gateway"] },
-    { method: "map/agents/get", roles: ["client", "agent", "gateway"] },
-
-    // Agent state changes - only the owning agent
-    { method: "map/agents/update/*", roles: ["agent"] },
-
-    // Scope operations - all participants
-    { method: "map/scopes/*", roles: ["client", "agent", "gateway"] },
-
-    // Messaging - all participants
-    { method: "map/send", roles: ["client", "agent", "gateway"] },
-    { method: "map/send/*", roles: ["client", "agent", "gateway"] },
-
-    // Subscriptions - all participants
-    { method: "map/subscribe", roles: ["client", "agent", "gateway"] },
-    { method: "map/unsubscribe", roles: ["client", "agent", "gateway"] },
-    { method: "map/replay", roles: ["client", "agent", "gateway"] },
-    { method: "map/ack", roles: ["client", "agent", "gateway"] },
-    { method: "map/pause", roles: ["client", "agent", "gateway"] },
-    { method: "map/resume", roles: ["client", "agent", "gateway"] },
-  ];
-
   return new PermissionCheckerImpl({
-    rules: [...defaultRules, ...(overrides?.rules ?? [])],
+    rules: [...BASELINE_PERMISSION_RULES, ...(overrides?.rules ?? [])],
     defaultAllow: overrides?.defaultAllow ?? false,
   });
 }

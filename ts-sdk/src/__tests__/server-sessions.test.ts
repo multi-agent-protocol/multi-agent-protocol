@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   InMemorySessionStore,
   SessionManagerImpl,
+  RESUME_GUARANTEES,
   type ServerSession,
 } from "../server/sessions";
 import { EventBusImpl } from "../server/events";
@@ -405,6 +406,37 @@ describe("SessionManagerImpl", () => {
 
     it("should do nothing for unknown session", () => {
       expect(() => manager.touch("unknown")).not.toThrow();
+    });
+  });
+
+  describe("RESUME_GUARANTEES", () => {
+    it("should document preserved state", () => {
+      expect(RESUME_GUARANTEES.preserved).toContain("sessionId");
+      expect(RESUME_GUARANTEES.preserved).toContain("agentIds");
+      expect(RESUME_GUARANTEES.preserved).toContain("subscriptionIds");
+      expect(RESUME_GUARANTEES.preserved).toContain("metadata");
+      expect(RESUME_GUARANTEES.preserved).toContain("role");
+    });
+
+    it("should document independently persisted state", () => {
+      expect(RESUME_GUARANTEES.persistsIndependently).toContain("scopeMemberships");
+      expect(RESUME_GUARANTEES.persistsIndependently).toContain("queuedMessages");
+    });
+
+    it("should document not preserved state", () => {
+      expect(RESUME_GUARANTEES.notPreserved).toContain("connectionState");
+      expect(RESUME_GUARANTEES.notPreserved).toContain("pendingRequests");
+    });
+
+    it("should have default window of 5 minutes", () => {
+      expect(RESUME_GUARANTEES.defaultWindowMs).toBe(5 * 60 * 1000);
+    });
+
+    it("should document resume actions", () => {
+      expect(RESUME_GUARANTEES.onResume).toContain("status-restored");
+      expect(RESUME_GUARANTEES.onResume).toContain("resume-token-cleared");
+      expect(RESUME_GUARANTEES.onResume).toContain("event-emitted");
+      expect(RESUME_GUARANTEES.onResume).toContain("queued-messages-available");
     });
   });
 });

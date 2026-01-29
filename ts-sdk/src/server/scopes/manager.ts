@@ -36,6 +36,74 @@ export class InvalidParentScopeError extends Error {
 }
 
 /**
+ * Error thrown when trying to delete a scope that has children.
+ */
+export class ScopeHasChildrenError extends Error {
+  constructor(scopeId: string, childCount: number) {
+    super(
+      `Cannot delete scope '${scopeId}': has ${childCount} child scope(s). ` +
+        `Use deleteDescendants: true to cascade delete, or orphanChildren: true to detach children.`
+    );
+    this.name = "ScopeHasChildrenError";
+  }
+}
+
+/**
+ * Scope hierarchy default behaviors.
+ *
+ * Documents the default behavior for scope hierarchy operations.
+ * These are the documented guarantees for MAP server implementations.
+ *
+ * @example
+ * ```typescript
+ * import { SCOPE_HIERARCHY_DEFAULTS } from "@anthropic/multi-agent-protocol/server";
+ *
+ * // Check default delete behavior
+ * console.log(SCOPE_HIERARCHY_DEFAULTS.delete.withChildren);
+ * // "error" - throws ScopeHasChildrenError
+ * ```
+ */
+export const SCOPE_HIERARCHY_DEFAULTS = {
+  /**
+   * Default behavior when deleting a scope.
+   */
+  delete: {
+    /** What happens when scope has children (default: error) */
+    withChildren: "error" as const,
+    /** Available options for handling children */
+    options: ["error", "deleteDescendants", "orphanChildren"] as const,
+  },
+
+  /**
+   * Default behavior for getMembers().
+   */
+  getMembers: {
+    /** Whether to include members from descendant scopes (default: false) */
+    includeDescendants: false,
+  },
+
+  /**
+   * Default behavior for isMember().
+   */
+  isMember: {
+    /** Whether to check ancestor scope membership (default: false) */
+    checkAncestors: false,
+  },
+
+  /**
+   * Membership inheritance rules.
+   */
+  membership: {
+    /** Membership does NOT automatically cascade to child scopes */
+    cascadesDown: false,
+    /** Membership in child does NOT imply membership in parent */
+    cascadesUp: false,
+    /** Use checkAncestors/includeDescendants options for virtual inheritance */
+    virtualInheritance: true,
+  },
+} as const;
+
+/**
  * ScopeManager implementation.
  *
  * Manages scopes with hierarchy:
@@ -112,23 +180,45 @@ export class ScopeManagerImpl implements ScopeManager {
 
   /**
    * Delete a scope.
-   * @param opts.deleteDescendants If true, also delete all child scopes
+   *
+   * By default, throws ScopeHasChildrenError if the scope has children.
+   * Use options to control behavior:
+   *
+   * @param opts.deleteDescendants If true, cascade delete all child scopes
+   * @param opts.orphanChildren If true, detach children (they become root scopes)
+   * @throws {ScopeHasChildrenError} If scope has children and neither option is set
    */
-  delete(id: string, opts?: { deleteDescendants?: boolean }): boolean {
+  delete(
+    id: string,
+    opts?: { deleteDescendants?: boolean; orphanChildren?: boolean }
+  ): boolean {
     const scope = this.store.getScope(id);
     if (!scope) {
       return false;
     }
 
+    const children = this.getChildren(id);
     const deletedDescendants: string[] = [];
 
-    // Delete descendants if requested
-    if (opts?.deleteDescendants) {
-      const descendants = this.store.getDescendants(id);
-      for (const descendantId of descendants) {
-        if (this.store.deleteScope(descendantId)) {
-          deletedDescendants.push(descendantId);
+    // Check for children - error by default
+    if (children.length > 0) {
+      if (opts?.deleteDescendants) {
+        // Cascade delete all descendants
+        const descendants = this.store.getDescendants(id);
+        for (const descendantId of descendants) {
+          if (this.store.deleteScope(descendantId)) {
+            deletedDescendants.push(descendantId);
+          }
         }
+      } else if (opts?.orphanChildren) {
+        // Detach children - they become root scopes
+        for (const child of children) {
+          const orphanedChild = { ...child, parentId: undefined };
+          this.store.saveScope(orphanedChild);
+        }
+      } else {
+        // Error by default - explicit action required
+        throw new ScopeHasChildrenError(id, children.length);
       }
     }
 
@@ -138,7 +228,8 @@ export class ScopeManagerImpl implements ScopeManager {
         type: "scope.deleted",
         data: {
           scopeId: id,
-          deletedDescendants: deletedDescendants.length > 0 ? deletedDescendants : undefined,
+          deletedDescendants:
+            deletedDescendants.length > 0 ? deletedDescendants : undefined,
         },
         source: { scopeId: id },
       });

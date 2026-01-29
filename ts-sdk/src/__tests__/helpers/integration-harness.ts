@@ -39,8 +39,8 @@ export interface ConnectedClient {
   connection: ClientConnection;
   /** Connection result from connect() */
   connectResult: ConnectResponseResult;
-  /** Disconnect and cleanup */
-  disconnect: () => Promise<void>;
+  /** Disconnect and cleanup, returns resume token */
+  disconnect: () => Promise<string | undefined>;
 }
 
 /**
@@ -53,8 +53,8 @@ export interface ConnectedAgent {
   connectResult: ConnectResponseResult;
   /** The registered agent */
   agent: Agent;
-  /** Disconnect and cleanup */
-  disconnect: () => Promise<void>;
+  /** Disconnect and cleanup, returns resume token */
+  disconnect: () => Promise<string | undefined>;
 }
 
 /**
@@ -81,17 +81,19 @@ export interface IntegrationTestHarness {
   /**
    * Create and connect a client.
    * @param name - Optional client name
+   * @param resumeToken - Optional resume token to restore a previous session
    * @returns Connected client with connection and disconnect function
    */
-  createClient(name?: string): Promise<ConnectedClient>;
+  createClient(name?: string, resumeToken?: string): Promise<ConnectedClient>;
 
   /**
    * Create, connect, and register an agent.
    * @param name - Agent name
    * @param role - Optional agent role
+   * @param resumeToken - Optional resume token to restore a previous session
    * @returns Connected agent with connection, agent info, and disconnect function
    */
-  createAgent(name: string, role?: string): Promise<ConnectedAgent>;
+  createAgent(name: string, role?: string, resumeToken?: string): Promise<ConnectedAgent>;
 
   /**
    * Get all delivered messages (for assertions).
@@ -223,7 +225,8 @@ export function createIntegrationHarness(
    */
   function createServerRouter(
     serverStream: Stream,
-    role: "client" | "agent"
+    role: "client" | "agent",
+    resumeToken?: string
   ): RouterConnectionImpl {
     const router = new RouterConnectionImpl({
       stream: serverStream,
@@ -231,6 +234,7 @@ export function createIntegrationHarness(
       sessions,
       role,
       name: `${role}-session`,
+      resumeToken,
     });
     return router;
   }
@@ -238,7 +242,7 @@ export function createIntegrationHarness(
   /**
    * Create and connect a client.
    */
-  async function createClient(name?: string): Promise<ConnectedClient> {
+  async function createClient(name?: string, resumeToken?: string): Promise<ConnectedClient> {
     const [clientStream, serverStream] = createStreamPair();
 
     // Create client connection
@@ -246,8 +250,8 @@ export function createIntegrationHarness(
       name: name ?? "TestClient",
     });
 
-    // Create and start server router
-    const router = createServerRouter(serverStream, "client");
+    // Create and start server router (with optional resume token)
+    const router = createServerRouter(serverStream, "client", resumeToken);
     router.start();
 
     // Track for cleanup
@@ -259,19 +263,20 @@ export function createIntegrationHarness(
     };
     activeConnections.push(activeConn);
 
-    // Connect client
-    const connectResult = await connection.connect();
+    // Connect client (with optional resume token)
+    const connectResult = await connection.connect({ resumeToken });
 
     return {
       connection,
       connectResult,
       disconnect: async () => {
-        await connection.disconnect();
+        const token = await connection.disconnect();
         await router.close();
         const idx = activeConnections.indexOf(activeConn);
         if (idx >= 0) {
           activeConnections.splice(idx, 1);
         }
+        return token;
       },
     };
   }
@@ -281,7 +286,8 @@ export function createIntegrationHarness(
    */
   async function createAgent(
     name: string,
-    role?: string
+    role?: string,
+    resumeToken?: string
   ): Promise<ConnectedAgent> {
     const [clientStream, serverStream] = createStreamPair();
 
@@ -292,8 +298,8 @@ export function createIntegrationHarness(
       role,
     });
 
-    // Create and start server router
-    const router = createServerRouter(serverStream, "agent");
+    // Create and start server router (with optional resume token)
+    const router = createServerRouter(serverStream, "agent", resumeToken);
     router.start();
 
     // Track for cleanup
@@ -305,16 +311,17 @@ export function createIntegrationHarness(
     };
     activeConnections.push(activeConn);
 
-    // Connect agent (this also registers the agent)
-    const { connection: connResult, agent } = await connection.connect();
+    // Connect agent (this also registers the agent, with optional resume token)
+    const { connection: connResult, agent } = await connection.connect({ resumeToken });
 
     return {
       connection,
       connectResult: connResult,
       agent,
       disconnect: async () => {
+        let token: string | undefined;
         try {
-          await connection.disconnect();
+          token = await connection.disconnect();
         } catch {
           // Ignore disconnect errors during cleanup
         }
@@ -323,6 +330,7 @@ export function createIntegrationHarness(
         if (idx >= 0) {
           activeConnections.splice(idx, 1);
         }
+        return token;
       },
     };
   }

@@ -95,6 +95,37 @@ describe("Client-Server Integration", () => {
       await client2.disconnect();
       await client3.disconnect();
     });
+
+    it("closed promise resolves on disconnect", async () => {
+      const { connection, disconnect } = await harness.createClient();
+
+      let closedResolved = false;
+      connection.closed.then(() => {
+        closedResolved = true;
+      });
+
+      expect(closedResolved).toBe(false);
+
+      await disconnect();
+
+      // Give time for promise to resolve
+      await new Promise((r) => setTimeout(r, 10));
+      expect(closedResolved).toBe(true);
+    });
+
+    it("onStateChange fires during lifecycle", async () => {
+      const { connection, disconnect } = await harness.createClient();
+
+      const states: string[] = [];
+      connection.onStateChange((state) => {
+        states.push(state);
+      });
+
+      await disconnect();
+
+      // Should have at least the "closed" state
+      expect(states).toContain("closed");
+    });
   });
 
   // ===========================================================================
@@ -569,6 +600,95 @@ describe("Client-Server Integration", () => {
       expect(client1.connection.isConnected).toBe(false);
       expect(client2.connection.isConnected).toBe(false);
       expect(agent1.connection.isConnected).toBe(false);
+    });
+  });
+
+  // ===========================================================================
+  // Session Resume
+  // ===========================================================================
+
+  describe("Session Resume", () => {
+    it("disconnect returns resumeToken", async () => {
+      const { disconnect } = await harness.createClient("ResumeClient");
+
+      const resumeToken = await disconnect();
+
+      expect(resumeToken).toBeDefined();
+      expect(typeof resumeToken).toBe("string");
+      expect(resumeToken!.length).toBeGreaterThan(0);
+    });
+
+    it("connect with resumeToken restores same session", async () => {
+      // Create and disconnect first client
+      const { connectResult: firstConnect, disconnect } =
+        await harness.createClient("ResumeClient");
+      const originalSessionId = firstConnect.sessionId;
+
+      const resumeToken = await disconnect();
+      expect(resumeToken).toBeDefined();
+
+      // Create new client with resume token
+      const { connectResult: secondConnect, disconnect: disconnect2 } =
+        await harness.createClient("ResumeClient", resumeToken);
+
+      // Session ID should be the same
+      expect(secondConnect.sessionId).toBe(originalSessionId);
+
+      await disconnect2();
+    });
+
+    it("invalid resumeToken creates new session", async () => {
+      // Create first client to get a session ID
+      const { connectResult: firstConnect, disconnect } =
+        await harness.createClient("Client1");
+      const originalSessionId = firstConnect.sessionId;
+      await disconnect();
+
+      // Try to resume with invalid token - should create new session
+      const { connectResult: secondConnect, disconnect: disconnect2 } =
+        await harness.createClient("Client2", "invalid-token-12345");
+
+      // Should get a NEW session (not the original)
+      expect(secondConnect.sessionId).not.toBe(originalSessionId);
+
+      await disconnect2();
+    });
+
+    it("session marked disconnected on server after disconnect", async () => {
+      const { connectResult, disconnect } = await harness.createClient();
+      const sessionId = connectResult.sessionId;
+
+      // Session should be connected
+      const sessionBefore = harness.sessions.get(sessionId);
+      expect(sessionBefore?.status).toBe("connected");
+
+      await disconnect();
+
+      // Session should be disconnected (but still exist for resume)
+      const sessionAfter = harness.sessions.get(sessionId);
+      expect(sessionAfter?.status).toBe("disconnected");
+    });
+
+    it("resumed session status returns to connected", async () => {
+      const { connectResult: firstConnect, disconnect } =
+        await harness.createClient();
+      const sessionId = firstConnect.sessionId;
+
+      const resumeToken = await disconnect();
+
+      // Session is disconnected
+      expect(harness.sessions.get(sessionId)?.status).toBe("disconnected");
+
+      // Resume the session
+      const { disconnect: disconnect2 } = await harness.createClient(
+        "ResumedClient",
+        resumeToken
+      );
+
+      // Session should be connected again
+      expect(harness.sessions.get(sessionId)?.status).toBe("connected");
+
+      await disconnect2();
     });
   });
 });

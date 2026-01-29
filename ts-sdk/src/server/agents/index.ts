@@ -5,6 +5,8 @@
 // Re-export types
 export type {
   ServerAgentState,
+  StandardAgentState,
+  CustomAgentState,
   RegisteredAgent,
   AgentFilter,
   AgentStore,
@@ -17,6 +19,15 @@ export {
   AgentRegistryImpl,
   AgentNotFoundError,
   InvalidStateTransitionError,
+  InvalidAgentStateError,
+  // State helper functions
+  isStandardState,
+  isCustomState,
+  validateAgentState,
+  isValidTransition,
+  // Capability helper functions
+  matchesCapability,
+  hasCapability,
 } from "./registry";
 export { InMemoryAgentStore } from "./stores/in-memory";
 

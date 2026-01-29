@@ -14,6 +14,7 @@ export type {
 export {
   PermissionCheckerImpl,
   createDefaultPermissionChecker,
+  BASELINE_PERMISSION_RULES,
 } from "./checker";
 
 // Middleware

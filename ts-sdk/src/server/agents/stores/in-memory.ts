@@ -7,6 +7,7 @@ import type {
   AgentFilter,
   AgentStore,
 } from "../../types";
+import { hasCapability } from "../registry";
 
 /**
  * In-memory implementation of AgentStore.
@@ -49,6 +50,13 @@ export class InMemoryAgentStore implements AgentStore {
       // Filter by session
       if (filter?.sessionId !== undefined && agent.sessionId !== filter.sessionId) {
         continue;
+      }
+
+      // Filter by capability (supports glob patterns)
+      if (filter?.capability !== undefined) {
+        if (!hasCapability(agent.capabilities, filter.capability)) {
+          continue;
+        }
       }
 
       // Note: scopeId filter is handled by caller (requires ScopeManager)

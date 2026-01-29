@@ -14,6 +14,7 @@ import type {
   EventBus,
   ScopeManager,
   CausalOrderingOptions,
+  MultiCauseMode,
 } from "../types";
 import { ulid } from "../../utils/ulid";
 import { CausalEventBuffer, type CausalEvent } from "../../utils/causal-buffer";
@@ -57,6 +58,7 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
       enabled: options.causalOrdering?.enabled ?? true,
       maxWaitMs: options.causalOrdering?.maxWaitMs ?? 5000,
       maxBufferSize: options.causalOrdering?.maxBufferSize ?? 1000,
+      multiCauseMode: options.causalOrdering?.multiCauseMode ?? "all",
     };
   }
 
@@ -226,6 +228,7 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
     const buffer = new CausalEventBuffer({
       maxWaitTime: this.causalOrdering.enabled ? this.causalOrdering.maxWaitMs : 0,
       maxBufferSize: this.causalOrdering.maxBufferSize,
+      multiCauseMode: this.causalOrdering.multiCauseMode,
     });
 
     const state: SubscriptionState = {
@@ -265,9 +268,16 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
 
     // Process through causal buffer if enabled
     if (this.causalOrdering.enabled) {
+      // Normalize causedBy to array format
+      const causedBy = event.causedBy
+        ? Array.isArray(event.causedBy)
+          ? event.causedBy
+          : [event.causedBy]
+        : undefined;
+
       const causalEvent: CausalEvent = {
         eventId: event.id,
-        causedBy: event.causedBy ? [event.causedBy] : undefined,
+        causedBy,
         event: event as any, // MAPEvent is compatible with Event type
       };
 
@@ -310,58 +320,137 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
 
   /**
    * Check if an event matches a subscription filter.
+   *
+   * Supports:
+   * - Basic filters: eventTypes, agents, scopes, messageTypes
+   * - Match modes: "all" (default) vs "any"
+   * - Logical operators: $or, $and
+   * - Nested filters with operators
    */
   private matchesFilter(event: MAPEvent, filter: SubscriptionFilter): boolean {
+    // Handle $or operator - match if ANY sub-filter matches
+    if (filter.$or && filter.$or.length > 0) {
+      return filter.$or.some((subFilter) => this.matchesFilter(event, subFilter));
+    }
+
+    // Handle $and operator - match if ALL sub-filters match
+    if (filter.$and && filter.$and.length > 0) {
+      return filter.$and.every((subFilter) => this.matchesFilter(event, subFilter));
+    }
+
+    // Get match mode (default: "all")
+    const matchMode = filter.match ?? "all";
+
+    // Collect matching results for each criterion
+    const criteria: Array<{ name: string; matches: boolean | null }> = [];
+
     // Check event types
     if (filter.eventTypes && filter.eventTypes.length > 0) {
-      if (!filter.eventTypes.includes(event.type)) {
-        // Check for prefix matches (e.g., "agent.*" matches "agent.registered")
-        const matches = filter.eventTypes.some((type) => {
-          if (type.endsWith(".*")) {
-            const prefix = type.slice(0, -2);
-            return event.type.startsWith(prefix + ".");
-          }
-          return false;
-        });
-        if (!matches) {
-          return false;
-        }
-      }
+      const matches = this.matchesEventTypes(event, filter.eventTypes);
+      criteria.push({ name: "eventTypes", matches });
     }
 
     // Check agents
     if (filter.agents && filter.agents.length > 0) {
       const eventAgentId = event.source?.agentId;
-      if (!eventAgentId || !filter.agents.includes(eventAgentId)) {
-        return false;
-      }
+      const matches = eventAgentId ? filter.agents.includes(eventAgentId) : false;
+      criteria.push({ name: "agents", matches });
     }
 
     // Check scopes (including nested scopes)
     if (filter.scopes && filter.scopes.length > 0) {
-      const eventScopeId = event.source?.scopeId;
-      if (!eventScopeId) {
-        return false;
-      }
+      const matches = this.matchesScopes(event, filter.scopes);
+      criteria.push({ name: "scopes", matches });
+    }
 
-      // Check direct scope match
-      if (filter.scopes.includes(eventScopeId)) {
-        return true;
-      }
+    // Check message types (for message events)
+    if (filter.messageTypes && filter.messageTypes.length > 0) {
+      const matches = this.matchesMessageTypes(event, filter.messageTypes);
+      criteria.push({ name: "messageTypes", matches });
+    }
 
-      // Check if event scope is a descendant of any filter scope
-      if (this.scopes) {
-        for (const filterScopeId of filter.scopes) {
-          const descendants = this.scopes.getDescendants(filterScopeId);
-          if (descendants.some((d) => d.id === eventScopeId)) {
-            return true;
-          }
-        }
-      }
+    // If no criteria specified, match everything
+    if (criteria.length === 0) {
+      return true;
+    }
 
+    // Apply match mode
+    if (matchMode === "any") {
+      // Any criterion matching is sufficient
+      return criteria.some((c) => c.matches === true);
+    } else {
+      // All criteria must match (default "all" mode)
+      return criteria.every((c) => c.matches === true);
+    }
+  }
+
+  /**
+   * Check if event matches any of the event types.
+   */
+  private matchesEventTypes(event: MAPEvent, eventTypes: string[]): boolean {
+    // Direct match
+    if (eventTypes.includes(event.type)) {
+      return true;
+    }
+
+    // Check for prefix matches (e.g., "agent.*" matches "agent.registered")
+    return eventTypes.some((type) => {
+      if (type.endsWith(".*")) {
+        const prefix = type.slice(0, -2);
+        return event.type.startsWith(prefix + ".");
+      }
+      return false;
+    });
+  }
+
+  /**
+   * Check if event matches any of the scopes (including nested scopes).
+   */
+  private matchesScopes(event: MAPEvent, scopes: string[]): boolean {
+    const eventScopeId = event.source?.scopeId;
+    if (!eventScopeId) {
       return false;
     }
 
-    return true;
+    // Check direct scope match
+    if (scopes.includes(eventScopeId)) {
+      return true;
+    }
+
+    // Check if event scope is a descendant of any filter scope
+    if (this.scopes) {
+      for (const filterScopeId of scopes) {
+        const descendants = this.scopes.getDescendants(filterScopeId);
+        if (descendants.some((d) => d.id === eventScopeId)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if event matches any of the message types.
+   * This checks for a messageType field in the event data.
+   */
+  private matchesMessageTypes(event: MAPEvent, messageTypes: string[]): boolean {
+    // Check if this is a message event with a messageType field
+    const eventData = event.data as Record<string, unknown> | undefined;
+    if (!eventData) {
+      return false;
+    }
+
+    // Try to extract messageType from event data
+    // Common locations: data.messageType, data.message.messageType
+    const messageType =
+      (eventData.messageType as string) ??
+      ((eventData.message as Record<string, unknown> | undefined)?.messageType as string);
+
+    if (!messageType) {
+      return false;
+    }
+
+    return messageTypes.includes(messageType);
   }
 }

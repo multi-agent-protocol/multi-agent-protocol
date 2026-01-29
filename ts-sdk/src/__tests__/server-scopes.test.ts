@@ -8,6 +8,8 @@ import {
   ScopeManagerImpl,
   ScopeNotFoundError,
   InvalidParentScopeError,
+  ScopeHasChildrenError,
+  SCOPE_HIERARCHY_DEFAULTS,
   type ServerScope,
 } from "../server/scopes";
 import { EventBusImpl } from "../server/events";
@@ -300,6 +302,52 @@ describe("ScopeManagerImpl", () => {
 
     it("should return false for unknown scope", () => {
       expect(manager.delete("unknown")).toBe(false);
+    });
+
+    it("should throw ScopeHasChildrenError when deleting scope with children", () => {
+      const parent = manager.create({ name: "Parent" });
+      manager.create({ name: "Child", parentId: parent.id });
+
+      expect(() => manager.delete(parent.id)).toThrow(ScopeHasChildrenError);
+      expect(() => manager.delete(parent.id)).toThrow(/has 1 child scope/);
+    });
+
+    it("should orphan children when orphanChildren is true", () => {
+      const parent = manager.create({ name: "Parent" });
+      const child = manager.create({ name: "Child", parentId: parent.id });
+
+      manager.delete(parent.id, { orphanChildren: true });
+
+      expect(manager.get(parent.id)).toBeUndefined();
+      // Child should still exist but with no parent
+      const orphanedChild = manager.get(child.id);
+      expect(orphanedChild).toBeDefined();
+      expect(orphanedChild?.parentId).toBeUndefined();
+    });
+
+    it("should allow deleting leaf scope without options", () => {
+      const parent = manager.create({ name: "Parent" });
+      const child = manager.create({ name: "Child", parentId: parent.id });
+
+      // Child has no children, should delete fine
+      expect(manager.delete(child.id)).toBe(true);
+      expect(manager.get(child.id)).toBeUndefined();
+    });
+  });
+
+  describe("SCOPE_HIERARCHY_DEFAULTS", () => {
+    it("should have correct delete defaults", () => {
+      expect(SCOPE_HIERARCHY_DEFAULTS.delete.withChildren).toBe("error");
+      expect(SCOPE_HIERARCHY_DEFAULTS.delete.options).toContain("error");
+      expect(SCOPE_HIERARCHY_DEFAULTS.delete.options).toContain("deleteDescendants");
+      expect(SCOPE_HIERARCHY_DEFAULTS.delete.options).toContain("orphanChildren");
+    });
+
+    it("should have correct membership defaults", () => {
+      expect(SCOPE_HIERARCHY_DEFAULTS.getMembers.includeDescendants).toBe(false);
+      expect(SCOPE_HIERARCHY_DEFAULTS.isMember.checkAncestors).toBe(false);
+      expect(SCOPE_HIERARCHY_DEFAULTS.membership.cascadesDown).toBe(false);
+      expect(SCOPE_HIERARCHY_DEFAULTS.membership.cascadesUp).toBe(false);
     });
   });
 

@@ -26,8 +26,11 @@ export interface MAPEvent {
     scopeId?: string;
     sessionId?: string;
   };
-  /** Parent event ID for causal ordering */
-  causedBy?: string;
+  /**
+   * Parent event ID(s) for causal ordering.
+   * Can be a single event ID or an array of event IDs for multiple causes.
+   */
+  causedBy?: string | string[];
 }
 
 /**
@@ -103,8 +106,19 @@ export interface EventBusOptions {
 // Agents
 // =============================================================================
 
-/** Valid agent states */
-export type ServerAgentState = "idle" | "busy" | "suspended" | "stopped";
+/** Standard agent states */
+export type StandardAgentState = "idle" | "busy" | "suspended" | "stopped";
+
+/** Custom agent state (must start with "custom:") */
+export type CustomAgentState = `custom:${string}`;
+
+/**
+ * Valid agent states.
+ *
+ * Standard states: "idle", "busy", "suspended", "stopped"
+ * Custom states: Any string starting with "custom:" (e.g., "custom:thinking")
+ */
+export type ServerAgentState = StandardAgentState | CustomAgentState;
 
 /**
  * A registered agent in the system.
@@ -126,6 +140,12 @@ export interface RegisteredAgent {
   registeredAt: number;
   /** Last state change timestamp */
   lastStateChange: number;
+  /**
+   * Capabilities this agent provides.
+   * Used for capability-based discovery with glob pattern matching.
+   * Example: ["translate:en", "translate:fr", "summarize"]
+   */
+  capabilities?: string[];
 }
 
 /**
@@ -140,6 +160,12 @@ export interface AgentFilter {
   sessionId?: string;
   /** Filter by scope membership */
   scopeId?: string;
+  /**
+   * Filter by capability (supports glob patterns).
+   * Exact match: "translate:en"
+   * Glob pattern: "translate:*" matches "translate:en", "translate:fr", etc.
+   */
+  capability?: string;
 }
 
 /**
@@ -461,6 +487,13 @@ export interface SessionManagerOptions {
 /**
  * Filter for subscription events.
  */
+/**
+ * Match mode for subscription filters.
+ * - "all": All specified criteria must match (default, AND logic)
+ * - "any": Any single criterion matching is sufficient (OR logic)
+ */
+export type SubscriptionFilterMatchMode = "any" | "all";
+
 export interface SubscriptionFilter {
   /** Event types to receive */
   eventTypes?: string[];
@@ -468,6 +501,24 @@ export interface SubscriptionFilter {
   agents?: string[];
   /** Scopes to watch (includes nested scopes by default) */
   scopes?: string[];
+  /** Message types to filter (for message events) */
+  messageTypes?: string[];
+  /**
+   * Match mode for criteria.
+   * - "all" (default): All specified criteria must match
+   * - "any": Any single criterion matching is sufficient
+   */
+  match?: SubscriptionFilterMatchMode;
+  /**
+   * OR conditions - match if ANY sub-filter matches.
+   * When present, other filter fields are ignored.
+   */
+  $or?: SubscriptionFilter[];
+  /**
+   * AND conditions - match if ALL sub-filters match.
+   * When present, other filter fields are ignored.
+   */
+  $and?: SubscriptionFilter[];
 }
 
 /**
@@ -491,6 +542,13 @@ export interface ServerSubscription {
 /**
  * Causal ordering configuration.
  */
+/**
+ * Mode for handling events with multiple causal dependencies.
+ * - "all": Wait for ALL causes before releasing (stricter, default)
+ * - "any": Release when ANY cause is seen (more permissive)
+ */
+export type MultiCauseMode = "all" | "any";
+
 export interface CausalOrderingOptions {
   /** Enable causal ordering (default: true) */
   enabled?: boolean;
@@ -498,6 +556,12 @@ export interface CausalOrderingOptions {
   maxWaitMs?: number;
   /** Max events to buffer while waiting (default: 1000) */
   maxBufferSize?: number;
+  /**
+   * Mode for handling events with multiple causes.
+   * - "all" (default): Wait for ALL causes before releasing
+   * - "any": Release when ANY cause is seen
+   */
+  multiCauseMode?: MultiCauseMode;
 }
 
 /**
@@ -584,6 +648,11 @@ export interface ServerMessage {
   priority?: number;
   /** TTL in milliseconds (for queued messages) */
   ttlMs?: number;
+  /**
+   * Optional message type for routing/filtering without payload inspection.
+   * Can be used with subscription `messageTypes` filter.
+   */
+  messageType?: string;
 }
 
 /**
@@ -886,6 +955,8 @@ export interface ResourceCleanerOptions {
   agents: AgentRegistry;
   subscriptions: SubscriptionManager;
   messages: MessageRouter;
+  /** Optional ScopeManager for cleaning up scope memberships when agents are unregistered */
+  scopes?: ScopeManager;
   thresholds?: CleanupThresholds;
   strategy?: CleanupStrategy;
 }

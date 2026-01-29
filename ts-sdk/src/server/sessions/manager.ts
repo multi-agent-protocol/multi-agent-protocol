@@ -21,6 +21,71 @@ import { InMemorySessionStore } from "./stores/in-memory";
 const DEFAULT_RESUME_WINDOW_MS = 5 * 60 * 1000;
 
 /**
+ * Session resume guarantees.
+ *
+ * Documents what state is preserved when a session is resumed via resume token.
+ * This is the contract that MAP server implementations MUST honor.
+ *
+ * @example
+ * ```typescript
+ * import { RESUME_GUARANTEES } from "@anthropic/multi-agent-protocol/server";
+ *
+ * // Check what's guaranteed to be preserved
+ * console.log(RESUME_GUARANTEES.preserved);
+ * // ['sessionId', 'agentIds', 'subscriptionIds', 'metadata', 'role']
+ * ```
+ */
+export const RESUME_GUARANTEES = {
+  /**
+   * State that MUST be preserved on successful resume.
+   */
+  preserved: [
+    "sessionId", // Same session ID
+    "agentIds", // All registered agent IDs
+    "subscriptionIds", // All active subscription IDs
+    "metadata", // Session metadata
+    "role", // Session role (client/agent/gateway)
+  ] as const,
+
+  /**
+   * State that persists independently (in their own stores).
+   * These are NOT lost during disconnect but may need re-wiring on resume.
+   */
+  persistsIndependently: [
+    "scopeMemberships", // Persists in ScopeStore, survives disconnect
+    "queuedMessages", // Persists in MessageQueueStore, delivered on flushQueue()
+  ] as const,
+
+  /**
+   * State that is NOT preserved and must be re-established.
+   */
+  notPreserved: [
+    "connectionState", // Transport-level state
+    "pendingRequests", // In-flight RPC requests
+  ] as const,
+
+  /**
+   * Default resume window in milliseconds.
+   * Sessions must resume within this window after disconnect.
+   */
+  defaultWindowMs: DEFAULT_RESUME_WINDOW_MS,
+
+  /**
+   * What happens on successful resume:
+   * 1. Session status changes from 'disconnected' to 'connected'
+   * 2. Resume token is cleared (one-time use)
+   * 3. 'session.resumed' event is emitted
+   * 4. Client should call flushQueue() for each agent to receive queued messages
+   */
+  onResume: [
+    "status-restored",
+    "resume-token-cleared",
+    "event-emitted",
+    "queued-messages-available",
+  ] as const,
+} as const;
+
+/**
  * Generate a secure-ish resume token.
  * In production, you might want to use crypto.randomUUID() or similar.
  */

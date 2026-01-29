@@ -16,6 +16,8 @@ export {
   ScopeManagerImpl,
   ScopeNotFoundError,
   InvalidParentScopeError,
+  ScopeHasChildrenError,
+  SCOPE_HIERARCHY_DEFAULTS,
 } from "./manager";
 export { InMemoryScopeStore } from "./stores/in-memory";
 

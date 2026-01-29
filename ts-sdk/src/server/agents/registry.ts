@@ -11,6 +11,7 @@ import type {
   AgentRegistry,
   AgentRegistryOptions,
   ServerAgentState,
+  StandardAgentState,
   EventBus,
 } from "../types";
 import { ulid } from "../../utils/ulid";
@@ -37,7 +38,70 @@ export class InvalidStateTransitionError extends Error {
 }
 
 /**
- * Valid state transitions.
+ * Error thrown when an agent state is invalid.
+ */
+export class InvalidAgentStateError extends Error {
+  constructor(state: string, reason: string) {
+    super(`Invalid agent state "${state}": ${reason}`);
+    this.name = "InvalidAgentStateError";
+  }
+}
+
+/** Standard agent states */
+const STANDARD_STATES: readonly StandardAgentState[] = ["idle", "busy", "suspended", "stopped"];
+
+/** Maximum length for custom state names */
+const MAX_CUSTOM_STATE_LENGTH = 64;
+
+/**
+ * Check if a state is a standard agent state.
+ */
+export function isStandardState(state: string): state is StandardAgentState {
+  return STANDARD_STATES.includes(state as StandardAgentState);
+}
+
+/**
+ * Check if a state is a custom agent state (starts with "custom:").
+ */
+export function isCustomState(state: string): boolean {
+  return state.startsWith("custom:");
+}
+
+/**
+ * Validate an agent state.
+ * - Standard states are always valid
+ * - Custom states must start with "custom:" and have a non-empty suffix
+ * - Custom state suffix must be <= 64 characters
+ *
+ * @throws InvalidAgentStateError if state is invalid
+ */
+export function validateAgentState(state: string): void {
+  if (isStandardState(state)) {
+    return; // Standard states are always valid
+  }
+
+  if (!isCustomState(state)) {
+    throw new InvalidAgentStateError(
+      state,
+      `must be a standard state (${STANDARD_STATES.join(", ")}) or start with "custom:"`
+    );
+  }
+
+  const suffix = state.slice(7); // Remove "custom:" prefix
+  if (suffix.length === 0) {
+    throw new InvalidAgentStateError(state, "custom state must have a non-empty suffix after 'custom:'");
+  }
+
+  if (suffix.length > MAX_CUSTOM_STATE_LENGTH) {
+    throw new InvalidAgentStateError(
+      state,
+      `custom state suffix must be <= ${MAX_CUSTOM_STATE_LENGTH} characters (got ${suffix.length})`
+    );
+  }
+}
+
+/**
+ * Valid state transitions for standard states.
  *
  * State machine:
  *   idle <-> busy
@@ -46,8 +110,11 @@ export class InvalidStateTransitionError extends Error {
  *   busy -> suspended -> busy (resumes to previous state)
  *   busy -> stopped
  *   suspended -> stopped
+ *
+ * Custom states (custom:*) can transition to/from any state,
+ * bypassing the standard state machine.
  */
-const VALID_TRANSITIONS: Record<ServerAgentState, ServerAgentState[]> = {
+const VALID_TRANSITIONS: Record<StandardAgentState, StandardAgentState[]> = {
   idle: ["busy", "suspended", "stopped"],
   busy: ["idle", "suspended", "stopped"],
   suspended: ["idle", "busy", "stopped"],
@@ -56,12 +123,66 @@ const VALID_TRANSITIONS: Record<ServerAgentState, ServerAgentState[]> = {
 
 /**
  * Check if a state transition is valid.
+ *
+ * Rules:
+ * - Custom states can transition to/from any state (bypass state machine)
+ * - Standard states follow the VALID_TRANSITIONS state machine
+ * - Transitioning to "stopped" is always allowed (cleanup)
+ * - Transitioning from "stopped" is never allowed (terminal state)
  */
-function isValidTransition(
+export function isValidTransition(
   from: ServerAgentState,
   to: ServerAgentState
 ): boolean {
-  return VALID_TRANSITIONS[from].includes(to);
+  // Custom states can transition to/from any state
+  if (isCustomState(from) || isCustomState(to)) {
+    // Exception: cannot transition from "stopped" even to custom states
+    if (from === "stopped") {
+      return false;
+    }
+    return true;
+  }
+
+  // Both are standard states - use state machine
+  return VALID_TRANSITIONS[from as StandardAgentState].includes(to as StandardAgentState);
+}
+
+/**
+ * Check if a capability matches a pattern.
+ * Supports:
+ * - Exact match: "translate:en" matches "translate:en"
+ * - Glob with *: "translate:*" matches "translate:en", "translate:fr"
+ * - Glob with **: "translate:**" matches "translate:en:formal"
+ */
+export function matchesCapability(capability: string, pattern: string): boolean {
+  // Exact match
+  if (pattern === capability) {
+    return true;
+  }
+
+  // Convert glob pattern to regex
+  // First, replace ** with a placeholder to avoid conflicts
+  let regexPattern = pattern.replace(/\*\*/g, "\x00DOUBLESTAR\x00");
+  // Then replace single * with a placeholder
+  regexPattern = regexPattern.replace(/\*/g, "\x00SINGLESTAR\x00");
+  // Escape special regex chars
+  regexPattern = regexPattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  // Replace placeholders with regex patterns
+  regexPattern = regexPattern.replace(/\x00DOUBLESTAR\x00/g, ".*"); // ** matches anything
+  regexPattern = regexPattern.replace(/\x00SINGLESTAR\x00/g, "[^:]*"); // * matches anything except colons
+
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(capability);
+}
+
+/**
+ * Check if an agent has any capability matching the pattern.
+ */
+export function hasCapability(capabilities: string[] | undefined, pattern: string): boolean {
+  if (!capabilities || capabilities.length === 0) {
+    return false;
+  }
+  return capabilities.some((cap) => matchesCapability(cap, pattern));
 }
 
 /**
@@ -96,6 +217,8 @@ export class AgentRegistryImpl implements AgentRegistry {
     role?: string;
     metadata?: Record<string, unknown>;
     sessionId: string;
+    /** Capabilities this agent provides (for capability-based discovery) */
+    capabilities?: string[];
   }): RegisteredAgent {
     const now = Date.now();
     const agent: RegisteredAgent = {
@@ -107,6 +230,7 @@ export class AgentRegistryImpl implements AgentRegistry {
       sessionId: params.sessionId,
       registeredAt: now,
       lastStateChange: now,
+      capabilities: params.capabilities,
     };
 
     this.store.save(agent);
@@ -157,6 +281,12 @@ export class AgentRegistryImpl implements AgentRegistry {
 
   /**
    * Update agent state with validation.
+   *
+   * Supports both standard states (idle, busy, suspended, stopped)
+   * and custom states (custom:thinking, custom:waiting, etc.).
+   *
+   * Standard states follow a state machine with restricted transitions.
+   * Custom states can transition to/from any state.
    */
   updateState(id: string, state: ServerAgentState): RegisteredAgent {
     const agent = this.store.get(id);
@@ -168,6 +298,9 @@ export class AgentRegistryImpl implements AgentRegistry {
     if (agent.state === state) {
       return agent;
     }
+
+    // Validate the state format
+    validateAgentState(state);
 
     // Validate transition
     if (!isValidTransition(agent.state, state)) {

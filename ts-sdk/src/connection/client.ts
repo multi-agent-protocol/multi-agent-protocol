@@ -178,6 +178,8 @@ export class ClientConnection {
    */
   async connect(options?: {
     sessionId?: SessionId;
+    /** Token to resume a previously disconnected session */
+    resumeToken?: string;
     auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
   }): Promise<ConnectResponseResult> {
     const params: ConnectRequestParams = {
@@ -186,6 +188,7 @@ export class ClientConnection {
       name: this.#options.name,
       capabilities: this.#options.capabilities,
       sessionId: options?.sessionId,
+      resumeToken: options?.resumeToken,
       auth: options?.auth,
     };
 
@@ -209,15 +212,19 @@ export class ClientConnection {
 
   /**
    * Disconnect from the MAP system
+   * @param reason - Optional reason for disconnecting
+   * @returns Resume token that can be used to resume this session later
    */
-  async disconnect(reason?: string): Promise<void> {
-    if (!this.#connected) return;
+  async disconnect(reason?: string): Promise<string | undefined> {
+    if (!this.#connected) return undefined;
 
+    let resumeToken: string | undefined;
     try {
-      await this.#connection.sendRequest<{ reason?: string }, DisconnectResponseResult>(
+      const result = await this.#connection.sendRequest<{ reason?: string }, DisconnectResponseResult>(
         CORE_METHODS.DISCONNECT,
         reason ? { reason } : undefined
       );
+      resumeToken = result.resumeToken;
     } finally {
       // Close all subscriptions
       for (const subscription of this.#subscriptions.values()) {
@@ -228,6 +235,7 @@ export class ClientConnection {
       await this.#connection.close();
       this.#connected = false;
     }
+    return resumeToken;
   }
 
   /**

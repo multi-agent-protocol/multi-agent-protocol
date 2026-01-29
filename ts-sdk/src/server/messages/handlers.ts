@@ -28,6 +28,8 @@ interface SendParams {
   replyTo?: string;
   priority?: number;
   ttlMs?: number;
+  /** Optional message type for routing/filtering */
+  messageType?: string;
 }
 
 /**
@@ -38,6 +40,8 @@ interface SendToScopeParams {
   payload: unknown;
   excludeSender?: boolean;
   includeDescendants?: boolean;
+  /** Optional message type for routing/filtering */
+  messageType?: string;
 }
 
 /**
@@ -52,7 +56,7 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
 
   return {
     "map/send": async (params: unknown, ctx: HandlerContext) => {
-      const { to, payload, replyTo, priority, ttlMs } = params as SendParams;
+      const { to, payload, replyTo, priority, ttlMs, messageType } = params as SendParams;
 
       // Determine sender - use first agent from session, or session ID
       const from = ctx.session.agentIds[0] ?? ctx.session.id;
@@ -68,6 +72,7 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
             replyTo,
             priority,
             ttlMs,
+            messageType,
           });
           results.push(message.id);
         }
@@ -84,6 +89,7 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
           scopeId: to,
           payload,
           excludeSender: true,
+          messageType,
         });
         // Return protocol-compliant response
         return { messageId: message.id };
@@ -97,6 +103,7 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
         replyTo,
         priority,
         ttlMs,
+        messageType,
       });
 
       // Return protocol-compliant response
@@ -104,7 +111,7 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
     },
 
     "map/send/scope": async (params: unknown, ctx: HandlerContext) => {
-      const { scopeId, payload, excludeSender, includeDescendants } =
+      const { scopeId, payload, excludeSender, includeDescendants, messageType } =
         params as SendToScopeParams;
 
       const from = ctx.session.agentIds[0] ?? ctx.session.id;
@@ -115,6 +122,7 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
         payload,
         excludeSender: excludeSender ?? true,
         includeDescendants,
+        messageType,
       });
 
       // Return protocol-compliant response

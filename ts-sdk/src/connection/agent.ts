@@ -171,6 +171,8 @@ export class AgentConnection {
    */
   async connect(options?: {
     agentId?: AgentId;
+    /** Token to resume a previously disconnected session */
+    resumeToken?: string;
     auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
   }): Promise<{ connection: ConnectResponseResult; agent: Agent }> {
     // First, establish the connection
@@ -180,6 +182,7 @@ export class AgentConnection {
       participantId: options?.agentId,
       name: this.#options.name,
       capabilities: this.#options.capabilities,
+      resumeToken: options?.resumeToken,
       auth: options?.auth,
     };
 
@@ -222,10 +225,13 @@ export class AgentConnection {
 
   /**
    * Disconnect from the MAP system
+   * @param reason - Optional reason for disconnecting
+   * @returns Resume token that can be used to resume this session later
    */
-  async disconnect(reason?: string): Promise<void> {
-    if (!this.#connected) return;
+  async disconnect(reason?: string): Promise<string | undefined> {
+    if (!this.#connected) return undefined;
 
+    let resumeToken: string | undefined;
     try {
       // Unregister the agent first
       if (this.#agentId) {
@@ -239,10 +245,11 @@ export class AgentConnection {
       }
 
       // Then disconnect
-      await this.#connection.sendRequest<{ reason?: string }, DisconnectResponseResult>(
+      const result = await this.#connection.sendRequest<{ reason?: string }, DisconnectResponseResult>(
         CORE_METHODS.DISCONNECT,
         reason ? { reason } : undefined
       );
+      resumeToken = result.resumeToken;
     } finally {
       // Close all subscriptions
       for (const subscription of this.#subscriptions.values()) {
@@ -253,6 +260,7 @@ export class AgentConnection {
       await this.#connection.close();
       this.#connected = false;
     }
+    return resumeToken;
   }
 
   /**

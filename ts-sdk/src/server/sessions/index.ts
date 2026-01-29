@@ -14,5 +14,5 @@ export type {
 } from "../types";
 
 // Implementations
-export { SessionManagerImpl } from "./manager";
+export { SessionManagerImpl, RESUME_GUARANTEES } from "./manager";
 export { InMemorySessionStore } from "./stores/in-memory";

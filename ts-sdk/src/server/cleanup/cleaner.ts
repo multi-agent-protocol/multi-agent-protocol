@@ -8,6 +8,7 @@ import type {
   SessionManager,
   AgentRegistry,
   SubscriptionManager,
+  ScopeManager,
   CleanupStrategy,
   CleanupThresholds,
   CleanupStats,
@@ -39,6 +40,7 @@ export class ResourceCleanerImpl implements ResourceCleaner {
   private readonly agents: AgentRegistry;
   private readonly subscriptions: SubscriptionManager;
   private readonly messages: MessageRouterImpl;
+  private readonly scopes?: ScopeManager;
   private readonly thresholds: Required<CleanupThresholds>;
   private readonly strategy: CleanupStrategy;
 
@@ -50,6 +52,7 @@ export class ResourceCleanerImpl implements ResourceCleaner {
     this.agents = options.agents;
     this.subscriptions = options.subscriptions;
     this.messages = options.messages as MessageRouterImpl;
+    this.scopes = options.scopes;
     this.thresholds = {
       ...DEFAULT_THRESHOLDS,
       ...options.thresholds,
@@ -100,6 +103,13 @@ export class ResourceCleanerImpl implements ResourceCleaner {
       if (this.strategy.onOrphanedAgent) {
         for (const agent of agentsToClean) {
           this.strategy.onOrphanedAgent(agent);
+        }
+      }
+
+      // Clean up scope memberships BEFORE unregistering agents
+      if (this.scopes) {
+        for (const agent of agentsToClean) {
+          this.scopes.leaveAll(agent.id);
         }
       }
 

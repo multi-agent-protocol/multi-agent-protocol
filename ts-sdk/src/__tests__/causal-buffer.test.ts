@@ -253,6 +253,108 @@ describe('CausalEventBuffer', () => {
       expect(buffer.hasSeen('A')).toBe(false);
     });
   });
+
+  describe('multiCauseMode', () => {
+    describe('mode: "all" (default)', () => {
+      it('should wait for ALL predecessors before releasing', () => {
+        const buffer = new CausalEventBuffer({ multiCauseMode: 'all' });
+
+        // C depends on both A and B
+        buffer.push(createEvent('C', ['A', 'B']));
+
+        // A arrives - C should still be pending
+        let result = buffer.push(createEvent('A'));
+        expect(result.ready.map(e => e.eventId)).toEqual(['A']);
+        expect(buffer.pendingCount).toBe(1);
+
+        // B arrives - now C should be released
+        result = buffer.push(createEvent('B'));
+        expect(result.ready.map(e => e.eventId)).toEqual(['B', 'C']);
+        expect(buffer.pendingCount).toBe(0);
+      });
+
+      it('should be the default mode', () => {
+        const buffer = new CausalEventBuffer(); // No mode specified
+
+        expect(buffer.multiCauseMode).toBe('all');
+
+        // C depends on both A and B
+        buffer.push(createEvent('C', ['A', 'B']));
+
+        // A arrives - C should still be pending (default "all" behavior)
+        const result = buffer.push(createEvent('A'));
+        expect(result.ready.map(e => e.eventId)).toEqual(['A']);
+        expect(buffer.pendingCount).toBe(1);
+      });
+    });
+
+    describe('mode: "any"', () => {
+      it('should release when ANY predecessor arrives', () => {
+        const buffer = new CausalEventBuffer({ multiCauseMode: 'any' });
+
+        // C depends on both A and B
+        buffer.push(createEvent('C', ['A', 'B']));
+
+        // A arrives - C should be released (any predecessor satisfies)
+        const result = buffer.push(createEvent('A'));
+        expect(result.ready.map(e => e.eventId)).toEqual(['A', 'C']);
+        expect(buffer.pendingCount).toBe(0);
+      });
+
+      it('should still wait if NO predecessors have arrived', () => {
+        const buffer = new CausalEventBuffer({ multiCauseMode: 'any' });
+
+        // C depends on both A and B (neither seen yet)
+        const result = buffer.push(createEvent('C', ['A', 'B']));
+        expect(result.ready).toHaveLength(0);
+        expect(buffer.pendingCount).toBe(1);
+      });
+
+      it('should release immediately if event has single predecessor that exists', () => {
+        const buffer = new CausalEventBuffer({ multiCauseMode: 'any' });
+
+        // A arrives first (no deps)
+        buffer.push(createEvent('A'));
+
+        // B depends on A (single predecessor already satisfied)
+        const result = buffer.push(createEvent('B', ['A']));
+        expect(result.ready.map(e => e.eventId)).toEqual(['B']);
+        expect(buffer.pendingCount).toBe(0);
+      });
+
+      it('should handle chain of dependencies in any mode', () => {
+        const buffer = new CausalEventBuffer({ multiCauseMode: 'any' });
+
+        // D depends on C
+        // C depends on A and B
+        buffer.push(createEvent('D', ['C']));
+        buffer.push(createEvent('C', ['A', 'B']));
+
+        expect(buffer.pendingCount).toBe(2);
+
+        // A arrives - C should release (any mode), which unblocks D
+        const result = buffer.push(createEvent('A'));
+        expect(result.ready.map(e => e.eventId)).toEqual(['A', 'C', 'D']);
+        expect(buffer.pendingCount).toBe(0);
+      });
+
+      it('should clean up waiting entries when releasing in any mode', () => {
+        const buffer = new CausalEventBuffer({ multiCauseMode: 'any' });
+
+        // C depends on both A and B
+        buffer.push(createEvent('C', ['A', 'B']));
+
+        // A arrives - C should be released
+        buffer.push(createEvent('A'));
+        expect(buffer.pendingCount).toBe(0);
+
+        // B arrives later - should not cause issues
+        const result = buffer.push(createEvent('B'));
+        expect(result.ready.map(e => e.eventId)).toEqual(['B']);
+        expect(buffer.pendingCount).toBe(0);
+      });
+    });
+  });
 });
 
 describe('validateCausalOrder', () => {

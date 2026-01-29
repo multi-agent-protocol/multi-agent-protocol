@@ -8,6 +8,13 @@ import {
   AgentRegistryImpl,
   AgentNotFoundError,
   InvalidStateTransitionError,
+  InvalidAgentStateError,
+  isStandardState,
+  isCustomState,
+  validateAgentState,
+  isValidTransition,
+  matchesCapability,
+  hasCapability,
   type RegisteredAgent,
 } from "../server/agents";
 import { EventBusImpl } from "../server/events";
@@ -421,6 +428,378 @@ describe("AgentRegistryImpl", () => {
       registry.unregisterBySession("session-1");
 
       expect(handler).toHaveBeenCalledTimes(2);
+    });
+  });
+});
+
+describe("Agent State Helpers", () => {
+  describe("isStandardState", () => {
+    it("should return true for standard states", () => {
+      expect(isStandardState("idle")).toBe(true);
+      expect(isStandardState("busy")).toBe(true);
+      expect(isStandardState("suspended")).toBe(true);
+      expect(isStandardState("stopped")).toBe(true);
+    });
+
+    it("should return false for custom states", () => {
+      expect(isStandardState("custom:thinking")).toBe(false);
+      expect(isStandardState("custom:waiting")).toBe(false);
+    });
+
+    it("should return false for invalid states", () => {
+      expect(isStandardState("invalid")).toBe(false);
+      expect(isStandardState("")).toBe(false);
+      expect(isStandardState("running")).toBe(false);
+    });
+  });
+
+  describe("isCustomState", () => {
+    it("should return true for custom states", () => {
+      expect(isCustomState("custom:thinking")).toBe(true);
+      expect(isCustomState("custom:waiting")).toBe(true);
+      expect(isCustomState("custom:processing-data")).toBe(true);
+    });
+
+    it("should return false for standard states", () => {
+      expect(isCustomState("idle")).toBe(false);
+      expect(isCustomState("busy")).toBe(false);
+      expect(isCustomState("suspended")).toBe(false);
+      expect(isCustomState("stopped")).toBe(false);
+    });
+
+    it("should return false for invalid states", () => {
+      expect(isCustomState("invalid")).toBe(false);
+      expect(isCustomState("customthinking")).toBe(false); // Missing colon
+      expect(isCustomState("")).toBe(false);
+    });
+  });
+
+  describe("validateAgentState", () => {
+    it("should accept standard states", () => {
+      expect(() => validateAgentState("idle")).not.toThrow();
+      expect(() => validateAgentState("busy")).not.toThrow();
+      expect(() => validateAgentState("suspended")).not.toThrow();
+      expect(() => validateAgentState("stopped")).not.toThrow();
+    });
+
+    it("should accept valid custom states", () => {
+      expect(() => validateAgentState("custom:thinking")).not.toThrow();
+      expect(() => validateAgentState("custom:waiting")).not.toThrow();
+      expect(() => validateAgentState("custom:a")).not.toThrow(); // Single char suffix
+    });
+
+    it("should reject non-standard, non-custom states", () => {
+      expect(() => validateAgentState("invalid")).toThrow(InvalidAgentStateError);
+      expect(() => validateAgentState("running")).toThrow(InvalidAgentStateError);
+    });
+
+    it("should reject custom states with empty suffix", () => {
+      expect(() => validateAgentState("custom:")).toThrow(InvalidAgentStateError);
+      expect(() => validateAgentState("custom:")).toThrow(/non-empty suffix/);
+    });
+
+    it("should reject custom states with suffix > 64 characters", () => {
+      const longSuffix = "a".repeat(65);
+      expect(() => validateAgentState(`custom:${longSuffix}`)).toThrow(
+        InvalidAgentStateError
+      );
+      expect(() => validateAgentState(`custom:${longSuffix}`)).toThrow(
+        /<= 64 characters/
+      );
+    });
+
+    it("should accept custom states with suffix = 64 characters", () => {
+      const maxSuffix = "a".repeat(64);
+      expect(() => validateAgentState(`custom:${maxSuffix}`)).not.toThrow();
+    });
+  });
+
+  describe("isValidTransition", () => {
+    describe("standard state transitions", () => {
+      it("should allow idle -> busy", () => {
+        expect(isValidTransition("idle", "busy")).toBe(true);
+      });
+
+      it("should allow busy -> idle", () => {
+        expect(isValidTransition("busy", "idle")).toBe(true);
+      });
+
+      it("should allow any state -> stopped", () => {
+        expect(isValidTransition("idle", "stopped")).toBe(true);
+        expect(isValidTransition("busy", "stopped")).toBe(true);
+        expect(isValidTransition("suspended", "stopped")).toBe(true);
+      });
+
+      it("should not allow stopped -> any state", () => {
+        expect(isValidTransition("stopped", "idle")).toBe(false);
+        expect(isValidTransition("stopped", "busy")).toBe(false);
+        expect(isValidTransition("stopped", "suspended")).toBe(false);
+      });
+    });
+
+    describe("custom state transitions", () => {
+      it("should allow standard -> custom", () => {
+        expect(isValidTransition("idle", "custom:thinking")).toBe(true);
+        expect(isValidTransition("busy", "custom:waiting")).toBe(true);
+        expect(isValidTransition("suspended", "custom:processing")).toBe(true);
+      });
+
+      it("should allow custom -> standard", () => {
+        expect(isValidTransition("custom:thinking", "idle")).toBe(true);
+        expect(isValidTransition("custom:thinking", "busy")).toBe(true);
+        expect(isValidTransition("custom:thinking", "stopped")).toBe(true);
+      });
+
+      it("should allow custom -> custom", () => {
+        expect(isValidTransition("custom:thinking", "custom:waiting")).toBe(true);
+      });
+
+      it("should not allow stopped -> custom", () => {
+        expect(isValidTransition("stopped", "custom:thinking")).toBe(false);
+      });
+    });
+  });
+});
+
+describe("AgentRegistryImpl - Custom States", () => {
+  let eventBus: EventBusImpl;
+  let registry: AgentRegistryImpl;
+
+  beforeEach(() => {
+    eventBus = new EventBusImpl();
+    registry = new AgentRegistryImpl({ eventBus });
+  });
+
+  describe("custom state transitions", () => {
+    it("should allow transition to custom state", () => {
+      const agent = registry.register({ name: "Agent", sessionId: "s1" });
+
+      const updated = registry.updateState(agent.id, "custom:thinking");
+
+      expect(updated.state).toBe("custom:thinking");
+    });
+
+    it("should allow transition from custom state to standard state", () => {
+      const agent = registry.register({ name: "Agent", sessionId: "s1" });
+      registry.updateState(agent.id, "custom:thinking");
+
+      const updated = registry.updateState(agent.id, "busy");
+
+      expect(updated.state).toBe("busy");
+    });
+
+    it("should allow transition between custom states", () => {
+      const agent = registry.register({ name: "Agent", sessionId: "s1" });
+      registry.updateState(agent.id, "custom:thinking");
+
+      const updated = registry.updateState(agent.id, "custom:waiting");
+
+      expect(updated.state).toBe("custom:waiting");
+    });
+
+    it("should not allow transition from stopped to custom state", () => {
+      const agent = registry.register({ name: "Agent", sessionId: "s1" });
+      registry.updateState(agent.id, "stopped");
+
+      expect(() => registry.updateState(agent.id, "custom:thinking")).toThrow(
+        InvalidStateTransitionError
+      );
+    });
+
+    it("should allow transition from custom state to stopped", () => {
+      const agent = registry.register({ name: "Agent", sessionId: "s1" });
+      registry.updateState(agent.id, "custom:thinking");
+
+      const updated = registry.updateState(agent.id, "stopped");
+
+      expect(updated.state).toBe("stopped");
+    });
+
+    it("should emit state change event with custom state", () => {
+      const handler = vi.fn();
+      eventBus.on("agent.state.changed", handler);
+
+      const agent = registry.register({ name: "Agent", sessionId: "s1" });
+      registry.updateState(agent.id, "custom:thinking");
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "agent.state.changed",
+          data: expect.objectContaining({
+            previousState: "idle",
+            agent: expect.objectContaining({ state: "custom:thinking" }),
+          }),
+        })
+      );
+    });
+  });
+
+  describe("state validation", () => {
+    it("should reject invalid state format", () => {
+      const agent = registry.register({ name: "Agent", sessionId: "s1" });
+
+      expect(() => registry.updateState(agent.id, "invalid" as any)).toThrow(
+        InvalidAgentStateError
+      );
+    });
+
+    it("should reject custom state with empty suffix", () => {
+      const agent = registry.register({ name: "Agent", sessionId: "s1" });
+
+      expect(() => registry.updateState(agent.id, "custom:" as any)).toThrow(
+        InvalidAgentStateError
+      );
+    });
+
+    it("should reject custom state with too-long suffix", () => {
+      const agent = registry.register({ name: "Agent", sessionId: "s1" });
+      const longSuffix = "a".repeat(65);
+
+      expect(() => registry.updateState(agent.id, `custom:${longSuffix}` as any)).toThrow(
+        InvalidAgentStateError
+      );
+    });
+  });
+});
+
+describe("Capability Helpers", () => {
+  describe("matchesCapability", () => {
+    it("should match exact capability", () => {
+      expect(matchesCapability("translate:en", "translate:en")).toBe(true);
+      expect(matchesCapability("translate:en", "translate:fr")).toBe(false);
+    });
+
+    it("should match with * glob (single level)", () => {
+      expect(matchesCapability("translate:en", "translate:*")).toBe(true);
+      expect(matchesCapability("translate:fr", "translate:*")).toBe(true);
+      expect(matchesCapability("summarize", "translate:*")).toBe(false);
+    });
+
+    it("should not match across colons with single *", () => {
+      expect(matchesCapability("translate:en:formal", "translate:*")).toBe(false);
+    });
+
+    it("should match with ** glob (multi-level)", () => {
+      expect(matchesCapability("translate:en:formal", "translate:**")).toBe(true);
+      expect(matchesCapability("translate:en", "translate:**")).toBe(true);
+    });
+
+    it("should match complex patterns", () => {
+      expect(matchesCapability("translate:en:formal", "translate:en:*")).toBe(true);
+      expect(matchesCapability("translate:en:informal", "translate:en:*")).toBe(true);
+      expect(matchesCapability("translate:fr:formal", "translate:en:*")).toBe(false);
+    });
+  });
+
+  describe("hasCapability", () => {
+    it("should return true if any capability matches", () => {
+      const caps = ["translate:en", "translate:fr", "summarize"];
+      expect(hasCapability(caps, "translate:en")).toBe(true);
+      expect(hasCapability(caps, "translate:*")).toBe(true);
+      expect(hasCapability(caps, "summarize")).toBe(true);
+    });
+
+    it("should return false if no capability matches", () => {
+      const caps = ["translate:en", "translate:fr"];
+      expect(hasCapability(caps, "summarize")).toBe(false);
+      expect(hasCapability(caps, "translate:de")).toBe(false);
+    });
+
+    it("should return false for empty capabilities", () => {
+      expect(hasCapability([], "translate:en")).toBe(false);
+      expect(hasCapability(undefined, "translate:en")).toBe(false);
+    });
+  });
+});
+
+describe("AgentRegistryImpl - Capabilities", () => {
+  let eventBus: EventBusImpl;
+  let registry: AgentRegistryImpl;
+
+  beforeEach(() => {
+    eventBus = new EventBusImpl();
+    registry = new AgentRegistryImpl({ eventBus });
+  });
+
+  describe("registration with capabilities", () => {
+    it("should register agent with capabilities", () => {
+      const agent = registry.register({
+        name: "Translator",
+        sessionId: "s1",
+        capabilities: ["translate:en", "translate:fr"],
+      });
+
+      expect(agent.capabilities).toEqual(["translate:en", "translate:fr"]);
+    });
+
+    it("should register agent without capabilities", () => {
+      const agent = registry.register({
+        name: "Basic Agent",
+        sessionId: "s1",
+      });
+
+      expect(agent.capabilities).toBeUndefined();
+    });
+  });
+
+  describe("listing with capability filter", () => {
+    beforeEach(() => {
+      registry.register({
+        name: "English Translator",
+        sessionId: "s1",
+        capabilities: ["translate:en", "translate:fr"],
+      });
+      registry.register({
+        name: "German Translator",
+        sessionId: "s2",
+        capabilities: ["translate:de", "translate:es"],
+      });
+      registry.register({
+        name: "Summarizer",
+        sessionId: "s3",
+        capabilities: ["summarize"],
+      });
+      registry.register({
+        name: "No Capabilities",
+        sessionId: "s4",
+      });
+    });
+
+    it("should filter by exact capability", () => {
+      const agents = registry.list({ capability: "translate:en" });
+      expect(agents).toHaveLength(1);
+      expect(agents[0].name).toBe("English Translator");
+    });
+
+    it("should filter by glob pattern", () => {
+      const agents = registry.list({ capability: "translate:*" });
+      expect(agents).toHaveLength(2);
+      expect(agents.map(a => a.name).sort()).toEqual([
+        "English Translator",
+        "German Translator",
+      ]);
+    });
+
+    it("should return empty for non-matching capability", () => {
+      const agents = registry.list({ capability: "nonexistent" });
+      expect(agents).toHaveLength(0);
+    });
+
+    it("should combine capability with other filters", () => {
+      // Add an agent with both translate and summarize
+      registry.register({
+        name: "Multi-skill",
+        role: "translator",
+        sessionId: "s5",
+        capabilities: ["translate:en", "summarize"],
+      });
+
+      const agents = registry.list({ capability: "summarize" });
+      expect(agents).toHaveLength(2);
+
+      // Combine with role filter (not directly supported, but shows the list still works)
+      const allAgents = registry.list();
+      expect(allAgents).toHaveLength(5);
     });
   });
 });

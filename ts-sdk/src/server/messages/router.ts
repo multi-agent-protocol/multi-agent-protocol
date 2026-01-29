@@ -74,6 +74,8 @@ export class MessageRouterImpl implements MessageRouter {
     replyTo?: string;
     priority?: number;
     ttlMs?: number;
+    /** Optional message type for routing/filtering */
+    messageType?: string;
   }): ServerMessage {
     const message: ServerMessage = {
       id: ulid(),
@@ -84,6 +86,7 @@ export class MessageRouterImpl implements MessageRouter {
       replyTo: params.replyTo,
       priority: params.priority,
       ttlMs: params.ttlMs,
+      messageType: params.messageType,
     };
 
     // Emit message.sent event
@@ -108,6 +111,8 @@ export class MessageRouterImpl implements MessageRouter {
     payload: unknown;
     excludeSender?: boolean;
     includeDescendants?: boolean;
+    /** Optional message type for routing/filtering */
+    messageType?: string;
   }): ServerMessage {
     const message: ServerMessage = {
       id: ulid(),
@@ -115,6 +120,7 @@ export class MessageRouterImpl implements MessageRouter {
       to: params.scopeId,
       payload: params.payload,
       timestamp: Date.now(),
+      messageType: params.messageType,
     };
 
     // Emit message.sent event

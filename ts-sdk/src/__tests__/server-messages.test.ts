@@ -354,6 +354,49 @@ describe("MessageRouterImpl", () => {
       expect(message.priority).toBe(1);
       expect(message.ttlMs).toBe(30000);
     });
+
+    it("should include messageType when provided", () => {
+      const message = router.sendToAgent({
+        from: "sender",
+        to: "receiver",
+        payload: { data: "test" },
+        messageType: "request",
+      });
+
+      expect(message.messageType).toBe("request");
+    });
+
+    it("should emit message with messageType in event", () => {
+      const handler = vi.fn();
+      eventBus.on("message.sent", handler);
+
+      router.sendToAgent({
+        from: "sender",
+        to: "receiver",
+        payload: {},
+        messageType: "command",
+      });
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            message: expect.objectContaining({
+              messageType: "command",
+            }),
+          }),
+        })
+      );
+    });
+
+    it("should not include messageType when not provided", () => {
+      const message = router.sendToAgent({
+        from: "sender",
+        to: "receiver",
+        payload: {},
+      });
+
+      expect(message.messageType).toBeUndefined();
+    });
   });
 
   describe("sendToScope", () => {
@@ -445,6 +488,19 @@ describe("MessageRouterImpl", () => {
 
       expect(deliveryHandler).toHaveBeenCalledTimes(1);
       expect(deliveryHandler).toHaveBeenCalledWith(parentAgent.id, expect.anything());
+    });
+
+    it("should include messageType when provided", () => {
+      const scope = scopes.create({ name: "Test Scope" });
+
+      const message = router.sendToScope({
+        from: "sender",
+        scopeId: scope.id,
+        payload: { text: "broadcast" },
+        messageType: "announcement",
+      });
+
+      expect(message.messageType).toBe("announcement");
     });
   });
 

@@ -10,6 +10,7 @@ import {
   permissionLoggingMiddleware,
   selectivePermissionMiddleware,
   PermissionDeniedError,
+  BASELINE_PERMISSION_RULES,
 } from "../server/permissions";
 import type { ServerSession, PermissionRule, HandlerContext } from "../server/types";
 
@@ -469,5 +470,68 @@ describe("PermissionDeniedError", () => {
     expect(error.name).toBe("PermissionDeniedError");
     expect(error.message).toBe("Test message");
     expect(error.code).toBe(-32000);
+  });
+});
+
+describe("BASELINE_PERMISSION_RULES", () => {
+  it("should be an array of permission rules", () => {
+    expect(Array.isArray(BASELINE_PERMISSION_RULES)).toBe(true);
+    expect(BASELINE_PERMISSION_RULES.length).toBeGreaterThan(0);
+  });
+
+  it("should include connection methods for all roles", () => {
+    const connectRule = BASELINE_PERMISSION_RULES.find(
+      (r) => r.method === "map/connect"
+    );
+    expect(connectRule).toBeDefined();
+    expect(connectRule?.roles).toContain("client");
+    expect(connectRule?.roles).toContain("agent");
+    expect(connectRule?.roles).toContain("gateway");
+  });
+
+  it("should restrict agent registration to agents only", () => {
+    const registerRule = BASELINE_PERMISSION_RULES.find(
+      (r) => r.method === "map/agents/register"
+    );
+    expect(registerRule).toBeDefined();
+    expect(registerRule?.roles).toEqual(["agent"]);
+  });
+
+  it("should allow all roles to list agents", () => {
+    const listRule = BASELINE_PERMISSION_RULES.find(
+      (r) => r.method === "map/agents/list"
+    );
+    expect(listRule).toBeDefined();
+    expect(listRule?.roles).toContain("client");
+    expect(listRule?.roles).toContain("agent");
+  });
+
+  it("should work with PermissionCheckerImpl", () => {
+    const checker = new PermissionCheckerImpl({
+      rules: BASELINE_PERMISSION_RULES,
+    });
+
+    const agentSession = {
+      id: "s1",
+      role: "agent" as const,
+      status: "connected" as const,
+      connectedAt: Date.now(),
+      lastActivity: Date.now(),
+      metadata: {},
+      agentIds: [],
+      subscriptionIds: [],
+    };
+
+    const clientSession = { ...agentSession, id: "s2", role: "client" as const };
+
+    // Agent can register
+    expect(checker.canCallMethod(agentSession, "map/agents/register").allowed).toBe(true);
+
+    // Client cannot register
+    expect(checker.canCallMethod(clientSession, "map/agents/register").allowed).toBe(false);
+
+    // Both can list
+    expect(checker.canCallMethod(agentSession, "map/agents/list").allowed).toBe(true);
+    expect(checker.canCallMethod(clientSession, "map/agents/list").allowed).toBe(true);
   });
 });

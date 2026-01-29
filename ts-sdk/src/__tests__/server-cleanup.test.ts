@@ -33,6 +33,7 @@ describe("ResourceCleanerImpl", () => {
       agents,
       subscriptions,
       messages,
+      scopes, // Include scopes for membership cleanup
       thresholds: {
         sessionDisconnectMs: 100, // Short for testing
         sessionInactiveMs: 1000,
@@ -71,6 +72,25 @@ describe("ResourceCleanerImpl", () => {
 
       expect(stats.agentsUnregistered).toBe(1);
       expect(agents.get(agent.id)).toBeUndefined();
+    });
+
+    it("should clean up scope memberships when agents are unregistered", async () => {
+      const session = sessions.create({ role: "agent" });
+      const agent = agents.register({ name: "Test Agent", sessionId: session.id });
+
+      // Join agent to a scope
+      const scope = scopes.create({ name: "Test Scope" });
+      scopes.join(scope.id, agent.id);
+      expect(scopes.getMembers(scope.id)).toContain(agent.id);
+
+      sessions.disconnect(session.id);
+      await new Promise((r) => setTimeout(r, 150));
+
+      await cleaner.run();
+
+      // Agent should be unregistered and removed from scope
+      expect(agents.get(agent.id)).toBeUndefined();
+      expect(scopes.getMembers(scope.id)).not.toContain(agent.id);
     });
 
     it("should cancel orphaned subscriptions", async () => {
