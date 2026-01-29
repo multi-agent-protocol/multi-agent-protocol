@@ -431,6 +431,103 @@ describe("Handler Factories", () => {
         true
       );
     });
+
+    it("should send message to agent using prefixed address", async () => {
+      const handlers = createMessageHandlers({ messages, scopes });
+
+      const sender = agents.register({
+        name: "Sender",
+        sessionId: mockSession.id,
+      });
+      mockSession.agentIds.push(sender.id);
+
+      const receiver = agents.register({
+        name: "Receiver",
+        sessionId: "other-session",
+      });
+
+      const deliveredMessages: any[] = [];
+      messages.onDeliver((agentId, msg) => {
+        deliveredMessages.push({ agentId, msg });
+      });
+
+      // Use prefixed address format: agent:{id}
+      const result = await handlers["map/send"](
+        { to: `agent:${receiver.id}`, payload: { text: "hello" } },
+        mockContext
+      );
+
+      expect(result.messageId).toBeDefined();
+      expect(deliveredMessages.some((m) => m.agentId === receiver.id)).toBe(true);
+    });
+
+    it("should send message to scope using prefixed address", async () => {
+      const handlers = createMessageHandlers({ messages, scopes });
+
+      const scope = scopes.create({ name: "Prefixed Scope" });
+      const sender = agents.register({
+        name: "Sender",
+        sessionId: mockSession.id,
+      });
+      const receiver = agents.register({
+        name: "Receiver",
+        sessionId: "other-session",
+      });
+
+      mockSession.agentIds.push(sender.id);
+      scopes.join(scope.id, sender.id);
+      scopes.join(scope.id, receiver.id);
+
+      const deliveredMessages: any[] = [];
+      messages.onDeliver((agentId, msg) => {
+        deliveredMessages.push({ agentId, msg });
+      });
+
+      // Use prefixed address format: scope:{id}
+      const result = await handlers["map/send"](
+        { to: `scope:${scope.id}`, payload: { announcement: "hello all" } },
+        mockContext
+      );
+
+      expect(result.messageId).toBeDefined();
+      // Should be delivered to receiver (sender excluded)
+      expect(deliveredMessages.some((m) => m.agentId === receiver.id)).toBe(true);
+    });
+
+    it("should handle mixed prefixed and unprefixed addresses in array", async () => {
+      const handlers = createMessageHandlers({ messages, scopes });
+
+      const sender = agents.register({
+        name: "Sender",
+        sessionId: mockSession.id,
+      });
+      mockSession.agentIds.push(sender.id);
+
+      const receiver1 = agents.register({
+        name: "Receiver1",
+        sessionId: "other-session-1",
+      });
+      const receiver2 = agents.register({
+        name: "Receiver2",
+        sessionId: "other-session-2",
+      });
+
+      const deliveredMessages: any[] = [];
+      messages.onDeliver((agentId, msg) => {
+        deliveredMessages.push({ agentId, msg });
+      });
+
+      // Mix prefixed and unprefixed addresses
+      const result = await handlers["map/send"](
+        { to: [`agent:${receiver1.id}`, receiver2.id], payload: { text: "hello" } },
+        mockContext
+      );
+
+      expect(result.messageId).toBeDefined();
+      expect(result.delivered).toHaveLength(2);
+      expect(deliveredMessages.some((m) => m.agentId === receiver1.id)).toBe(true);
+      expect(deliveredMessages.some((m) => m.agentId === receiver2.id)).toBe(true);
+    });
   });
 
   describe("createConnectionHandlers", () => {
@@ -457,7 +554,7 @@ describe("Handler Factories", () => {
       expect(sessions.get(mockSession.id)?.status).toBe("disconnected");
     });
 
-    it("should clean up resources on disconnect", async () => {
+    it("should preserve resources on disconnect for session resume", async () => {
       const handlers = createConnectionHandlers({
         sessions,
         agents,
@@ -481,12 +578,13 @@ describe("Handler Factories", () => {
       const scope = scopes.create({ name: "Test" });
       scopes.join(scope.id, agent.id);
 
-      // Disconnect
+      // Disconnect (resumable)
       await handlers["map/disconnect"]({}, mockContext);
 
-      // Resources should be cleaned up
-      expect(agents.get(agent.id)).toBeUndefined();
-      expect(subscriptions.get(sub.id)).toBeUndefined();
+      // Resources should be PRESERVED for session resume
+      expect(agents.get(agent.id)).toBeDefined();
+      expect(subscriptions.get(sub.id)).toBeDefined();
+      expect(scopes.getMembers(scope.id)).toContain(agent.id);
     });
 
     it("should return session info", async () => {
@@ -499,7 +597,7 @@ describe("Handler Factories", () => {
       expect(result.name).toBe("Test Client");
     });
 
-    it("should close session permanently", async () => {
+    it("should close session permanently and clean up all resources", async () => {
       const handlers = createConnectionHandlers({
         sessions,
         agents,
@@ -507,10 +605,31 @@ describe("Handler Factories", () => {
         scopes,
       });
 
+      // Create some resources
+      const agent = agents.register({
+        name: "Agent",
+        sessionId: mockSession.id,
+      });
+      mockSession.agentIds.push(agent.id);
+
+      const sub = subscriptions.create({
+        sessionId: mockSession.id,
+        filter: {},
+      });
+      mockSession.subscriptionIds.push(sub.id);
+
+      const scope = scopes.create({ name: "Test" });
+      scopes.join(scope.id, agent.id);
+
+      // Permanently close session
       const result = await handlers["map/session/close"]({}, mockContext);
 
       expect(result.success).toBe(true);
       expect(sessions.get(mockSession.id)).toBeUndefined();
+
+      // Resources should be cleaned up on permanent close
+      expect(agents.get(agent.id)).toBeUndefined();
+      expect(subscriptions.get(sub.id)).toBeUndefined();
     });
   });
 

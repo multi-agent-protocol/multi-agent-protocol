@@ -1118,6 +1118,7 @@ export interface MAPRouterInterface {
     params: { resumeToken: string },
     ctx: HandlerContext
   ): Promise<ResumeResult>;
+  close(params: unknown, ctx: HandlerContext): Promise<void>;
 
   // Agents
   registerAgent(

@@ -42,7 +42,10 @@ export function createConnectionHandlers(
 
   return {
     "map/connect": async (_params: unknown, ctx: HandlerContext) => {
-      // Session is already created by RouterConnection.start()
+      // Session is already created/resumed by RouterConnection.start()
+      // Check if this is a resumed session by looking at whether it has pre-existing agents
+      const isResumed = ctx.session.agentIds.length > 0;
+
       // Return protocol-compliant connect response
       return {
         protocolVersion: "2024-12",
@@ -56,32 +59,16 @@ export function createConnectionHandlers(
           name: serverName ?? "MAP Server",
           version: serverVersion ?? "1.0.0",
         },
-        reconnected: false,
+        reconnected: isResumed,
         ownedAgents: ctx.session.agentIds,
       };
     },
 
     "map/disconnect": async (_params: unknown, ctx: HandlerContext) => {
-      // Clean up all resources for this session
-
-      // Unregister all agents
-      if (agents) {
-        agents.unregisterBySession(ctx.session.id);
-      }
-
-      // Cancel all subscriptions
-      if (subscriptions) {
-        subscriptions.cancelBySession(ctx.session.id);
-      }
-
-      // Leave all scopes for agents
-      if (scopes && agents) {
-        for (const agentId of ctx.session.agentIds) {
-          scopes.leaveAll(agentId);
-        }
-      }
-
       // Disconnect session (makes it resumable)
+      // NOTE: We preserve agents, subscriptions, and scope memberships for session resume.
+      // They will be reclaimed when the session resumes, or cleaned up by ResourceCleaner
+      // if the session expires without resuming.
       const resumeToken = sessions.disconnect(ctx.session.id);
 
       return {

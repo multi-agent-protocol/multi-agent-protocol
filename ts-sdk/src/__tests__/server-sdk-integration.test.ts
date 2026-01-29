@@ -132,6 +132,92 @@ describe("Server SDK Integration", () => {
 
       expect(deliveredMessages).toHaveLength(1);
     });
+
+    it("should preserve agents across session disconnect/resume", async () => {
+      // Create session and register agent
+      const session = sessions.create({ role: "agent" });
+      const agent = agents.register({
+        name: "PersistentAgent",
+        role: "worker",
+        sessionId: session.id,
+      });
+      sessions.addAgent(session.id, agent.id);
+
+      // Join a scope
+      const scope = scopes.create({ name: "WorkRoom" });
+      scopes.join(scope.id, agent.id);
+
+      // Verify initial state
+      expect(agents.get(agent.id)).toBeDefined();
+      expect(scopes.getMembers(scope.id)).toContain(agent.id);
+
+      // Disconnect session (should preserve agent)
+      const resumeToken = sessions.disconnect(session.id);
+      expect(resumeToken).toBeDefined();
+
+      // Agent should still exist after disconnect
+      expect(agents.get(agent.id)).toBeDefined();
+      expect(agents.get(agent.id)?.state).toBe("idle");
+
+      // Scope membership should be preserved
+      expect(scopes.getMembers(scope.id)).toContain(agent.id);
+
+      // Resume the session
+      const result = sessions.resume(resumeToken!);
+      expect(result.success).toBe(true);
+      expect(result.session?.agentIds).toContain(agent.id);
+
+      // Agent should still be registered and accessible
+      expect(agents.get(agent.id)).toBeDefined();
+      expect(agents.get(agent.id)?.sessionId).toBe(session.id);
+    });
+
+    it("should clean up agents when session expires (via ResourceCleaner)", async () => {
+      const cleaner = new ResourceCleanerImpl({
+        sessions,
+        agents,
+        subscriptions,
+        messages,
+        scopes,
+        thresholds: {
+          sessionDisconnectMs: 10, // Very short for testing
+          intervalMs: 0, // Manual mode
+        },
+      });
+
+      // Create session and agent
+      const session = sessions.create({ role: "agent" });
+      const agent = agents.register({
+        name: "TempAgent",
+        sessionId: session.id,
+      });
+      sessions.addAgent(session.id, agent.id);
+
+      // Join a scope
+      const scope = scopes.create({ name: "TempRoom" });
+      scopes.join(scope.id, agent.id);
+
+      // Disconnect session
+      sessions.disconnect(session.id);
+
+      // Agent should still exist after disconnect
+      expect(agents.get(agent.id)).toBeDefined();
+
+      // Wait for stale threshold
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Run cleanup - session should expire and agents should be cleaned up
+      const stats = await cleaner.run();
+
+      expect(stats.sessionsExpired).toBe(1);
+      expect(stats.agentsUnregistered).toBe(1);
+
+      // Agent should now be cleaned up
+      expect(agents.get(agent.id)).toBeUndefined();
+
+      // Scope membership should be cleaned up
+      expect(scopes.getMembers(scope.id)).not.toContain(agent.id);
+    });
   });
 
   describe("Scope hierarchy", () => {
@@ -360,8 +446,9 @@ describe("Server SDK Integration", () => {
       });
 
       // Should now have both agents
+      // Remote agent ID uses new federated ID format: {systemId}:agent:{entityId}
       expect(federatedAgents.list()).toHaveLength(2);
-      expect(federatedAgents.isRemote("remote:system-b:remote-1")).toBe(true);
+      expect(federatedAgents.isRemote("system-b:agent:remote-1")).toBe(true);
     });
 
     it("should route messages to remote agents", async () => {
@@ -377,13 +464,14 @@ describe("Server SDK Integration", () => {
       });
 
       // Message to remote agent should be routed via gateway
+      // Use new federated ID format: {systemId}:agent:{entityId}
       const message = federatedMessages.sendToAgent({
         from: "local-agent",
-        to: "remote:system-b:remote-agent",
+        to: "system-b:agent:remote-agent",
         payload: { text: "Cross-system message" },
       });
 
-      expect(message.to).toBe("remote:system-b:remote-agent");
+      expect(message.to).toBe("system-b:agent:remote-agent");
 
       // Check buffer stats (message should be queued since no transport)
       expect(gateway.buffer.stats().bySystem["system-b"]).toBe(1);

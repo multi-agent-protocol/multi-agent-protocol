@@ -13,6 +13,12 @@ import type {
   FederatedAgentSyncOptions,
   FederationGateway,
 } from "../../types";
+import {
+  formatFederatedId,
+  parseFederatedId,
+  isFederatedId,
+  isFromSystem,
+} from "../federated-id";
 
 /**
  * Default sync options - all syncing enabled.
@@ -22,11 +28,6 @@ const DEFAULT_SYNC_OPTIONS: Required<FederatedAgentSyncOptions> = {
   onStateChange: true,
   includeRemote: true,
 };
-
-/**
- * Prefix for remote agent IDs.
- */
-const REMOTE_PREFIX = "remote:";
 
 /**
  * FederatedAgentRegistry decorator.
@@ -214,9 +215,8 @@ export class FederatedAgentRegistry implements AgentRegistry {
    * Clear all remote agents from a specific system.
    */
   clearRemoteSystem(systemId: string): void {
-    const prefix = `${REMOTE_PREFIX}${systemId}:`;
     for (const [id] of this.remoteAgents) {
-      if (id.startsWith(prefix)) {
+      if (isFromSystem(id, systemId)) {
         this.remoteAgents.delete(id);
       }
     }
@@ -268,7 +268,8 @@ export class FederatedAgentRegistry implements AgentRegistry {
     }
 
     const remoteAgent = payload.agent;
-    const remoteId = `${REMOTE_PREFIX}${from}:${remoteAgent.id}`;
+    // Use standardized federated ID format: {systemId}:agent:{entityId}
+    const remoteId = formatFederatedId(from, "agent", remoteAgent.id);
 
     switch (payload.type) {
       case "agent.registered":

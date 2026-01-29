@@ -12,6 +12,10 @@ import type {
   FederatedScopeSyncOptions,
   FederationGateway,
 } from "../../types";
+import {
+  formatFederatedId,
+  isFromSystem,
+} from "../federated-id";
 
 /**
  * Default sync options - all syncing enabled.
@@ -21,11 +25,6 @@ const DEFAULT_SYNC_OPTIONS: Required<FederatedScopeSyncOptions> = {
   onMembershipChange: true,
   includeRemote: true,
 };
-
-/**
- * Prefix for remote scope IDs.
- */
-const REMOTE_PREFIX = "remote:";
 
 /**
  * Remote scope with additional tracking.
@@ -308,9 +307,8 @@ export class FederatedScopeManager implements ScopeManager {
    * Clear all remote scopes from a specific system.
    */
   clearRemoteSystem(systemId: string): void {
-    const prefix = `${REMOTE_PREFIX}${systemId}:`;
     for (const [id] of this.remoteScopes) {
-      if (id.startsWith(prefix)) {
+      if (isFromSystem(id, systemId)) {
         this.remoteScopes.delete(id);
       }
     }
@@ -389,7 +387,8 @@ export class FederatedScopeManager implements ScopeManager {
     switch (payload.type) {
       case "scope.created":
         if (payload.scope) {
-          const remoteId = `${REMOTE_PREFIX}${from}:${payload.scope.id}`;
+          // Use standardized federated ID format: {systemId}:scope:{entityId}
+          const remoteId = formatFederatedId(from, "scope", payload.scope.id);
           this.remoteScopes.set(remoteId, {
             ...payload.scope,
             id: remoteId,
@@ -405,14 +404,14 @@ export class FederatedScopeManager implements ScopeManager {
 
       case "scope.deleted":
         if (payload.scope) {
-          const remoteId = `${REMOTE_PREFIX}${from}:${payload.scope.id}`;
+          const remoteId = formatFederatedId(from, "scope", payload.scope.id);
           this.remoteScopes.delete(remoteId);
         }
         break;
 
       case "scope.agent.joined":
         if (payload.scopeId && payload.agentId) {
-          const remoteId = `${REMOTE_PREFIX}${from}:${payload.scopeId}`;
+          const remoteId = formatFederatedId(from, "scope", payload.scopeId);
           const scope = this.remoteScopes.get(remoteId);
           if (scope) {
             scope.members.add(payload.agentId);
@@ -422,7 +421,7 @@ export class FederatedScopeManager implements ScopeManager {
 
       case "scope.agent.left":
         if (payload.scopeId && payload.agentId) {
-          const remoteId = `${REMOTE_PREFIX}${from}:${payload.scopeId}`;
+          const remoteId = formatFederatedId(from, "scope", payload.scopeId);
           const scope = this.remoteScopes.get(remoteId);
           if (scope) {
             scope.members.delete(payload.agentId);

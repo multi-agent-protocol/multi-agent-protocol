@@ -17,6 +17,7 @@ const METHOD_MAPPING: Record<string, keyof MAPRouterInterface> = {
   "map/connect": "connect",
   "map/disconnect": "disconnect",
   "map/resume": "resume",
+  "map/session/close": "close",
   "map/agents/register": "registerAgent",
   "map/agents/unregister": "unregisterAgent",
   "map/agents/list": "listAgents",

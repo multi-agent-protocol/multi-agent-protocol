@@ -12,11 +12,12 @@ import type {
   FederationGateway,
   AgentRegistry,
 } from "../../types";
-
-/**
- * Prefix for remote agent IDs.
- */
-const REMOTE_PREFIX = "remote:";
+import {
+  formatFederatedId,
+  parseFederatedId,
+  isFederatedId,
+  isFederatedAgent,
+} from "../federated-id";
 
 /**
  * FederatedMessageRouter decorator.
@@ -38,7 +39,7 @@ const REMOTE_PREFIX = "remote:";
  * // Routes automatically to correct destination
  * federated.sendToAgent({
  *   from: "local-agent",
- *   to: "remote:system-b:agent-1", // Goes via gateway
+ *   to: "system-b:agent:agent-1", // Goes via gateway
  *   payload: { text: "Hello!" },
  * });
  * ```
@@ -141,29 +142,30 @@ export class FederatedMessageRouter implements MessageRouter {
 
   /**
    * Check if an agent ID refers to a remote agent.
+   * Uses the standardized federated ID format: {systemId}:agent:{entityId}
    */
   isRemoteAgent(agentId: string): boolean {
-    return agentId.startsWith(REMOTE_PREFIX);
+    return isFederatedAgent(agentId);
   }
 
   /**
    * Parse remote agent ID to get system and original agent ID.
+   * Uses the standardized federated ID format: {systemId}:agent:{entityId}
    */
   parseRemoteAgentId(remoteId: string): { systemId: string; originalId: string } | null {
-    if (!remoteId.startsWith(REMOTE_PREFIX)) {
+    if (!isFederatedAgent(remoteId)) {
       return null;
     }
 
-    const withoutPrefix = remoteId.slice(REMOTE_PREFIX.length);
-    const colonIndex = withoutPrefix.indexOf(":");
-    if (colonIndex === -1) {
+    try {
+      const parsed = parseFederatedId(remoteId);
+      return {
+        systemId: parsed.systemId,
+        originalId: parsed.entityId,
+      };
+    } catch {
       return null;
     }
-
-    return {
-      systemId: withoutPrefix.slice(0, colonIndex),
-      originalId: withoutPrefix.slice(colonIndex + 1),
-    };
   }
 
   /**
@@ -236,10 +238,10 @@ export class FederatedMessageRouter implements MessageRouter {
       return;
     }
 
-    // Update message metadata
+    // Update message metadata with federated ID format
     const federatedMessage: ServerMessage = {
       ...message,
-      from: `${REMOTE_PREFIX}${from}:${message.from}`,
+      from: formatFederatedId(from, "agent", message.from),
       metadata: {
         ...(message.metadata ?? {}),
         _federatedFrom: from,

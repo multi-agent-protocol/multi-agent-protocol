@@ -26,6 +26,12 @@ import type {
   ResumeResult,
   MAPEvent,
 } from "../types";
+import {
+  isAddress,
+  isAgentAddress,
+  isScopeAddress,
+  extractId,
+} from "../messages/address";
 
 /**
  * Abstract base class implementing MAPRouterInterface.
@@ -77,18 +83,10 @@ export abstract class BaseMAPRouter implements MAPRouterInterface {
   }
 
   async disconnect(_params: unknown, ctx: HandlerContext): Promise<void> {
-    // Unregister all agents for this session
-    this.agents.unregisterBySession(ctx.session.id);
-
-    // Cancel all subscriptions
-    this.subscriptions.cancelBySession(ctx.session.id);
-
-    // Leave all scopes
-    for (const agentId of ctx.session.agentIds) {
-      this.scopes.leaveAll(agentId);
-    }
-
     // Disconnect session (makes it resumable)
+    // NOTE: We preserve agents, subscriptions, and scope memberships for session resume.
+    // They will be reclaimed when the session resumes, or cleaned up by ResourceCleaner
+    // if the session expires without resuming.
     this.sessions.disconnect(ctx.session.id);
   }
 
@@ -97,6 +95,25 @@ export abstract class BaseMAPRouter implements MAPRouterInterface {
     _ctx: HandlerContext
   ): Promise<ResumeResult> {
     return this.sessions.resume(params.resumeToken);
+  }
+
+  async close(_params: unknown, ctx: HandlerContext): Promise<void> {
+    // Permanently close the session (not resumable)
+    // This does full cleanup of all resources
+
+    // Leave all scopes first (before unregistering agents)
+    for (const agentId of ctx.session.agentIds) {
+      this.scopes.leaveAll(agentId);
+    }
+
+    // Unregister all agents for this session
+    this.agents.unregisterBySession(ctx.session.id);
+
+    // Cancel all subscriptions
+    this.subscriptions.cancelBySession(ctx.session.id);
+
+    // Close session permanently
+    this.sessions.close(ctx.session.id);
   }
 
   // =========================================================================
@@ -239,8 +256,32 @@ export abstract class BaseMAPRouter implements MAPRouterInterface {
   ): Promise<ServerMessage> {
     const from = ctx.session.agentIds[0] ?? ctx.session.id;
 
-    // Check if sending to a scope
+    // Handle single recipient
     if (typeof params.to === "string") {
+      // Check for prefixed addresses first
+      if (isAddress(params.to)) {
+        if (isScopeAddress(params.to)) {
+          const scopeId = extractId(params.to);
+          return this.messages.sendToScope({
+            from,
+            scopeId,
+            payload: params.payload,
+            excludeSender: true,
+          });
+        } else {
+          const agentId = extractId(params.to);
+          return this.messages.sendToAgent({
+            from,
+            to: agentId,
+            payload: params.payload,
+            replyTo: params.replyTo,
+            priority: params.priority,
+          });
+        }
+      }
+
+      // Backward compatibility: unprefixed address
+      // Check if 'to' is a scope ID by trying to get it
       const scope = this.scopes.get(params.to);
       if (scope) {
         return this.messages.sendToScope({
@@ -250,27 +291,38 @@ export abstract class BaseMAPRouter implements MAPRouterInterface {
           excludeSender: true,
         });
       }
+
+      // Send to agent (unprefixed)
+      return this.messages.sendToAgent({
+        from,
+        to: params.to,
+        payload: params.payload,
+        replyTo: params.replyTo,
+        priority: params.priority,
+      });
     }
 
-    // Send to agent(s)
-    if (Array.isArray(params.to)) {
-      // Send to first agent (simplified - could be enhanced to return multiple)
-      const firstTo = params.to[0];
-      if (firstTo) {
-        return this.messages.sendToAgent({
-          from,
-          to: firstTo,
-          payload: params.payload,
-          replyTo: params.replyTo,
-          priority: params.priority,
-        });
-      }
+    // Handle array of recipients
+    const firstTo = params.to[0];
+    if (!firstTo) {
       throw new Error("No recipients specified");
     }
 
+    // Process first recipient (simplified - could be enhanced to return multiple)
+    if (isScopeAddress(firstTo)) {
+      const scopeId = extractId(firstTo);
+      return this.messages.sendToScope({
+        from,
+        scopeId,
+        payload: params.payload,
+        excludeSender: true,
+      });
+    }
+
+    const agentId = isAgentAddress(firstTo) ? extractId(firstTo) : firstTo;
     return this.messages.sendToAgent({
       from,
-      to: params.to,
+      to: agentId,
       payload: params.payload,
       replyTo: params.replyTo,
       priority: params.priority,

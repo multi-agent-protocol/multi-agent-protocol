@@ -10,6 +10,12 @@ import type {
   HandlerContext,
   HandlerRegistry,
 } from "../types";
+import {
+  isAddress,
+  isAgentAddress,
+  isScopeAddress,
+  extractId,
+} from "./address";
 
 /**
  * Options for creating message handlers.
@@ -65,21 +71,66 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
       if (Array.isArray(to)) {
         const results = [];
         for (const recipient of to) {
+          // Check if recipient has address prefix
+          if (isScopeAddress(recipient)) {
+            const scopeId = extractId(recipient);
+            const message = messages.sendToScope({
+              from,
+              scopeId,
+              payload,
+              excludeSender: true,
+              messageType,
+            });
+            results.push(message.id);
+          } else {
+            // Agent address (with or without prefix)
+            const agentId = isAgentAddress(recipient) ? extractId(recipient) : recipient;
+            const message = messages.sendToAgent({
+              from,
+              to: agentId,
+              payload,
+              replyTo,
+              priority,
+              ttlMs,
+              messageType,
+            });
+            results.push(message.id);
+          }
+        }
+        // Return protocol-compliant response
+        return { messageId: results[0], delivered: results };
+      }
+
+      // Handle prefixed addresses
+      if (isAddress(to)) {
+        if (isScopeAddress(to)) {
+          // Prefixed scope address: "scope:room-1"
+          const scopeId = extractId(to);
+          const message = messages.sendToScope({
+            from,
+            scopeId,
+            payload,
+            excludeSender: true,
+            messageType,
+          });
+          return { messageId: message.id };
+        } else {
+          // Prefixed agent address: "agent:abc123"
+          const agentId = extractId(to);
           const message = messages.sendToAgent({
             from,
-            to: recipient,
+            to: agentId,
             payload,
             replyTo,
             priority,
             ttlMs,
             messageType,
           });
-          results.push(message.id);
+          return { messageId: message.id };
         }
-        // Return protocol-compliant response
-        return { messageId: results[0], delivered: results };
       }
 
+      // Backward compatibility: unprefixed address
       // Check if 'to' is a scope ID by trying to get it
       const scope = scopes.get(to);
       if (scope) {
@@ -95,7 +146,7 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
         return { messageId: message.id };
       }
 
-      // Send to single agent
+      // Send to single agent (unprefixed)
       const message = messages.sendToAgent({
         from,
         to,

@@ -92,7 +92,7 @@ describe("FederatedAgentRegistry", () => {
         timestamp: Date.now(),
       });
 
-      const remoteAgent = federatedAgents.get("remote:system-b:agent-123");
+      const remoteAgent = federatedAgents.get("system-b:agent:agent-123");
       expect(remoteAgent).toBeDefined();
       expect(remoteAgent?.name).toBe("Remote");
     });
@@ -147,7 +147,7 @@ describe("FederatedAgentRegistry", () => {
         timestamp: Date.now(),
       });
 
-      const result = federatedAgents.unregister("remote:system-b:agent-123");
+      const result = federatedAgents.unregister("system-b:agent:agent-123");
       expect(result).toBe(false);
     });
   });
@@ -172,7 +172,7 @@ describe("FederatedAgentRegistry", () => {
       });
 
       expect(() => {
-        federatedAgents.updateState("remote:system-b:agent-123", "busy");
+        federatedAgents.updateState("system-b:agent:agent-123", "busy");
       }).toThrow("Cannot update remote agent");
     });
   });
@@ -189,7 +189,7 @@ describe("FederatedAgentRegistry", () => {
         timestamp: Date.now(),
       });
 
-      expect(federatedAgents.get("remote:system-b:agent-123")).toBeDefined();
+      expect(federatedAgents.get("system-b:agent:agent-123")).toBeDefined();
 
       // Then unregister
       gateway.handleIncomingMessage("system-b", {
@@ -201,7 +201,7 @@ describe("FederatedAgentRegistry", () => {
         timestamp: Date.now(),
       });
 
-      expect(federatedAgents.get("remote:system-b:agent-123")).toBeUndefined();
+      expect(federatedAgents.get("system-b:agent:agent-123")).toBeUndefined();
     });
 
     it("should handle agent.state.changed from peer", () => {
@@ -225,7 +225,7 @@ describe("FederatedAgentRegistry", () => {
         timestamp: Date.now(),
       });
 
-      const agent = federatedAgents.get("remote:system-b:agent-123");
+      const agent = federatedAgents.get("system-b:agent:agent-123");
       expect(agent?.state).toBe("busy");
     });
   });
@@ -241,7 +241,7 @@ describe("FederatedAgentRegistry", () => {
         timestamp: Date.now(),
       });
 
-      expect(federatedAgents.isRemote("remote:system-b:agent-123")).toBe(true);
+      expect(federatedAgents.isRemote("system-b:agent:agent-123")).toBe(true);
     });
 
     it("should return false for local agent", () => {
@@ -273,8 +273,8 @@ describe("FederatedAgentRegistry", () => {
 
       federatedAgents.clearRemoteSystem("system-b");
 
-      expect(federatedAgents.get("remote:system-b:agent-1")).toBeUndefined();
-      expect(federatedAgents.get("remote:system-c:agent-2")).toBeDefined();
+      expect(federatedAgents.get("system-b:agent:agent-1")).toBeUndefined();
+      expect(federatedAgents.get("system-c:agent:agent-2")).toBeDefined();
     });
   });
 });
@@ -325,7 +325,7 @@ describe("FederatedScopeManager", () => {
         timestamp: Date.now(),
       });
 
-      const remoteScope = federatedScopes.get("remote:system-b:scope-123");
+      const remoteScope = federatedScopes.get("system-b:scope:scope-123");
       expect(remoteScope).toBeDefined();
       expect(remoteScope?.name).toBe("RemoteRoom");
     });
@@ -369,7 +369,7 @@ describe("FederatedScopeManager", () => {
         timestamp: Date.now(),
       });
 
-      const result = federatedScopes.delete("remote:system-b:scope-123");
+      const result = federatedScopes.delete("system-b:scope:scope-123");
       expect(result).toBe(false);
     });
   });
@@ -396,7 +396,7 @@ describe("FederatedScopeManager", () => {
       });
 
       expect(() => {
-        federatedScopes.join("remote:system-b:scope-123", "agent-1");
+        federatedScopes.join("system-b:scope:scope-123", "agent-1");
       }).toThrow("Cannot join remote scope");
     });
   });
@@ -424,7 +424,7 @@ describe("FederatedScopeManager", () => {
         timestamp: Date.now(),
       });
 
-      expect(federatedScopes.getMembers("remote:system-b:scope-123")).toContain("remote-agent-1");
+      expect(federatedScopes.getMembers("system-b:scope:scope-123")).toContain("remote-agent-1");
 
       // Agent leaves
       gateway.handleIncomingMessage("system-b", {
@@ -437,7 +437,7 @@ describe("FederatedScopeManager", () => {
         timestamp: Date.now(),
       });
 
-      expect(federatedScopes.getMembers("remote:system-b:scope-123")).not.toContain("remote-agent-1");
+      expect(federatedScopes.getMembers("system-b:scope:scope-123")).not.toContain("remote-agent-1");
     });
   });
 });
@@ -504,14 +504,14 @@ describe("FederatedMessageRouter", () => {
 
       const message = federatedMessages.sendToAgent({
         from: "local-agent",
-        to: "remote:system-b:agent-123",
+        to: "system-b:agent:agent-123",
         payload: { text: "Hello remote!" },
       });
 
       // Give async routing time
       await new Promise((r) => setTimeout(r, 10));
 
-      expect(message.to).toBe("remote:system-b:agent-123");
+      expect(message.to).toBe("system-b:agent:agent-123");
       expect(mockTransport.send).toHaveBeenCalledWith(
         expect.objectContaining({
           payload: expect.objectContaining({
@@ -569,7 +569,7 @@ describe("FederatedMessageRouter", () => {
 
       expect(delivered).toHaveBeenCalledWith(
         expect.objectContaining({
-          from: "remote:system-b:remote-agent",
+          from: "system-b:agent:remote-agent",
           to: agent.id,
           payload: { text: "Hello from remote!" },
         })
@@ -601,14 +601,14 @@ describe("FederatedMessageRouter", () => {
 
   describe("isRemoteAgent", () => {
     it("should detect remote agent IDs", () => {
-      expect(federatedMessages.isRemoteAgent("remote:system-b:agent-1")).toBe(true);
+      expect(federatedMessages.isRemoteAgent("system-b:agent:agent-1")).toBe(true);
       expect(federatedMessages.isRemoteAgent("local-agent-1")).toBe(false);
     });
   });
 
   describe("parseRemoteAgentId", () => {
     it("should parse valid remote ID", () => {
-      const result = federatedMessages.parseRemoteAgentId("remote:system-b:agent-123");
+      const result = federatedMessages.parseRemoteAgentId("system-b:agent:agent-123");
       expect(result).toEqual({
         systemId: "system-b",
         originalId: "agent-123",
@@ -623,7 +623,7 @@ describe("FederatedMessageRouter", () => {
 
   describe("flushQueue", () => {
     it("should return 0 for remote agents", () => {
-      const result = federatedMessages.flushQueue("remote:system-b:agent-1");
+      const result = federatedMessages.flushQueue("system-b:agent:agent-1");
       expect(result).toBe(0);
     });
   });

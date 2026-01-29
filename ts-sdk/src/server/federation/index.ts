@@ -45,3 +45,18 @@ export {
   FederationPermissionError,
   type FederationHandlerOptions,
 } from "./handlers";
+
+// Federated ID utilities
+export {
+  formatFederatedId,
+  parseFederatedId,
+  isFederatedId,
+  isFederatedAgent,
+  isFederatedScope,
+  isFromSystem,
+  extractEntityId,
+  extractSystemId,
+  InvalidFederatedIdError,
+  type FederatedEntityType,
+  type FederatedIdComponents,
+} from "./federated-id";
