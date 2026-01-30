@@ -220,6 +220,43 @@ export function websocketStream(ws: WebSocket): Stream {
 }
 
 /**
+ * Wait for a WebSocket to open with timeout.
+ *
+ * @param ws - WebSocket instance
+ * @param timeoutMs - Timeout in milliseconds (default: 10000)
+ * @returns Promise that resolves when WebSocket is open
+ * @throws Error if connection times out or fails
+ */
+export function waitForOpen(ws: WebSocket, timeoutMs = 10000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      resolve();
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      ws.close();
+      reject(new Error(`WebSocket connection timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    const onOpen = () => {
+      clearTimeout(timeout);
+      ws.removeEventListener("error", onError);
+      resolve();
+    };
+
+    const onError = () => {
+      clearTimeout(timeout);
+      ws.removeEventListener("open", onOpen);
+      reject(new Error("WebSocket connection failed"));
+    };
+
+    ws.addEventListener("open", onOpen, { once: true });
+    ws.addEventListener("error", onError, { once: true });
+  });
+}
+
+/**
  * Creates a pair of connected in-memory streams for testing.
  *
  * Messages written to one stream's writable appear on the other's readable.

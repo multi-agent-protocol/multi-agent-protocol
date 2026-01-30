@@ -5,7 +5,7 @@
  * subscribe to events, and send messages.
  */
 
-import type { Stream } from '../stream';
+import { type Stream, websocketStream, waitForOpen } from '../stream';
 import { BaseConnection, type BaseConnectionOptions, type ConnectionState } from './base';
 import { Subscription, createSubscription, type EventHandler } from '../subscription';
 import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from '../utils';
@@ -128,6 +128,30 @@ export interface ClientConnectionOptions extends BaseConnectionOptions {
 }
 
 /**
+ * Options for ClientConnection.connect() static method
+ */
+export interface ClientConnectOptions {
+  /** Client name for identification */
+  name?: string;
+  /** Client capabilities to advertise */
+  capabilities?: ParticipantCapabilities;
+  /** Authentication credentials */
+  auth?: {
+    method: 'bearer' | 'api-key' | 'mtls' | 'none';
+    token?: string;
+  };
+  /**
+   * Reconnection configuration.
+   * - `true` = enable with defaults
+   * - `false` or omitted = disabled
+   * - `ReconnectionOptions` = enable with custom settings
+   */
+  reconnection?: boolean | ReconnectionOptions;
+  /** Connection timeout in ms (default: 10000) */
+  connectTimeout?: number;
+}
+
+/**
  * Client connection to a MAP system.
  *
  * Provides methods for:
@@ -170,6 +194,82 @@ export class ClientConnection {
   }
 
   // ===========================================================================
+  // Static Factory Methods
+  // ===========================================================================
+
+  /**
+   * Connect to a MAP server via WebSocket URL.
+   *
+   * Handles:
+   * - WebSocket creation and connection
+   * - Stream wrapping
+   * - Auto-configuration of createStream for reconnection
+   * - Initial MAP protocol connect handshake
+   *
+   * @param url - WebSocket URL (ws:// or wss://)
+   * @param options - Connection options
+   * @returns Connected ClientConnection instance
+   *
+   * @example
+   * ```typescript
+   * const client = await ClientConnection.connect('ws://localhost:8080', {
+   *   name: 'MyClient',
+   *   reconnection: true
+   * });
+   *
+   * // Already connected, ready to use
+   * const agents = await client.listAgents();
+   * ```
+   */
+  static async connect(
+    url: string,
+    options?: ClientConnectOptions
+  ): Promise<ClientConnection> {
+    // Validate URL
+    const parsedUrl = new URL(url);
+    if (!['ws:', 'wss:'].includes(parsedUrl.protocol)) {
+      throw new Error(
+        `Unsupported protocol: ${parsedUrl.protocol}. Use ws: or wss:`
+      );
+    }
+
+    const timeout = options?.connectTimeout ?? 10000;
+
+    // Create and connect WebSocket
+    const ws = new WebSocket(url);
+    await waitForOpen(ws, timeout);
+    const stream = websocketStream(ws);
+
+    // Configure createStream for reconnection
+    const createStream = async () => {
+      const newWs = new WebSocket(url);
+      await waitForOpen(newWs, timeout);
+      return websocketStream(newWs);
+    };
+
+    // Normalize reconnection option
+    const reconnection =
+      options?.reconnection === true
+        ? { enabled: true }
+        : typeof options?.reconnection === 'object'
+          ? options.reconnection
+          : undefined;
+
+    // Create connection
+    const client = new ClientConnection(stream, {
+      name: options?.name,
+      capabilities: options?.capabilities,
+      createStream,
+      reconnection,
+    });
+
+    // Perform MAP handshake
+    await client.connect({ auth: options?.auth });
+
+    return client;
+  }
+
+  // ===========================================================================
   // Connection Lifecycle
   // ===========================================================================
 
@@ -178,6 +278,8 @@ export class ClientConnection {
    */
   async connect(options?: {
     sessionId?: SessionId;
+    /** Token to resume a previously disconnected session */
+    resumeToken?: string;
     auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
   }): Promise<ConnectResponseResult> {
     const params: ConnectRequestParams = {
@@ -186,6 +288,7 @@ export class ClientConnection {
       name: this.#options.name,
       capabilities: this.#options.capabilities,
       sessionId: options?.sessionId,
+      resumeToken: options?.resumeToken,
       auth: options?.auth,
     };
 
@@ -209,15 +312,19 @@ export class ClientConnection {
 
   /**
    * Disconnect from the MAP system
+   * @param reason - Optional reason for disconnecting
+   * @returns Resume token that can be used to resume this session later
    */
-  async disconnect(reason?: string): Promise<void> {
-    if (!this.#connected) return;
+  async disconnect(reason?: string): Promise<string | undefined> {
+    if (!this.#connected) return undefined;
 
+    let resumeToken: string | undefined;
     try {
-      await this.#connection.sendRequest<{ reason?: string }, DisconnectResponseResult>(
+      const result = await this.#connection.sendRequest<{ reason?: string }, DisconnectResponseResult>(
         CORE_METHODS.DISCONNECT,
         reason ? { reason } : undefined
       );
+      resumeToken = result.resumeToken;
     } finally {
       // Close all subscriptions
       for (const subscription of this.#subscriptions.values()) {
@@ -228,6 +335,7 @@ export class ClientConnection {
       await this.#connection.close();
       this.#connected = false;
     }
+    return resumeToken;
   }
 
   /**

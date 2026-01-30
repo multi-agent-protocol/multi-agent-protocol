@@ -5,7 +5,7 @@
  * update state, spawn children, and communicate with peers.
  */
 
-import type { Stream } from '../stream';
+import { type Stream, websocketStream, waitForOpen } from '../stream';
 import { BaseConnection, type BaseConnectionOptions, type ConnectionState } from './base';
 import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from '../utils';
 import { Subscription, createSubscription } from '../subscription';
@@ -116,6 +116,40 @@ export interface AgentConnectionOptions extends BaseConnectionOptions {
 }
 
 /**
+ * Options for AgentConnection.connect() static method
+ */
+export interface AgentConnectOptions {
+  /** Agent name */
+  name?: string;
+  /** Agent role */
+  role?: string;
+  /** Agent capabilities to advertise */
+  capabilities?: ParticipantCapabilities;
+  /** Agent visibility settings */
+  visibility?: AgentVisibility;
+  /** Parent agent ID (for child agents) */
+  parent?: AgentId;
+  /** Initial scopes to join */
+  scopes?: ScopeId[];
+  /** Initial metadata */
+  metadata?: Record<string, unknown>;
+  /** Authentication credentials */
+  auth?: {
+    method: 'bearer' | 'api-key' | 'mtls' | 'none';
+    token?: string;
+  };
+  /**
+   * Reconnection configuration.
+   * - `true` = enable with defaults
+   * - `false` or omitted = disabled
+   * - `AgentReconnectionOptions` = enable with custom settings
+   */
+  reconnection?: boolean | AgentReconnectionOptions;
+  /** Connection timeout in ms (default: 10000) */
+  connectTimeout?: number;
+}
+
+/**
  * Agent connection to a MAP system.
  *
  * Provides methods for:
@@ -163,6 +197,89 @@ export class AgentConnection {
   }
 
   // ===========================================================================
+  // Static Factory Methods
+  // ===========================================================================
+
+  /**
+   * Connect and register an agent via WebSocket URL.
+   *
+   * Handles:
+   * - WebSocket creation and connection
+   * - Stream wrapping
+   * - Auto-configuration of createStream for reconnection
+   * - Initial MAP protocol connect handshake
+   * - Agent registration
+   *
+   * @param url - WebSocket URL (ws:// or wss://)
+   * @param options - Connection and agent options
+   * @returns Connected and registered AgentConnection instance
+   *
+   * @example
+   * ```typescript
+   * const agent = await AgentConnection.connect('ws://localhost:8080', {
+   *   name: 'Worker',
+   *   role: 'processor',
+   *   reconnection: true
+   * });
+   *
+   * // Already registered, ready to work
+   * agent.onMessage(handleMessage);
+   * await agent.busy();
+   * ```
+   */
+  static async connect(
+    url: string,
+    options?: AgentConnectOptions
+  ): Promise<AgentConnection> {
+    // Validate URL
+    const parsedUrl = new URL(url);
+    if (!['ws:', 'wss:'].includes(parsedUrl.protocol)) {
+      throw new Error(
+        `Unsupported protocol: ${parsedUrl.protocol}. Use ws: or wss:`
+      );
+    }
+
+    const timeout = options?.connectTimeout ?? 10000;
+
+    // Create and connect WebSocket
+    const ws = new WebSocket(url);
+    await waitForOpen(ws, timeout);
+    const stream = websocketStream(ws);
+
+    // Configure createStream for reconnection
+    const createStream = async () => {
+      const newWs = new WebSocket(url);
+      await waitForOpen(newWs, timeout);
+      return websocketStream(newWs);
+    };
+
+    // Normalize reconnection option
+    const reconnection =
+      options?.reconnection === true
+        ? { enabled: true }
+        : typeof options?.reconnection === 'object'
+          ? options.reconnection
+          : undefined;
+
+    // Create connection
+    const agent = new AgentConnection(stream, {
+      name: options?.name,
+      role: options?.role,
+      capabilities: options?.capabilities,
+      visibility: options?.visibility,
+      parent: options?.parent,
+      scopes: options?.scopes,
+      createStream,
+      reconnection,
+    });
+
+    // Perform MAP handshake and registration
+    await agent.connect({ auth: options?.auth });
+
+    return agent;
+  }
+
+  // ===========================================================================
   // Connection Lifecycle
   // ===========================================================================
 
@@ -171,6 +288,8 @@ export class AgentConnection {
    */
   async connect(options?: {
     agentId?: AgentId;
+    /** Token to resume a previously disconnected session */
+    resumeToken?: string;
     auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
   }): Promise<{ connection: ConnectResponseResult; agent: Agent }> {
     // First, establish the connection
@@ -180,6 +299,7 @@ export class AgentConnection {
       participantId: options?.agentId,
       name: this.#options.name,
       capabilities: this.#options.capabilities,
+      resumeToken: options?.resumeToken,
       auth: options?.auth,
     };
 
@@ -222,10 +342,13 @@ export class AgentConnection {
 
   /**
    * Disconnect from the MAP system
+   * @param reason - Optional reason for disconnecting
+   * @returns Resume token that can be used to resume this session later
    */
-  async disconnect(reason?: string): Promise<void> {
-    if (!this.#connected) return;
+  async disconnect(reason?: string): Promise<string | undefined> {
+    if (!this.#connected) return undefined;
 
+    let resumeToken: string | undefined;
     try {
       // Unregister the agent first
       if (this.#agentId) {
@@ -239,10 +362,11 @@ export class AgentConnection {
       }
 
       // Then disconnect
-      await this.#connection.sendRequest<{ reason?: string }, DisconnectResponseResult>(
+      const result = await this.#connection.sendRequest<{ reason?: string }, DisconnectResponseResult>(
         CORE_METHODS.DISCONNECT,
         reason ? { reason } : undefined
       );
+      resumeToken = result.resumeToken;
     } finally {
       // Close all subscriptions
       for (const subscription of this.#subscriptions.values()) {
@@ -253,6 +377,7 @@ export class AgentConnection {
       await this.#connection.close();
       this.#connected = false;
     }
+    return resumeToken;
   }
 
   /**

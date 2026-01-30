@@ -976,6 +976,8 @@ export interface ConnectRequestParams {
   name?: string;
   capabilities?: ParticipantCapabilities;
   sessionId?: SessionId;
+  /** Token to resume a previously disconnected session */
+  resumeToken?: string;
   /** Reclaim orphaned agents from previous connection */
   reclaimAgents?: AgentId[];
   /** Policy for unexpected disconnect */
@@ -1023,6 +1025,8 @@ export interface DisconnectRequest extends MAPRequestBase<DisconnectRequestParam
 
 export interface DisconnectResponseResult {
   session: SessionInfo;
+  /** Token to resume this session later */
+  resumeToken?: string;
   _meta?: Meta;
 }
 

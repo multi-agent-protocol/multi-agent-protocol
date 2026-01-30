@@ -24,6 +24,7 @@ export {
   type AnyMessage,
   ndJsonStream,
   websocketStream,
+  waitForOpen,
   createStreamPair,
 } from "./stream";
 
@@ -58,11 +59,13 @@ export {
   type StateChangeHandler,
   ClientConnection,
   type ClientConnectionOptions,
+  type ClientConnectOptions,
   type ReconnectionOptions,
   type ReconnectionEventType,
   type ReconnectionEventHandler,
   AgentConnection,
   type AgentConnectionOptions,
+  type AgentConnectOptions,
   type MessageHandler,
   type AgentReconnectionOptions,
   type AgentReconnectionEventType,
@@ -210,3 +213,26 @@ export {
   type PeerBufferStats,
   FederationOutageBuffer,
 } from "./federation";
+
+// ===========================================================================
+// Addresses - Address utilities for message routing
+// ===========================================================================
+export {
+  // Convenience functions
+  toAgent,
+  toScope,
+  // Address validation
+  isAddress,
+  isAgentAddress,
+  isScopeAddress,
+  // Address parsing
+  formatAddress,
+  parseAddress,
+  extractId,
+  extractType,
+  // Types
+  type AddressType,
+  type AddressComponents,
+  // Errors
+  InvalidAddressError,
+} from "./server/messages/address";

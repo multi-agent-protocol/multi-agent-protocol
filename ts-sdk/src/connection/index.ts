@@ -18,6 +18,7 @@ export {
 export {
   ClientConnection,
   type ClientConnectionOptions,
+  type ClientConnectOptions,
   type ReconnectionOptions,
   type ReconnectionEventType,
   type ReconnectionEventHandler,
@@ -25,6 +26,7 @@ export {
 export {
   AgentConnection,
   type AgentConnectionOptions,
+  type AgentConnectOptions,
   type MessageHandler,
   type AgentReconnectionOptions,
   type AgentReconnectionEventType,

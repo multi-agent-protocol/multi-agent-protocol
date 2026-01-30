@@ -27,6 +27,13 @@ export interface CausalEvent {
 }
 
 /**
+ * Mode for handling events with multiple causal dependencies.
+ * - "all": Wait for ALL causes before releasing (stricter, default)
+ * - "any": Release when ANY cause is seen (more permissive)
+ */
+export type MultiCauseMode = "all" | "any";
+
+/**
  * Options for CausalEventBuffer
  */
 export interface CausalEventBufferOptions {
@@ -41,6 +48,13 @@ export interface CausalEventBufferOptions {
    * Default: 1000. Prevents unbounded memory growth.
    */
   maxBufferSize?: number;
+
+  /**
+   * Mode for handling events with multiple causes.
+   * - "all" (default): Wait for ALL causes before releasing
+   * - "any": Release when ANY cause is seen
+   */
+  multiCauseMode?: MultiCauseMode;
 
   /**
    * Callback when an event is released despite missing predecessors (timeout or buffer overflow).
@@ -105,8 +119,16 @@ export class CausalEventBuffer {
     this.#options = {
       maxWaitTime: options.maxWaitTime ?? 5000,
       maxBufferSize: options.maxBufferSize ?? 1000,
+      multiCauseMode: options.multiCauseMode ?? "all",
       onForcedRelease: options.onForcedRelease,
     };
+  }
+
+  /**
+   * Get the current multi-cause mode.
+   */
+  get multiCauseMode(): MultiCauseMode {
+    return this.#options.multiCauseMode;
   }
 
   /**
@@ -131,11 +153,11 @@ export class CausalEventBuffer {
       event = { ...event, receivedAt: Date.now() };
     }
 
-    // Check for missing predecessors
-    const missingPredecessors = this.#getMissingPredecessors(event);
+    // Check if predecessors are satisfied based on multi-cause mode
+    const shouldRelease = this.#shouldReleaseEvent(event);
 
-    if (missingPredecessors.length === 0) {
-      // No dependencies or all dependencies satisfied - release immediately
+    if (shouldRelease) {
+      // No dependencies or dependencies satisfied - release immediately
       ready.push(event);
 
       // Check if this event unblocks any pending events
@@ -145,7 +167,8 @@ export class CausalEventBuffer {
       this.#pending.set(event.eventId, event);
 
       // Track what this event is waiting for
-      for (const predecessorId of missingPredecessors) {
+      const predecessors = event.causedBy ?? [];
+      for (const predecessorId of predecessors) {
         if (!this.#waitingFor.has(predecessorId)) {
           this.#waitingFor.set(predecessorId, new Set());
         }
@@ -222,6 +245,26 @@ export class CausalEventBuffer {
   }
 
   /**
+   * Check if an event should be released based on its predecessors and the multi-cause mode.
+   */
+  #shouldReleaseEvent(event: CausalEvent): boolean {
+    if (!event.causedBy || event.causedBy.length === 0) {
+      return true; // No dependencies - release immediately
+    }
+
+    const missingPredecessors = this.#getMissingPredecessors(event);
+
+    if (this.#options.multiCauseMode === "any") {
+      // "any" mode: release if ANY predecessor is satisfied (not missing)
+      // If all are missing, we must wait
+      return missingPredecessors.length < event.causedBy.length;
+    } else {
+      // "all" mode (default): release only if ALL predecessors are satisfied
+      return missingPredecessors.length === 0;
+    }
+  }
+
+  /**
    * Get missing predecessors for an event.
    * A predecessor is considered "missing" if it hasn't been released yet
    * (either not seen at all, or seen but still pending).
@@ -253,12 +296,26 @@ export class CausalEventBuffer {
       const waitingEvent = this.#pending.get(waitingEventId);
       if (!waitingEvent) continue;
 
-      // Check if all predecessors are now satisfied
-      const stillMissing = this.#getMissingPredecessors(waitingEvent);
-
-      if (stillMissing.length === 0) {
-        // All predecessors satisfied - release this event
+      // Check if predecessors are now satisfied (respects multi-cause mode)
+      if (this.#shouldReleaseEvent(waitingEvent)) {
+        // Predecessors satisfied - release this event
         this.#pending.delete(waitingEventId);
+
+        // Clean up waiting entries for this event's other predecessors
+        if (waitingEvent.causedBy) {
+          for (const otherPredId of waitingEvent.causedBy) {
+            if (otherPredId !== predecessorId) {
+              const waiting = this.#waitingFor.get(otherPredId);
+              if (waiting) {
+                waiting.delete(waitingEventId);
+                if (waiting.size === 0) {
+                  this.#waitingFor.delete(otherPredId);
+                }
+              }
+            }
+          }
+        }
+
         ready.push(waitingEvent);
 
         // Recursively check if this event unblocks others

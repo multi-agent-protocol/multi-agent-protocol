@@ -1,0 +1,528 @@
+/**
+ * MAPServer - Convenience wrapper for MAP Server SDK building blocks
+ *
+ * Provides a simplified API for creating MAP servers while preserving
+ * access to all underlying building blocks for advanced use cases.
+ */
+
+import type { Stream } from "../stream";
+import { NOTIFICATION_METHODS } from "../types";
+import type {
+  EventBus,
+  AgentRegistry,
+  ScopeManager,
+  SessionManager,
+  SubscriptionManager,
+  MessageRouter,
+  HandlerRegistry,
+  Middleware,
+  MAPEvent,
+  ServerSubscription,
+  EventStore,
+  AgentStore,
+  SessionStore,
+  ScopeStore,
+  SubscriptionStore,
+  MessageQueueStore,
+} from "./types";
+import type { ParticipantCapabilities } from "../types";
+import { EventBusImpl } from "./events";
+import { AgentRegistryImpl, createAgentHandlers } from "./agents";
+import { SessionManagerImpl } from "./sessions";
+import { ScopeManagerImpl, createScopeHandlers } from "./scopes";
+import { SubscriptionManagerImpl, createSubscriptionHandlers } from "./subscriptions";
+import { MessageRouterImpl, createMessageHandlers } from "./messages";
+import {
+  RouterConnectionImpl,
+  combineHandlers,
+  createConnectionHandlers,
+} from "./router";
+
+/**
+ * Options for MAPServer
+ */
+export interface MAPServerOptions {
+  // === Basic Config ===
+  /** Server name for connect responses */
+  name?: string;
+  /** Server version for connect responses */
+  version?: string;
+
+  // === Building Block Overrides ===
+  /** Replace EventBus entirely */
+  eventBus?: EventBus;
+  /** Replace AgentRegistry entirely */
+  agents?: AgentRegistry;
+  /** Replace ScopeManager entirely */
+  scopes?: ScopeManager;
+  /** Replace SessionManager entirely */
+  sessions?: SessionManager;
+  /** Replace SubscriptionManager entirely */
+  subscriptions?: SubscriptionManager;
+  /** Replace MessageRouter entirely */
+  messages?: MessageRouter;
+
+  // === Storage Overrides ===
+  /** Custom stores (uses default impl with your store) */
+  stores?: {
+    events?: EventStore;
+    agents?: AgentStore;
+    sessions?: SessionStore;
+    scopes?: ScopeStore;
+    subscriptions?: SubscriptionStore;
+    messages?: MessageQueueStore;
+  };
+
+  // === Handler Customization ===
+  /** Replace all handlers entirely */
+  handlers?: HandlerRegistry;
+  /** Add handlers to defaults (merged after built-in handlers) */
+  additionalHandlers?: HandlerRegistry;
+  /** Middleware chain (applied to all requests) */
+  middleware?: Middleware[];
+
+  // === Event Delivery ===
+  /** Event delivery configuration */
+  eventDelivery?: {
+    /** Enable automatic event delivery (default: true) */
+    enabled?: boolean;
+    /** Custom filter for event delivery */
+    filter?: (event: MAPEvent, subscription: ServerSubscription) => boolean;
+  };
+
+  // === Session/Cleanup Config ===
+  /** Session resume window in ms (default: 5 minutes) */
+  resumeWindowMs?: number;
+
+  // === Capabilities ===
+  /** Server capabilities advertised to clients */
+  capabilities?: ParticipantCapabilities;
+}
+
+/**
+ * Options for accepting a connection
+ */
+export interface AcceptOptions {
+  /** Connection role (default: 'agent') */
+  role?: "client" | "agent" | "gateway";
+  /** Name for the session */
+  name?: string;
+  /** Resume token for reconnection */
+  resumeToken?: string;
+}
+
+/**
+ * Options for closing the server
+ */
+export interface CloseOptions {
+  /** Timeout for graceful shutdown in ms (default: 5000) */
+  timeout?: number;
+  /** Force close without waiting for graceful disconnect */
+  force?: boolean;
+}
+
+/**
+ * MAPServer - A convenience wrapper that wires together all MAP Server SDK
+ * building blocks with sensible defaults.
+ *
+ * @example Simple usage
+ * ```typescript
+ * const server = new MAPServer({ name: 'MyServer' });
+ *
+ * // Accept connections
+ * wss.on('connection', (ws) => {
+ *   const stream = websocketToStream(ws);
+ *   server.accept(stream).start();
+ * });
+ * ```
+ *
+ * @example With custom storage
+ * ```typescript
+ * const server = new MAPServer({
+ *   name: 'PersistentServer',
+ *   stores: {
+ *     agents: new PostgresAgentStore(db),
+ *     events: new RedisEventStore(redis),
+ *   }
+ * });
+ * ```
+ *
+ * @example Direct access to building blocks
+ * ```typescript
+ * server.agents.list();
+ * server.eventBus.on('agent.registered', console.log);
+ * ```
+ */
+export class MAPServer {
+  // === Building Blocks (readonly access) ===
+  readonly eventBus: EventBus;
+  readonly agents: AgentRegistry;
+  readonly scopes: ScopeManager;
+  readonly sessions: SessionManager;
+  readonly subscriptions: SubscriptionManager;
+  readonly messages: MessageRouter;
+  readonly handlers: HandlerRegistry;
+
+  // === Private State ===
+  readonly #options: MAPServerOptions;
+  readonly #routers: Map<string, RouterConnectionImpl> = new Map();
+  readonly #sessionToRouter: Map<string, string> = new Map(); // sessionId -> routerId for O(1) lookup
+  readonly #subscriptionSequences: Map<string, number> = new Map();
+  #eventDeliveryUnsubscribe?: () => void;
+  #sessionTrackingUnsubscribe?: () => void;
+  #nextRouterId = 1;
+
+  constructor(options: MAPServerOptions = {}) {
+    this.#options = options;
+
+    // Create building blocks in dependency order
+    this.eventBus =
+      options.eventBus ??
+      new EventBusImpl({
+        store: options.stores?.events,
+      });
+
+    this.sessions =
+      options.sessions ??
+      new SessionManagerImpl({
+        eventBus: this.eventBus,
+        store: options.stores?.sessions,
+        resumeWindowMs: options.resumeWindowMs,
+      });
+
+    this.agents =
+      options.agents ??
+      new AgentRegistryImpl({
+        eventBus: this.eventBus,
+        store: options.stores?.agents,
+      });
+
+    this.scopes =
+      options.scopes ??
+      new ScopeManagerImpl({
+        eventBus: this.eventBus,
+        store: options.stores?.scopes,
+      });
+
+    this.subscriptions =
+      options.subscriptions ??
+      new SubscriptionManagerImpl({
+        eventBus: this.eventBus,
+        scopes: this.scopes,
+        store: options.stores?.subscriptions,
+      });
+
+    this.messages =
+      options.messages ??
+      new MessageRouterImpl({
+        eventBus: this.eventBus,
+        agents: this.agents,
+        scopes: this.scopes,
+        queueStore: options.stores?.messages,
+      });
+
+    // Compose handlers
+    this.handlers =
+      options.handlers ??
+      combineHandlers(
+        createConnectionHandlers({
+          sessions: this.sessions,
+          serverName: options.name ?? "MAPServer",
+          serverVersion: options.version ?? "1.0.0",
+        }),
+        createAgentHandlers({ agents: this.agents }),
+        createScopeHandlers({ scopes: this.scopes }),
+        createMessageHandlers({ messages: this.messages, scopes: this.scopes }),
+        createSubscriptionHandlers({
+          subscriptions: this.subscriptions,
+          eventBus: this.eventBus,
+        }),
+        options.additionalHandlers ?? {}
+      );
+
+    // Wire event delivery
+    if (options.eventDelivery?.enabled !== false) {
+      this.#wireEventDelivery();
+    }
+
+    // Wire session tracking for O(1) router lookup
+    this.#wireSessionTracking();
+  }
+
+  // === Connection Tracking ===
+
+  /**
+   * Get active connections by ID
+   */
+  get connections(): ReadonlyMap<string, RouterConnectionImpl> {
+    return this.#routers;
+  }
+
+  // === Connection Lifecycle ===
+
+  /**
+   * Accept a new connection.
+   *
+   * Creates a RouterConnection, tracks it, and sets up cleanup on close.
+   * The returned router must have `start()` called to begin processing.
+   *
+   * @param stream - Bidirectional message stream
+   * @param options - Connection options
+   * @returns RouterConnection ready to start
+   *
+   * @example
+   * ```typescript
+   * const router = server.accept(stream, { role: 'agent' });
+   * router.start();
+   * ```
+   */
+  accept(stream: Stream, options?: AcceptOptions): RouterConnectionImpl {
+    const routerId = `router-${this.#nextRouterId++}`;
+
+    const router = new RouterConnectionImpl({
+      stream,
+      handlers: this.handlers,
+      sessions: this.sessions,
+      middleware: this.#options.middleware,
+      role: options?.role ?? "agent",
+      name: options?.name,
+      resumeToken: options?.resumeToken,
+    });
+
+    // Track the router
+    this.#routers.set(routerId, router);
+
+    // Auto-cleanup on close
+    router.closed.then(() => {
+      // Clean up session mapping if exists (use try-catch since session may not exist)
+      try {
+        const sessionId = router.session?.id;
+        if (sessionId) {
+          this.#sessionToRouter.delete(sessionId);
+        }
+      } catch {
+        // Session not established, nothing to clean
+      }
+      this.#routers.delete(routerId);
+    });
+
+    // Store routerId on router for session tracking callback
+    (router as RouterConnectionImpl & { __routerId?: string }).__routerId = routerId;
+
+    return router;
+  }
+
+  /**
+   * Close the server.
+   *
+   * Gracefully disconnects all clients with optional timeout.
+   *
+   * @param options - Close options
+   *
+   * @example
+   * ```typescript
+   * // Graceful shutdown
+   * await server.close();
+   *
+   * // Force shutdown
+   * await server.close({ force: true });
+   *
+   * // Custom timeout
+   * await server.close({ timeout: 10000 });
+   * ```
+   */
+  async close(options?: CloseOptions): Promise<void> {
+    const { timeout = 5000, force = false } = options ?? {};
+
+    // Stop event delivery
+    if (this.#eventDeliveryUnsubscribe) {
+      this.#eventDeliveryUnsubscribe();
+      this.#eventDeliveryUnsubscribe = undefined;
+    }
+
+    // Stop session tracking
+    if (this.#sessionTrackingUnsubscribe) {
+      this.#sessionTrackingUnsubscribe();
+      this.#sessionTrackingUnsubscribe = undefined;
+    }
+
+    const routers = Array.from(this.#routers.values());
+
+    if (force) {
+      // Immediately close all
+      await Promise.all(routers.map((r) => r.close()));
+      // Force-expire all disconnected sessions
+      this.sessions.expireStale(0);
+      return;
+    }
+
+    // Graceful: attempt close with timeout
+    const closePromises = routers.map(async (router) => {
+      try {
+        await Promise.race([
+          router.close(),
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout")), timeout)
+          ),
+        ]);
+      } catch {
+        // Force close on timeout
+        await router.close();
+      }
+    });
+
+    await Promise.all(closePromises);
+
+    // Expire disconnected sessions on graceful shutdown
+    this.sessions.expireStale(0);
+  }
+
+  // === Convenience Methods ===
+
+  /**
+   * Subscribe to events.
+   *
+   * Convenience method that delegates to eventBus.on().
+   *
+   * @param type - Event type(s) to listen for, or '*' for all
+   * @param handler - Callback invoked for each matching event
+   * @returns Unsubscribe function
+   */
+  on(
+    type: string | string[],
+    handler: (event: MAPEvent) => void
+  ): () => void {
+    return this.eventBus.on(type, handler);
+  }
+
+  /**
+   * Emit an event.
+   *
+   * Convenience method that delegates to eventBus.emit().
+   *
+   * @param event - Event to emit (id and timestamp are added automatically)
+   * @returns The complete event with id and timestamp
+   */
+  emit(event: Omit<MAPEvent, "id" | "timestamp">): MAPEvent {
+    return this.eventBus.emit(event);
+  }
+
+  // === Private Methods ===
+
+  /**
+   * Wire automatic event delivery from EventBus to subscriptions
+   */
+  #wireEventDelivery(): void {
+    this.#eventDeliveryUnsubscribe = this.eventBus.on("*", (event: MAPEvent) => {
+      // Find matching subscriptions
+      const matchingSubIds = this.subscriptions.match(event);
+
+      for (const subId of matchingSubIds) {
+        const subscription = this.subscriptions.get(subId);
+        if (!subscription || subscription.paused) continue;
+
+        // Apply custom filter if provided
+        if (this.#options.eventDelivery?.filter) {
+          if (!this.#options.eventDelivery.filter(event, subscription)) {
+            continue;
+          }
+        }
+
+        // Find the router for this subscription's session
+        const router = this.#findRouterForSession(subscription.sessionId);
+        if (!router) continue;
+
+        // Increment sequence number
+        const seq = (this.#subscriptionSequences.get(subId) ?? 0) + 1;
+        this.#subscriptionSequences.set(subId, seq);
+
+        // Send notification (remove dead connections on error)
+        router
+          .notify(NOTIFICATION_METHODS.EVENT, {
+            subscriptionId: subId,
+            sequenceNumber: seq,
+            eventId: event.id,
+            timestamp: event.timestamp,
+            event,
+          })
+          .catch(() => {
+            // Remove dead connection on notification failure
+            this.#removeDeadConnection(subscription.sessionId);
+          });
+      }
+    });
+  }
+
+  /**
+   * Find the RouterConnection for a given session ID (O(1) lookup with fallback)
+   */
+  #findRouterForSession(sessionId: string): RouterConnectionImpl | undefined {
+    // Try O(1) lookup first
+    const routerId = this.#sessionToRouter.get(sessionId);
+    if (routerId) {
+      const router = this.#routers.get(routerId);
+      if (router) return router;
+    }
+
+    // Fallback: O(n) search and cache the result
+    for (const [id, router] of this.#routers.entries()) {
+      try {
+        if (router.session?.id === sessionId) {
+          // Cache for future lookups
+          this.#sessionToRouter.set(sessionId, id);
+          return router;
+        }
+      } catch {
+        // Session not available yet, skip this router
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Wire session tracking to maintain session ID -> router ID mapping
+   */
+  #wireSessionTracking(): void {
+    this.#sessionTrackingUnsubscribe = this.eventBus.on(
+      "session.connected",
+      (event: MAPEvent) => {
+        // Session.connected event data is { session: ServerSession }
+        const data = event.data as { session?: { id?: string } } | undefined;
+        const sessionId = data?.session?.id;
+        if (!sessionId) return;
+
+        // Find the router that just established this session
+        for (const router of this.#routers.values()) {
+          try {
+            if (router.session?.id === sessionId) {
+              const routerId = (router as RouterConnectionImpl & { __routerId?: string }).__routerId;
+              if (routerId) {
+                this.#sessionToRouter.set(sessionId, routerId);
+              }
+              break;
+            }
+          } catch {
+            // Session not available yet, skip this router
+          }
+        }
+      }
+    );
+  }
+
+  /**
+   * Remove a dead connection by session ID
+   */
+  #removeDeadConnection(sessionId: string): void {
+    const routerId = this.#sessionToRouter.get(sessionId);
+    if (routerId) {
+      const router = this.#routers.get(routerId);
+      if (router) {
+        // Close the dead router (this triggers cleanup in the closed promise)
+        router.close().catch(() => {
+          // Ignore close errors
+        });
+      }
+      this.#sessionToRouter.delete(sessionId);
+    }
+  }
+}
