@@ -278,7 +278,7 @@ interface StdioTransport {
 {
   "jsonrpc": "2.0",
   "id": "ext_001",
-  "method": "anthropic.macro/workspace.sync",
+  "method": "macro/workspace.sync",
   "params": {
     "worktree": "/path/to/worktree",
     "remote": "origin/main"

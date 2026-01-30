@@ -28,7 +28,7 @@ const DEFAULT_RESUME_WINDOW_MS = 5 * 60 * 1000;
  *
  * @example
  * ```typescript
- * import { RESUME_GUARANTEES } from "@anthropic/multi-agent-protocol/server";
+ * import { RESUME_GUARANTEES } from "@multi-agent-protocol/sdk/server";
  *
  * // Check what's guaranteed to be preserved
  * console.log(RESUME_GUARANTEES.preserved);
@@ -163,7 +163,10 @@ export class SessionManagerImpl implements SessionManager {
   /**
    * List sessions matching filter criteria.
    */
-  list(filter?: { role?: SessionRole; status?: SessionStatus }): ServerSession[] {
+  list(filter?: {
+    role?: SessionRole;
+    status?: SessionStatus;
+  }): ServerSession[] {
     return this.store.list(filter);
   }
 
@@ -370,7 +373,9 @@ export class SessionManagerImpl implements SessionManager {
 
     const updatedSession: ServerSession = {
       ...session,
-      subscriptionIds: session.subscriptionIds.filter((id) => id !== subscriptionId),
+      subscriptionIds: session.subscriptionIds.filter(
+        (id) => id !== subscriptionId,
+      ),
     };
     this.store.save(updatedSession);
   }
