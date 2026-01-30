@@ -107,3 +107,7 @@ The protocol defines 27 methods across three tiers:
 ## License
 
 MIT
+
+## Authors
+
+Created and maintened by the [sudocode](https://github.com/sudocode-ai) team.

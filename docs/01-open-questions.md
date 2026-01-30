@@ -1048,8 +1048,3 @@ Child specs where these questions originated:
 - Connection Model & Client Patterns (05-connection-model.md)
 - Visibility & Permission Model (06-visibility-permissions.md)
 - Federation & System-to-System Communication (07-federation.md)
-
-External references:
-- [A2A Protocol Specification](https://google.github.io/A2A/specification/) - Artifacts and task model
-- [ACP SDK](https://github.com/anthropics/acp) - Capability negotiation patterns
-- [Agent Interoperability Survey](https://arxiv.org/html/2505.02279v1) - Protocol comparison

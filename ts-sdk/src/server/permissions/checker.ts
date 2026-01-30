@@ -61,7 +61,9 @@ export class PermissionCheckerImpl implements PermissionChecker {
     if (matchingRules.length === 0) {
       return {
         allowed: this.defaultAllow,
-        reason: this.defaultAllow ? undefined : `No permission rule for ${method}`,
+        reason: this.defaultAllow
+          ? undefined
+          : `No permission rule for ${method}`,
       };
     }
 
@@ -101,7 +103,7 @@ export class PermissionCheckerImpl implements PermissionChecker {
   canAccessScope(
     session: ServerSession,
     scopeId: string,
-    action: string
+    action: string,
   ): PermissionResult {
     // Build a virtual method name for scope access
     const virtualMethod = `scope/${scopeId}/${action}`;
@@ -152,7 +154,7 @@ export class PermissionCheckerImpl implements PermissionChecker {
   canAgentPerform(
     agentId: string,
     action: string,
-    targetId: string
+    targetId: string,
   ): PermissionResult {
     // Build a virtual method name for agent-to-agent actions
     const virtualMethod = `agent/${action}`;
@@ -211,7 +213,7 @@ export class PermissionCheckerImpl implements PermissionChecker {
  *
  * @example
  * ```typescript
- * import { BASELINE_PERMISSION_RULES, PermissionCheckerImpl } from "@anthropic/multi-agent-protocol/server";
+ * import { BASELINE_PERMISSION_RULES, PermissionCheckerImpl } from "@multi-agent-protocol/sdk/server";
  *
  * const checker = new PermissionCheckerImpl({
  *   rules: [
@@ -263,7 +265,7 @@ export const BASELINE_PERMISSION_RULES: PermissionRule[] = [
  * @returns PermissionChecker instance with baseline + override rules
  */
 export function createDefaultPermissionChecker(
-  overrides?: Partial<PermissionCheckerOptions>
+  overrides?: Partial<PermissionCheckerOptions>,
 ): PermissionCheckerImpl {
   return new PermissionCheckerImpl({
     rules: [...BASELINE_PERMISSION_RULES, ...(overrides?.rules ?? [])],

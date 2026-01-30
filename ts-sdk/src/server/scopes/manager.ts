@@ -42,7 +42,7 @@ export class ScopeHasChildrenError extends Error {
   constructor(scopeId: string, childCount: number) {
     super(
       `Cannot delete scope '${scopeId}': has ${childCount} child scope(s). ` +
-        `Use deleteDescendants: true to cascade delete, or orphanChildren: true to detach children.`
+        `Use deleteDescendants: true to cascade delete, or orphanChildren: true to detach children.`,
     );
     this.name = "ScopeHasChildrenError";
   }
@@ -56,7 +56,7 @@ export class ScopeHasChildrenError extends Error {
  *
  * @example
  * ```typescript
- * import { SCOPE_HIERARCHY_DEFAULTS } from "@anthropic/multi-agent-protocol/server";
+ * import { SCOPE_HIERARCHY_DEFAULTS } from "@multi-agent-protocol/sdk/server";
  *
  * // Check default delete behavior
  * console.log(SCOPE_HIERARCHY_DEFAULTS.delete.withChildren);
@@ -190,7 +190,7 @@ export class ScopeManagerImpl implements ScopeManager {
    */
   delete(
     id: string,
-    opts?: { deleteDescendants?: boolean; orphanChildren?: boolean }
+    opts?: { deleteDescendants?: boolean; orphanChildren?: boolean },
   ): boolean {
     const scope = this.store.getScope(id);
     if (!scope) {
@@ -316,7 +316,10 @@ export class ScopeManagerImpl implements ScopeManager {
    * Get all agents in a scope.
    * @param opts.includeDescendants If true, include agents from descendant scopes
    */
-  getMembers(scopeId: string, opts?: { includeDescendants?: boolean }): string[] {
+  getMembers(
+    scopeId: string,
+    opts?: { includeDescendants?: boolean },
+  ): string[] {
     return this.store.getMembers(scopeId, opts?.includeDescendants);
   }
 
@@ -334,7 +337,7 @@ export class ScopeManagerImpl implements ScopeManager {
   isMember(
     scopeId: string,
     agentId: string,
-    opts?: { checkAncestors?: boolean }
+    opts?: { checkAncestors?: boolean },
   ): boolean {
     const scopes = this.store.getScopesForAgent(agentId);
 

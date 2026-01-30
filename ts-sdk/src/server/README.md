@@ -23,7 +23,7 @@ import {
   createMessageHandlers,
   createSubscriptionHandlers,
   combineHandlers,
-} from "@anthropic/multi-agent-protocol/server";
+} from "@multi-agent-protocol/sdk/server";
 
 // 1. Create building blocks
 const eventBus = new EventBusImpl();
@@ -109,7 +109,7 @@ function handleConnection(stream: BidirectionalStream, role: "client" | "agent")
 Events emitted by building blocks need to be delivered to clients with matching subscriptions. Wire the EventBus to push events to client connections:
 
 ```typescript
-import { NOTIFICATION_METHODS } from "@anthropic/multi-agent-protocol";
+import { NOTIFICATION_METHODS } from "@multi-agent-protocol/sdk";
 
 // Track sequence numbers per subscription for ordering
 const subscriptionSequences = new Map<string, number>();
@@ -212,8 +212,8 @@ import {
   createSubscriptionHandlers,
   combineHandlers,
   type MAPEvent,
-} from "@anthropic/multi-agent-protocol/server";
-import { NOTIFICATION_METHODS } from "@anthropic/multi-agent-protocol";
+} from "@multi-agent-protocol/sdk/server";
+import { NOTIFICATION_METHODS } from "@multi-agent-protocol/sdk";
 
 // 1. Create building blocks
 const eventBus = new EventBusImpl();
@@ -432,7 +432,7 @@ Scope hierarchy operations have explicit default behaviors:
 | `isMember(scope, agent)` | Direct membership only | `checkAncestors: true` |
 
 ```typescript
-import { SCOPE_HIERARCHY_DEFAULTS, ScopeHasChildrenError } from "@anthropic/multi-agent-protocol/server";
+import { SCOPE_HIERARCHY_DEFAULTS, ScopeHasChildrenError } from "@multi-agent-protocol/sdk/server";
 
 // Delete scope with children - will throw by default
 try {
@@ -486,7 +486,7 @@ When a session is successfully resumed, the following state is **guaranteed to b
 | Queued messages | ✅ Yes | Call `flushQueue()` to deliver |
 
 ```typescript
-import { RESUME_GUARANTEES } from "@anthropic/multi-agent-protocol/server";
+import { RESUME_GUARANTEES } from "@multi-agent-protocol/sdk/server";
 
 // Default resume window
 console.log(RESUME_GUARANTEES.defaultWindowMs); // 300000 (5 minutes)
@@ -593,7 +593,7 @@ const handlers = combineHandlers(
 For those who prefer class-based implementations:
 
 ```typescript
-import { BaseMAPRouter, routerToHandlers } from "@anthropic/multi-agent-protocol/server";
+import { BaseMAPRouter, routerToHandlers } from "@multi-agent-protocol/sdk/server";
 
 class MyRouter extends BaseMAPRouter {
   async registerAgent(params, ctx) {
@@ -628,7 +628,7 @@ import {
   PermissionCheckerImpl,
   permissionMiddleware,
   createDefaultPermissionChecker,
-} from "@anthropic/multi-agent-protocol/server";
+} from "@multi-agent-protocol/sdk/server";
 
 // Option 1: Use the baseline directly
 const permissions = new PermissionCheckerImpl({
@@ -670,7 +670,7 @@ const connection = new RouterConnectionImpl({
 Automatic cleanup of stale resources:
 
 ```typescript
-import { ResourceCleanerImpl } from "@anthropic/multi-agent-protocol/server";
+import { ResourceCleanerImpl } from "@multi-agent-protocol/sdk/server";
 
 const cleaner = new ResourceCleanerImpl({
   sessions,
@@ -701,7 +701,7 @@ import {
   FederationGatewayImpl,
   FederatedAgentRegistry,
   FederatedMessageRouter,
-} from "@anthropic/multi-agent-protocol/server";
+} from "@multi-agent-protocol/sdk/server";
 
 const gateway = new FederationGatewayImpl({
   systemId: "system-east",
