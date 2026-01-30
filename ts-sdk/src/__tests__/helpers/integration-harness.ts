@@ -1,7 +1,7 @@
 /**
  * Integration Test Harness
  *
- * Wires client SDK connections to server SDK building blocks via stream pairs.
+ * Uses MAPServer convenience wrapper to wire client SDK connections to server SDK.
  * Provides utilities for testing end-to-end client-server interactions.
  */
 
@@ -9,27 +9,12 @@ import { createStreamPair, type Stream } from "../../stream";
 import { ClientConnection } from "../../connection/client";
 import { AgentConnection } from "../../connection/agent";
 import {
-  EventBusImpl,
-  AgentRegistryImpl,
-  ScopeManagerImpl,
-  SessionManagerImpl,
-  SubscriptionManagerImpl,
-  MessageRouterImpl,
-  RouterConnectionImpl,
-  createConnectionHandlers,
-  createAgentHandlers,
-  createScopeHandlers,
-  createMessageHandlers,
-  createSubscriptionHandlers,
-  combineHandlers,
+  MAPServer,
   type HandlerRegistry,
-  type ServerSession,
-  type RegisteredAgent,
   type ServerMessage,
   type MAPEvent,
 } from "../../server";
 import type { Agent, ConnectResponseResult } from "../../types";
-import { NOTIFICATION_METHODS } from "../../types";
 
 /**
  * Connected client with its connection and cleanup function.
@@ -69,13 +54,16 @@ export interface DeliveredMessage {
  * Integration test harness for wiring client SDK to server SDK.
  */
 export interface IntegrationTestHarness {
-  // Server building blocks (exposed for assertions)
-  readonly eventBus: EventBusImpl;
-  readonly agents: AgentRegistryImpl;
-  readonly scopes: ScopeManagerImpl;
-  readonly sessions: SessionManagerImpl;
-  readonly subscriptions: SubscriptionManagerImpl;
-  readonly messages: MessageRouterImpl;
+  // Server (provides access to all building blocks)
+  readonly server: MAPServer;
+
+  // Convenience accessors for building blocks
+  readonly eventBus: MAPServer["eventBus"];
+  readonly agents: MAPServer["agents"];
+  readonly scopes: MAPServer["scopes"];
+  readonly sessions: MAPServer["sessions"];
+  readonly subscriptions: MAPServer["subscriptions"];
+  readonly messages: MAPServer["messages"];
   readonly handlers: HandlerRegistry;
 
   /**
@@ -122,13 +110,11 @@ export interface IntegrationTestHarnessOptions {
 }
 
 /**
- * Internal tracking for active connections.
+ * Internal tracking for active client connections.
  */
-interface ActiveConnection {
+interface ActiveClientConnection {
   clientStream: Stream;
-  serverStream: Stream;
-  router: RouterConnectionImpl;
-  clientConnection?: ClientConnection | AgentConnection;
+  connection: ClientConnection | AgentConnection;
 }
 
 /**
@@ -157,87 +143,20 @@ export function createIntegrationHarness(
 ): IntegrationTestHarness {
   const { serverName = "Test Server", serverVersion = "1.0.0" } = options;
 
-  // Create server building blocks
-  const eventBus = new EventBusImpl();
-  const sessions = new SessionManagerImpl({ eventBus });
-  const agents = new AgentRegistryImpl({ eventBus });
-  const scopes = new ScopeManagerImpl({ eventBus });
-  const subscriptions = new SubscriptionManagerImpl({ eventBus, scopes });
-  const messages = new MessageRouterImpl({ eventBus, agents, scopes });
+  // Create server with MAPServer convenience wrapper
+  const server = new MAPServer({
+    name: serverName,
+    version: serverVersion,
+  });
 
   // Track delivered messages
   const deliveredMessages: DeliveredMessage[] = [];
-  messages.onDeliver((agentId, message) => {
+  server.messages.onDeliver((agentId, message) => {
     deliveredMessages.push({ agentId, message });
   });
 
-  // Combine handlers
-  const handlers = combineHandlers(
-    createConnectionHandlers({ sessions, serverName, serverVersion }),
-    createAgentHandlers({ agents }),
-    createScopeHandlers({ scopes }),
-    createMessageHandlers({ messages, scopes }),
-    createSubscriptionHandlers({ subscriptions, eventBus })
-  );
-
-  // Track active connections for cleanup
-  const activeConnections: ActiveConnection[] = [];
-
-  // Track event sequence numbers per subscription
-  const subscriptionSequences: Map<string, number> = new Map();
-
-  // Wire up event delivery to subscriptions
-  eventBus.on("*", (event: MAPEvent) => {
-    // Find matching subscriptions
-    const matchingSubIds = subscriptions.match(event);
-
-    for (const subId of matchingSubIds) {
-      const subscription = subscriptions.get(subId);
-      if (!subscription || subscription.paused) continue;
-
-      // Find the RouterConnection for this subscription's session
-      const activeConn = activeConnections.find(
-        (conn) => conn.router.session?.id === subscription.sessionId
-      );
-
-      // Skip if connection not found
-      if (!activeConn) continue;
-
-      // Increment sequence number
-      const seq = (subscriptionSequences.get(subId) ?? 0) + 1;
-      subscriptionSequences.set(subId, seq);
-
-      // Send event notification (catch errors for closed streams)
-      activeConn.router.notify(NOTIFICATION_METHODS.EVENT, {
-        subscriptionId: subId,
-        sequenceNumber: seq,
-        eventId: event.id,
-        timestamp: event.timestamp,
-        event,
-      }).catch(() => {
-        // Ignore notification errors for closed connections
-      });
-    }
-  });
-
-  /**
-   * Create a server-side router connection for a stream.
-   */
-  function createServerRouter(
-    serverStream: Stream,
-    role: "client" | "agent",
-    resumeToken?: string
-  ): RouterConnectionImpl {
-    const router = new RouterConnectionImpl({
-      stream: serverStream,
-      handlers,
-      sessions,
-      role,
-      name: `${role}-session`,
-      resumeToken,
-    });
-    return router;
-  }
+  // Track active client connections for cleanup
+  const activeClientConnections: ActiveClientConnection[] = [];
 
   /**
    * Create and connect a client.
@@ -250,18 +169,15 @@ export function createIntegrationHarness(
       name: name ?? "TestClient",
     });
 
-    // Create and start server router (with optional resume token)
-    const router = createServerRouter(serverStream, "client", resumeToken);
+    // Accept connection on server and start
+    const router = server.accept(serverStream, {
+      role: "client",
+      resumeToken,
+    });
     router.start();
 
     // Track for cleanup
-    const activeConn: ActiveConnection = {
-      clientStream,
-      serverStream,
-      router,
-      clientConnection: connection,
-    };
-    activeConnections.push(activeConn);
+    activeClientConnections.push({ clientStream, connection });
 
     // Connect client (with optional resume token)
     const connectResult = await connection.connect({ resumeToken });
@@ -271,10 +187,9 @@ export function createIntegrationHarness(
       connectResult,
       disconnect: async () => {
         const token = await connection.disconnect();
-        await router.close();
-        const idx = activeConnections.indexOf(activeConn);
+        const idx = activeClientConnections.findIndex(c => c.connection === connection);
         if (idx >= 0) {
-          activeConnections.splice(idx, 1);
+          activeClientConnections.splice(idx, 1);
         }
         return token;
       },
@@ -292,26 +207,22 @@ export function createIntegrationHarness(
     const [clientStream, serverStream] = createStreamPair();
 
     // Create agent connection with name and role in options
-    // AgentConnection.connect() handles registration automatically
     const connection = new AgentConnection(clientStream, {
       name,
       role,
     });
 
-    // Create and start server router (with optional resume token)
-    const router = createServerRouter(serverStream, "agent", resumeToken);
+    // Accept connection on server and start
+    const router = server.accept(serverStream, {
+      role: "agent",
+      resumeToken,
+    });
     router.start();
 
     // Track for cleanup
-    const activeConn: ActiveConnection = {
-      clientStream,
-      serverStream,
-      router,
-      clientConnection: connection,
-    };
-    activeConnections.push(activeConn);
+    activeClientConnections.push({ clientStream, connection });
 
-    // Connect agent (this also registers the agent, with optional resume token)
+    // Connect agent (this also registers the agent)
     const { connection: connResult, agent } = await connection.connect({ resumeToken });
 
     return {
@@ -325,10 +236,9 @@ export function createIntegrationHarness(
         } catch {
           // Ignore disconnect errors during cleanup
         }
-        await router.close();
-        const idx = activeConnections.indexOf(activeConn);
+        const idx = activeClientConnections.findIndex(c => c.connection === connection);
         if (idx >= 0) {
-          activeConnections.splice(idx, 1);
+          activeClientConnections.splice(idx, 1);
         }
         return token;
       },
@@ -353,35 +263,33 @@ export function createIntegrationHarness(
    * Clean up all connections and resources.
    */
   async function cleanup(): Promise<void> {
-    // Close all active connections
-    const closePromises = activeConnections.map(async (conn) => {
+    // Close all active client connections
+    const disconnectPromises = activeClientConnections.map(async (conn) => {
       try {
-        if (conn.clientConnection) {
-          await conn.clientConnection.disconnect();
-        }
+        await conn.connection.disconnect();
       } catch {
         // Ignore disconnect errors during cleanup
       }
-      try {
-        await conn.router.close();
-      } catch {
-        // Ignore close errors during cleanup
-      }
     });
 
-    await Promise.all(closePromises);
-    activeConnections.length = 0;
+    await Promise.all(disconnectPromises);
+    activeClientConnections.length = 0;
+
+    // Close server (cleans up all server-side connections)
+    await server.close({ force: true });
+
     deliveredMessages.length = 0;
   }
 
   return {
-    eventBus,
-    agents,
-    scopes,
-    sessions,
-    subscriptions,
-    messages,
-    handlers,
+    server,
+    eventBus: server.eventBus,
+    agents: server.agents,
+    scopes: server.scopes,
+    sessions: server.sessions,
+    subscriptions: server.subscriptions,
+    messages: server.messages,
+    handlers: server.handlers,
     createClient,
     createAgent,
     getDeliveredMessages,
@@ -397,7 +305,7 @@ export function waitForEvent(
   harness: IntegrationTestHarness,
   eventType: string,
   timeoutMs = 1000
-): Promise<unknown> {
+): Promise<MAPEvent> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       unsubscribe();

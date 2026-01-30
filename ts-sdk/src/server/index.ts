@@ -7,6 +7,16 @@
  */
 
 // =============================================================================
+// MAPServer - Convenience wrapper for building blocks
+// =============================================================================
+export {
+  MAPServer,
+  type MAPServerOptions,
+  type AcceptOptions,
+  type CloseOptions,
+} from "./server";
+
+// =============================================================================
 // Types - All server SDK interfaces and types
 // =============================================================================
 export * from "./types";

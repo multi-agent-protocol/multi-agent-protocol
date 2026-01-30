@@ -17,7 +17,6 @@ import type {
   RouterConnectionOptions,
 } from "../types";
 import type { MAPRequestBase, MAPResponse, MAPError } from "../../types";
-import { ulid } from "../../utils/ulid";
 
 /**
  * JSON-RPC error codes
@@ -54,6 +53,7 @@ export class RouterConnectionImpl implements RouterConnection {
   private _abortController: AbortController;
   private _started = false;
   private _running = false;
+  private _isClosed = false;
 
   constructor(options: RouterConnectionOptions) {
     this.stream = options.stream;
@@ -127,9 +127,10 @@ export class RouterConnectionImpl implements RouterConnection {
    * Stop processing and close the connection.
    */
   async close(): Promise<void> {
-    if (!this._running) {
+    if (this._isClosed) {
       return;
     }
+    this._isClosed = true;
 
     this._running = false;
     this._abortController.abort();

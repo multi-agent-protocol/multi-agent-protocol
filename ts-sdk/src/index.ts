@@ -24,6 +24,7 @@ export {
   type AnyMessage,
   ndJsonStream,
   websocketStream,
+  waitForOpen,
   createStreamPair,
 } from "./stream";
 
@@ -58,11 +59,13 @@ export {
   type StateChangeHandler,
   ClientConnection,
   type ClientConnectionOptions,
+  type ClientConnectOptions,
   type ReconnectionOptions,
   type ReconnectionEventType,
   type ReconnectionEventHandler,
   AgentConnection,
   type AgentConnectionOptions,
+  type AgentConnectOptions,
   type MessageHandler,
   type AgentReconnectionOptions,
   type AgentReconnectionEventType,
