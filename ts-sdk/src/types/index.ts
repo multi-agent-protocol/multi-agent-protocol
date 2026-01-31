@@ -117,6 +117,33 @@ export interface ParticipantCapabilities {
   };
   /** Streaming/backpressure capabilities */
   streaming?: StreamingCapabilities;
+
+  /**
+   * Protocols supported by this participant.
+   * Used for protocol capability discovery.
+   *
+   * @example ['acp', 'mcp']
+   */
+  protocols?: string[];
+
+  /**
+   * ACP (Agent Client Protocol) capability details.
+   * Only present if 'acp' is in the protocols array.
+   */
+  acp?: ACPCapability;
+
+  _meta?: Meta;
+}
+
+/**
+ * ACP capability advertisement.
+ * Describes what ACP features an agent supports.
+ */
+export interface ACPCapability {
+  /** ACP protocol version supported (e.g., '2024-10-07') */
+  version: string;
+  /** ACP features supported by this agent */
+  features?: string[];
   _meta?: Meta;
 }
 
@@ -520,6 +547,11 @@ export interface MessageMeta {
   priority?: MessagePriority;
   delivery?: DeliverySemantics;
   ttlMs?: number;
+  /**
+   * Protocol identifier for tunneled protocols (e.g., 'acp').
+   * Used to identify the protocol of the payload.
+   */
+  protocol?: string;
   _meta?: Meta;
 }
 
