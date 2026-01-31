@@ -236,3 +236,147 @@ export {
   // Errors
   InvalidAddressError,
 } from "./server/messages/address";
+
+// ===========================================================================
+// ACP - Agent Client Protocol types for ACP-over-MAP tunneling
+// ===========================================================================
+export {
+  // Core ID types
+  type ACPSessionId,
+  type ACPRequestId,
+  type ACPProtocolVersion,
+  type ACPToolCallId,
+  type ACPPermissionOptionId,
+  type ACPSessionModeId,
+  // JSON-RPC base types
+  type ACPRequest,
+  type ACPNotification,
+  type ACPSuccessResponse,
+  type ACPErrorResponse,
+  type ACPResponse,
+  type ACPMessage,
+  type ACPErrorObject,
+  // Error handling
+  type ACPErrorCode,
+  ACP_ERROR_CODES,
+  ACPError,
+  // Capabilities
+  type ACPMeta,
+  type ACPImplementation,
+  type ACPFileSystemCapability,
+  type ACPClientCapabilities,
+  type ACPPromptCapabilities,
+  type ACPMcpCapabilities,
+  type ACPSessionCapabilities,
+  type ACPAgentCapabilities,
+  // Authentication
+  type ACPAuthMethod,
+  type ACPInitializeRequest,
+  type ACPInitializeResponse,
+  type ACPAuthenticateRequest,
+  type ACPAuthenticateResponse,
+  // MCP Server
+  type ACPEnvVariable,
+  type ACPHttpHeader,
+  type ACPMcpServerStdio,
+  type ACPMcpServerHttp,
+  type ACPMcpServerSse,
+  type ACPMcpServer,
+  // Session
+  type ACPSessionMode,
+  type ACPSessionModeState,
+  type ACPNewSessionRequest,
+  type ACPNewSessionResponse,
+  type ACPLoadSessionRequest,
+  type ACPLoadSessionResponse,
+  type ACPSetSessionModeRequest,
+  type ACPSetSessionModeResponse,
+  // Content
+  type ACPAnnotations,
+  type ACPRole,
+  type ACPTextContent,
+  type ACPImageContent,
+  type ACPAudioContent,
+  type ACPResourceLink,
+  type ACPTextResourceContents,
+  type ACPBlobResourceContents,
+  type ACPEmbeddedResource,
+  type ACPContentBlock,
+  // Prompt
+  type ACPPromptRequest,
+  type ACPStopReason,
+  type ACPPromptResponse,
+  type ACPCancelNotification,
+  // Tool calls
+  type ACPToolKind,
+  type ACPToolCallStatus,
+  type ACPToolCallLocation,
+  type ACPDiff,
+  type ACPTerminal,
+  type ACPContent,
+  type ACPToolCallContent,
+  type ACPToolCall,
+  type ACPToolCallUpdate,
+  // Plan
+  type ACPPlanEntryPriority,
+  type ACPPlanEntryStatus,
+  type ACPPlanEntry,
+  type ACPPlan,
+  // Session updates
+  type ACPContentChunk,
+  type ACPAvailableCommand,
+  type ACPAvailableCommandsUpdate,
+  type ACPCurrentModeUpdate,
+  type ACPSessionInfoUpdate,
+  type ACPSessionUpdate,
+  type ACPSessionNotification,
+  // Permission
+  type ACPPermissionOptionKind,
+  type ACPPermissionOption,
+  type ACPRequestPermissionRequest,
+  type ACPSelectedPermissionOutcome,
+  type ACPCancelledPermissionOutcome,
+  type ACPRequestPermissionOutcome,
+  type ACPRequestPermissionResponse,
+  // File system
+  type ACPReadTextFileRequest,
+  type ACPReadTextFileResponse,
+  type ACPWriteTextFileRequest,
+  type ACPWriteTextFileResponse,
+  // Terminal
+  type ACPCreateTerminalRequest,
+  type ACPCreateTerminalResponse,
+  type ACPTerminalOutputRequest,
+  type ACPTerminalExitStatus,
+  type ACPTerminalOutputResponse,
+  type ACPReleaseTerminalRequest,
+  type ACPReleaseTerminalResponse,
+  type ACPWaitForTerminalExitRequest,
+  type ACPWaitForTerminalExitResponse,
+  type ACPKillTerminalCommandRequest,
+  type ACPKillTerminalCommandResponse,
+  // ACP-over-MAP envelope
+  type ACPContext,
+  type ACPEnvelope,
+  // Handler interfaces
+  type ACPClientHandlers,
+  type ACPAgentContext,
+  type ACPAgentHandler,
+  // Constants
+  ACP_PROTOCOL_VERSION,
+  ACP_METHODS,
+  // Type guards
+  isACPRequest,
+  isACPNotification,
+  isACPResponse,
+  isACPErrorResponse,
+  isACPSuccessResponse,
+  isACPEnvelope,
+  // Client-side stream connection
+  ACPStreamConnection,
+  createACPStream,
+  type ACPStreamOptions,
+  type ACPStreamEvents,
+  // Agent-side adapter
+  ACPAgentAdapter,
+} from "./acp";

@@ -10,6 +10,10 @@ import { BaseConnection, type BaseConnectionOptions, type ConnectionState } from
 import { Subscription, createSubscription, type EventHandler } from '../subscription';
 import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from '../utils';
 import {
+  ACPStreamConnection,
+  type ACPStreamOptions,
+} from '../acp/stream';
+import {
   CORE_METHODS,
   OBSERVATION_METHODS,
   STATE_METHODS,
@@ -165,6 +169,7 @@ export class ClientConnection {
   readonly #subscriptions: Map<SubscriptionId, Subscription> = new Map();
   readonly #subscriptionStates: Map<SubscriptionId, SubscriptionState> = new Map();
   readonly #reconnectionHandlers: Set<ReconnectionEventHandler> = new Set();
+  readonly #acpStreams: Map<string, ACPStreamConnection> = new Map();
   readonly #options: ClientConnectionOptions;
 
   #sessionId: SessionId | null = null;
@@ -326,6 +331,12 @@ export class ClientConnection {
       );
       resumeToken = result.resumeToken;
     } finally {
+      // Close all ACP streams
+      for (const stream of this.#acpStreams.values()) {
+        await stream.close();
+      }
+      this.#acpStreams.clear();
+
       // Close all subscriptions
       for (const subscription of this.#subscriptions.values()) {
         subscription._close();
@@ -576,6 +587,74 @@ export class ClientConnection {
     } finally {
       await responseSub.unsubscribe();
     }
+  }
+
+  // ===========================================================================
+  // ACP Streams
+  // ===========================================================================
+
+  /**
+   * Create a virtual ACP stream connection to an agent.
+   *
+   * This allows clients to interact with ACP-compatible agents using the
+   * familiar ACP interface while routing all messages through MAP.
+   *
+   * @param options - Stream configuration options
+   * @returns ACPStreamConnection instance ready for initialize()
+   *
+   * @example
+   * ```typescript
+   * const acp = client.createACPStream({
+   *   targetAgent: 'coding-agent-1',
+   *   client: {
+   *     requestPermission: async (req) => ({
+   *       outcome: { outcome: 'selected', optionId: 'allow' }
+   *     }),
+   *     sessionUpdate: async (update) => {
+   *       console.log('Agent update:', update);
+   *     }
+   *   }
+   * });
+   *
+   * await acp.initialize({
+   *   protocolVersion: 20241007,
+   *   clientInfo: { name: 'IDE', version: '1.0' }
+   * });
+   * const { sessionId } = await acp.newSession({ cwd: '/project', mcpServers: [] });
+   * const result = await acp.prompt({
+   *   sessionId,
+   *   prompt: [{ type: 'text', text: 'Hello' }]
+   * });
+   *
+   * await acp.close();
+   * ```
+   */
+  createACPStream(options: Omit<ACPStreamOptions, 'mapClient'>): ACPStreamConnection {
+    const stream = new ACPStreamConnection(this, options);
+
+    // Track the stream
+    this.#acpStreams.set(stream.streamId, stream);
+
+    // Remove from tracking when closed
+    stream.on('close', () => {
+      this.#acpStreams.delete(stream.streamId);
+    });
+
+    return stream;
+  }
+
+  /**
+   * Get an active ACP stream by ID.
+   */
+  getACPStream(streamId: string): ACPStreamConnection | undefined {
+    return this.#acpStreams.get(streamId);
+  }
+
+  /**
+   * Get all active ACP streams.
+   */
+  get acpStreams(): ReadonlyMap<string, ACPStreamConnection> {
+    return this.#acpStreams;
   }
 
   // ===========================================================================

@@ -652,10 +652,18 @@ export class TestServer {
       if (participant) {
         this.deliverMessage(recipientId, message);
         delivered.push(recipientId);
+
+        // Emit message_delivered event with full message for subscriptions
+        // Source is the sender (so fromAgents filter works for ACP-over-MAP)
+        this.emitEvent({
+          type: EVENT_TYPES.MESSAGE_DELIVERED,
+          source: senderAgentId ?? senderId,
+          data: { messageId, message, correlationId: params.meta?.correlationId },
+        });
       }
     }
 
-    // Emit message event
+    // Emit message_sent event
     this.emitEvent({
       type: EVENT_TYPES.MESSAGE_SENT,
       source: senderId,
@@ -1132,6 +1140,11 @@ export class TestServer {
     if (typeof address === 'string') {
       // Could be either a participant ID or agent ID
       return [this.#findParticipantForAgent(address) ?? address];
+    }
+
+    if ('participant' in address && address.participant) {
+      // Direct participant addressing
+      return this.#participants.has(address.participant) ? [address.participant] : [];
     }
 
     if ('agent' in address && !('system' in address)) {

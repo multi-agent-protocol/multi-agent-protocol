@@ -7,3 +7,12 @@
 export { TestServer, type TestServerOptions } from './server';
 export { TestClient, type TestClientOptions } from './client';
 export { TestAgent, type TestAgentOptions } from './agent';
+export {
+  TestACPAgent,
+  MockACPStream,
+  type TestACPAgentOptions,
+  // Integration testing
+  createACPTestAgent,
+  type ACPTestAgentOptions,
+  type ACPTestAgentResult,
+} from './test-acp-agent';
