@@ -70,3 +70,8 @@ export * from "./cleanup";
 // Federation - FederationGateway and federated decorators
 // =============================================================================
 export * from "./federation";
+
+// =============================================================================
+// Authentication - Pluggable authentication for MAP servers
+// =============================================================================
+export * from "./auth";

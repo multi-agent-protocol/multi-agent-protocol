@@ -37,6 +37,8 @@ import {
   combineHandlers,
   createConnectionHandlers,
 } from "./router";
+import { AuthManagerImpl, authMiddleware } from "./auth";
+import type { AuthManager } from "./auth";
 
 /**
  * Options for MAPServer
@@ -97,6 +99,37 @@ export interface MAPServerOptions {
   // === Capabilities ===
   /** Server capabilities advertised to clients */
   capabilities?: ParticipantCapabilities;
+
+  // === Authentication ===
+  /**
+   * Authentication configuration.
+   * If not provided, no authentication is enforced.
+   *
+   * @example
+   * ```typescript
+   * auth: {
+   *   required: true,
+   *   authenticators: [
+   *     new JWTAuthenticator({ jwksUrl: '...' }),
+   *     new APIKeyAuthenticator({ validateKey: ... }),
+   *   ],
+   * }
+   * ```
+   */
+  auth?: {
+    /** Is authentication required for connections? */
+    required?: boolean;
+    /** Registered authenticators */
+    authenticators?: import('./auth').Authenticator[];
+    /** OAuth2 authorization server metadata URL */
+    oauth2MetadataUrl?: string;
+    /** JWKS URL for token verification */
+    jwksUrl?: string;
+    /** Server realm identifier */
+    realm?: string;
+    /** Transports that bypass auth (e.g., { stdio: true }) */
+    bypassForTransports?: Record<string, boolean>;
+  };
 }
 
 /**
@@ -162,6 +195,8 @@ export class MAPServer {
   readonly subscriptions: SubscriptionManager;
   readonly messages: MessageRouter;
   readonly handlers: HandlerRegistry;
+  /** Authentication manager (if auth is configured) */
+  readonly auth: AuthManager | null;
 
   // === Private State ===
   readonly #options: MAPServerOptions;
@@ -173,8 +208,6 @@ export class MAPServer {
   #nextRouterId = 1;
 
   constructor(options: MAPServerOptions = {}) {
-    this.#options = options;
-
     // Create building blocks in dependency order
     this.eventBus =
       options.eventBus ??
@@ -221,6 +254,29 @@ export class MAPServer {
         queueStore: options.stores?.messages,
       });
 
+    // Set up authentication if configured
+    if (options.auth?.authenticators?.length) {
+      this.auth = new AuthManagerImpl({
+        required: options.auth.required ?? false,
+        authenticators: options.auth.authenticators,
+        oauth2MetadataUrl: options.auth.oauth2MetadataUrl,
+        jwksUrl: options.auth.jwksUrl,
+        realm: options.auth.realm,
+        bypassForTransports: options.auth.bypassForTransports,
+      });
+    } else {
+      this.auth = null;
+    }
+
+    // Build middleware chain (auth middleware first if configured)
+    const middleware: Middleware[] = [];
+    if (this.auth) {
+      middleware.push(authMiddleware(this.auth));
+    }
+    if (options.middleware) {
+      middleware.push(...options.middleware);
+    }
+
     // Compose handlers
     this.handlers =
       options.handlers ??
@@ -229,6 +285,7 @@ export class MAPServer {
           sessions: this.sessions,
           serverName: options.name ?? "MAPServer",
           serverVersion: options.version ?? "1.0.0",
+          authManager: this.auth ?? undefined,
         }),
         createAgentHandlers({ agents: this.agents }),
         createScopeHandlers({ scopes: this.scopes }),
@@ -239,6 +296,9 @@ export class MAPServer {
         }),
         options.additionalHandlers ?? {}
       );
+
+    // Store middleware for router creation
+    this.#options = { ...options, middleware };
 
     // Wire event delivery
     if (options.eventDelivery?.enabled !== false) {

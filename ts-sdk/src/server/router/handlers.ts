@@ -12,6 +12,8 @@ import type {
   HandlerContext,
   HandlerRegistry,
 } from "../types";
+import type { AuthManager } from "../auth";
+import type { AuthCredentials } from "../../types";
 
 /**
  * Options for creating connection handlers.
@@ -25,6 +27,8 @@ export interface ConnectionHandlerOptions {
   serverName?: string;
   /** Server version for connect response */
   serverVersion?: string;
+  /** Authentication manager (optional) */
+  authManager?: AuthManager;
 }
 
 /**
@@ -37,6 +41,10 @@ interface ConnectParams {
    * If not provided, all session agents are reclaimed automatically.
    */
   reclaimAgents?: string[];
+  /**
+   * Authentication credentials.
+   */
+  auth?: AuthCredentials;
 }
 
 /**
@@ -50,11 +58,44 @@ interface ConnectParams {
 export function createConnectionHandlers(
   options: ConnectionHandlerOptions
 ): HandlerRegistry {
-  const { sessions, agents, subscriptions, scopes, serverName, serverVersion } = options;
+  const { sessions, agents, subscriptions, scopes, serverName, serverVersion, authManager } = options;
 
   return {
     "map/connect": async (params: unknown, ctx: HandlerContext) => {
-      const { reclaimAgents } = (params ?? {}) as ConnectParams;
+      const { reclaimAgents, auth } = (params ?? {}) as ConnectParams;
+
+      // Handle authentication if authManager is configured
+      if (authManager) {
+        // Check if auth should be bypassed for this transport
+        const shouldBypass = authManager.shouldBypass({
+          transportType: ctx.session.metadata?.transportType as string | undefined,
+        });
+
+        if (!shouldBypass) {
+          if (auth) {
+            // Authenticate with provided credentials
+            const authResult = await authManager.authenticate(auth, {
+              transportType: ctx.session.metadata?.transportType as string | undefined,
+            });
+
+            if (authResult.success && authResult.principal) {
+              // Store principal on session
+              ctx.session.principal = authResult.principal;
+            } else if (authManager.config.required) {
+              // Auth failed and is required - return auth required response
+              return {
+                authRequired: authManager.getCapabilities(),
+                error: authResult.error,
+              };
+            }
+          } else if (authManager.config.required) {
+            // No auth provided but required - return auth required response
+            return {
+              authRequired: authManager.getCapabilities(),
+            };
+          }
+        }
+      }
 
       // Session is already created/resumed by RouterConnection.start()
       // Check if this is a resumed session by looking at whether it has pre-existing agents
@@ -109,6 +150,41 @@ export function createConnectionHandlers(
         reconnected: isResumed,
         ownedAgents: ctx.session.agentIds,
         reclaimedAgents: reclaimedAgents,
+        principal: ctx.session.principal,
+      };
+    },
+
+    "map/authenticate": async (params: unknown, ctx: HandlerContext) => {
+      const credentials = params as AuthCredentials;
+
+      if (!authManager) {
+        return {
+          success: true,
+          sessionId: ctx.session.id,
+          participantId: ctx.session.id,
+          principal: { id: "anonymous" },
+        };
+      }
+
+      const authResult = await authManager.authenticate(credentials, {
+        transportType: ctx.session.metadata?.transportType as string | undefined,
+      });
+
+      if (authResult.success && authResult.principal) {
+        // Store principal on session
+        ctx.session.principal = authResult.principal;
+
+        return {
+          success: true,
+          sessionId: ctx.session.id,
+          participantId: ctx.session.id,
+          principal: authResult.principal,
+        };
+      }
+
+      return {
+        success: false,
+        error: authResult.error,
       };
     },
 

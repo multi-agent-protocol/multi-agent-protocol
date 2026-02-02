@@ -389,6 +389,12 @@ export interface ServerSession {
   subscriptionIds: string[];
   /** Resume token for reconnection */
   resumeToken?: string;
+  /** Authenticated principal (if authenticated) */
+  principal?: {
+    id: string;
+    issuer?: string;
+    claims?: Record<string, unknown>;
+  };
 }
 
 /**
