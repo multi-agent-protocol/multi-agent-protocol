@@ -283,15 +283,147 @@ describe("Server Auth Integration", () => {
 
       const [clientStream, serverStream] = createStreamPair();
 
-      // Accept connection - transportType needs to be in session metadata
-      // For now, we test that the bypass config is honored when transport matches
-      const router = server.accept(serverStream, { role: "agent" });
+      // Accept connection with transportType that should bypass auth
+      const router = server.accept(serverStream, {
+        role: "agent",
+        transportType: "stdio",
+      });
       router.start();
 
-      // Note: The current implementation checks session.metadata.transportType
-      // which isn't set automatically. This test verifies the bypass logic exists.
-      // In a real scenario, the transport adapter would set this.
-      expect(server.auth?.config.bypassForTransports?.stdio).toBe(true);
+      const agent = new AgentConnection(clientStream, { name: "LocalAgent" });
+
+      // Should succeed without providing auth credentials
+      const { connection: result } = await agent.connect();
+
+      expect(result.sessionId).toBeDefined();
+      // No principal expected since auth was bypassed
+      await agent.disconnect();
+    });
+
+    it("should require auth for transports not in bypass list", async () => {
+      const server = new MAPServer({
+        name: "BypassServer",
+        auth: {
+          required: true,
+          authenticators: [
+            createSimpleAPIKeyAuthenticator({ key: "user" }),
+          ],
+          bypassForTransports: { stdio: true },
+        },
+      });
+
+      const [clientStream, serverStream] = createStreamPair();
+
+      // Accept connection with transportType that requires auth
+      const router = server.accept(serverStream, {
+        role: "client",
+        transportType: "websocket",
+      });
+      router.start();
+
+      const client = new ClientConnection(clientStream, { name: "RemoteClient" });
+
+      // Should require auth
+      const result = await client.connect();
+
+      expect(result.authRequired).toBeDefined();
+      expect(result.authRequired?.required).toBe(true);
+    });
+
+    it("should set transportType in session metadata", async () => {
+      const server = new MAPServer({ name: "MetadataServer" });
+
+      const [clientStream, serverStream] = createStreamPair();
+
+      const router = server.accept(serverStream, {
+        role: "client",
+        transportType: "websocket",
+        metadata: { customField: "test" },
+      });
+      router.start();
+
+      const client = new ClientConnection(clientStream, { name: "TestClient" });
+      await client.connect();
+
+      // Check session has correct metadata
+      const session = router.session;
+      expect(session.metadata.transportType).toBe("websocket");
+      expect(session.metadata.customField).toBe("test");
+
+      await client.disconnect();
+    });
+  });
+
+  // ===========================================================================
+  // Auth Refresh
+  // ===========================================================================
+
+  describe("Auth Refresh", () => {
+    let server: MAPServer;
+
+    beforeEach(() => {
+      server = new MAPServer({
+        name: "RefreshAuthServer",
+        auth: {
+          required: true,
+          authenticators: [
+            createSimpleAPIKeyAuthenticator({
+              "old-key": "user-1",
+              "new-key": "user-1",
+            }),
+          ],
+        },
+      });
+    });
+
+    it("should allow refreshing auth with new credentials", async () => {
+      const [clientStream, serverStream] = createStreamPair();
+      const router = server.accept(serverStream, { role: "client" });
+      router.start();
+
+      const client = new ClientConnection(clientStream, { name: "TestClient" });
+
+      // Initial auth
+      const connectResult = await client.connect({
+        auth: { method: "api-key", token: "old-key" },
+      });
+
+      expect(connectResult.principal?.id).toBe("user-1");
+
+      // Refresh with new key
+      const refreshResult = await client.refreshAuth({
+        method: "api-key",
+        token: "new-key",
+      });
+
+      expect(refreshResult.success).toBe(true);
+      expect(refreshResult.principal?.id).toBe("user-1");
+
+      await client.disconnect();
+    });
+
+    it("should reject refresh with invalid credentials", async () => {
+      const [clientStream, serverStream] = createStreamPair();
+      const router = server.accept(serverStream, { role: "client" });
+      router.start();
+
+      const client = new ClientConnection(clientStream, { name: "TestClient" });
+
+      // Initial auth
+      await client.connect({
+        auth: { method: "api-key", token: "old-key" },
+      });
+
+      // Try to refresh with invalid key
+      const refreshResult = await client.refreshAuth({
+        method: "api-key",
+        token: "invalid-key",
+      });
+
+      expect(refreshResult.success).toBe(false);
+      expect(refreshResult.error).toBeDefined();
+
+      await client.disconnect();
     });
   });
 

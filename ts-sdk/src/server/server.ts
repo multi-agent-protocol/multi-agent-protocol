@@ -129,6 +129,19 @@ export interface MAPServerOptions {
     realm?: string;
     /** Transports that bypass auth (e.g., { stdio: true }) */
     bypassForTransports?: Record<string, boolean>;
+    /**
+     * Auth expiration notification configuration.
+     * If enabled, the server will send `map/auth/expiring` notifications
+     * before tokens expire, giving clients time to refresh.
+     */
+    expirationNotification?: {
+      /** Enable expiration notifications (default: true if auth is configured) */
+      enabled?: boolean;
+      /** How often to check for expiring tokens in ms (default: 30000) */
+      checkIntervalMs?: number;
+      /** How far in advance to notify before expiration in ms (default: 300000 = 5 min) */
+      notifyBeforeMs?: number;
+    };
   };
 }
 
@@ -142,6 +155,13 @@ export interface AcceptOptions {
   name?: string;
   /** Resume token for reconnection */
   resumeToken?: string;
+  /**
+   * Transport type for auth bypass configuration.
+   * Common values: 'websocket', 'stdio', 'inprocess'
+   */
+  transportType?: string;
+  /** Additional metadata for the session */
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -205,6 +225,8 @@ export class MAPServer {
   readonly #subscriptionSequences: Map<string, number> = new Map();
   #eventDeliveryUnsubscribe?: () => void;
   #sessionTrackingUnsubscribe?: () => void;
+  #authExpirationInterval?: ReturnType<typeof setInterval>;
+  #notifiedSessions: Set<string> = new Set(); // Sessions that have been notified about expiring auth
   #nextRouterId = 1;
 
   constructor(options: MAPServerOptions = {}) {
@@ -307,6 +329,11 @@ export class MAPServer {
 
     // Wire session tracking for O(1) router lookup
     this.#wireSessionTracking();
+
+    // Start auth expiration monitoring if configured
+    if (this.auth && options.auth?.expirationNotification?.enabled !== false) {
+      this.startAuthExpirationMonitor();
+    }
   }
 
   // === Connection Tracking ===
@@ -339,6 +366,14 @@ export class MAPServer {
   accept(stream: Stream, options?: AcceptOptions): RouterConnectionImpl {
     const routerId = `router-${this.#nextRouterId++}`;
 
+    // Build metadata including transportType
+    const metadata: Record<string, unknown> = {
+      ...options?.metadata,
+    };
+    if (options?.transportType) {
+      metadata.transportType = options.transportType;
+    }
+
     const router = new RouterConnectionImpl({
       stream,
       handlers: this.handlers,
@@ -347,6 +382,7 @@ export class MAPServer {
       role: options?.role ?? "agent",
       name: options?.name,
       resumeToken: options?.resumeToken,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     });
 
     // Track the router
@@ -405,6 +441,9 @@ export class MAPServer {
       this.#sessionTrackingUnsubscribe();
       this.#sessionTrackingUnsubscribe = undefined;
     }
+
+    // Stop auth expiration monitoring
+    this.stopAuthExpirationMonitor();
 
     const routers = Array.from(this.#routers.values());
 
@@ -583,6 +622,94 @@ export class MAPServer {
         });
       }
       this.#sessionToRouter.delete(sessionId);
+    }
+  }
+
+  /**
+   * Start auth expiration monitoring.
+   *
+   * Periodically checks for sessions with expiring auth and sends
+   * `map/auth/expiring` notifications to give clients time to refresh.
+   *
+   * @param options - Override default configuration
+   */
+  startAuthExpirationMonitor(options?: {
+    checkIntervalMs?: number;
+    notifyBeforeMs?: number;
+  }): void {
+    if (this.#authExpirationInterval) {
+      return; // Already running
+    }
+
+    const checkIntervalMs = options?.checkIntervalMs ??
+      this.#options.auth?.expirationNotification?.checkIntervalMs ?? 30000;
+    const notifyBeforeMs = options?.notifyBeforeMs ??
+      this.#options.auth?.expirationNotification?.notifyBeforeMs ?? 300000; // 5 minutes
+
+    this.#authExpirationInterval = setInterval(() => {
+      this.#checkAuthExpiration(notifyBeforeMs);
+    }, checkIntervalMs);
+  }
+
+  /**
+   * Stop auth expiration monitoring.
+   */
+  stopAuthExpirationMonitor(): void {
+    if (this.#authExpirationInterval) {
+      clearInterval(this.#authExpirationInterval);
+      this.#authExpirationInterval = undefined;
+    }
+    this.#notifiedSessions.clear();
+  }
+
+  /**
+   * Check for sessions with expiring auth and send notifications.
+   */
+  #checkAuthExpiration(notifyBeforeMs: number): void {
+    const now = Date.now();
+    const expirationThreshold = now + notifyBeforeMs;
+
+    for (const router of this.#routers.values()) {
+      try {
+        const session = router.session;
+        if (!session?.principal?.expiresAt) {
+          continue;
+        }
+
+        const expiresAt = session.principal.expiresAt;
+
+        // Skip if already notified or not expiring soon
+        if (this.#notifiedSessions.has(session.id)) {
+          // Clear notification flag if token was refreshed (expiresAt changed)
+          continue;
+        }
+
+        // Check if expiring within threshold
+        if (expiresAt <= expirationThreshold && expiresAt > now) {
+          // Send expiring notification
+          router
+            .notify(NOTIFICATION_METHODS.AUTH_EXPIRING, {
+              expiresAt,
+              expiresInMs: expiresAt - now,
+            })
+            .then(() => {
+              this.#notifiedSessions.add(session.id);
+            })
+            .catch(() => {
+              // Connection may be dead
+              this.#removeDeadConnection(session.id);
+            });
+        }
+      } catch {
+        // Session not available, skip
+      }
+    }
+
+    // Clean up notified sessions that are no longer active
+    for (const sessionId of this.#notifiedSessions) {
+      if (!this.#sessionToRouter.has(sessionId)) {
+        this.#notifiedSessions.delete(sessionId);
+      }
     }
   }
 }

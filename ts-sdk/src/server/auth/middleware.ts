@@ -83,15 +83,25 @@ export function authMiddleware(
     }
 
     // Check if session has a principal (is authenticated)
-    const session = ctx.session as { principal?: unknown } | undefined;
+    const session = ctx.session as {
+      principal?: unknown;
+      metadata?: { transportType?: string };
+    } | undefined;
 
     if (!session?.principal) {
       // Auth required but session not authenticated
       if (authManager.config.required) {
-        throw new AuthenticationError(
-          'Authentication required',
-          'auth_required'
-        );
+        // Check if auth should be bypassed for this transport
+        const authContext: AuthContext = options.getAuthContext
+          ? options.getAuthContext(ctx)
+          : { transportType: session?.metadata?.transportType };
+
+        if (!authManager.shouldBypass(authContext)) {
+          throw new AuthenticationError(
+            'Authentication required',
+            'auth_required'
+          );
+        }
       }
     }
 

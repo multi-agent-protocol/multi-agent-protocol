@@ -1038,6 +1038,8 @@ export interface AuthPrincipal {
   issuer?: string;
   /** Additional claims from the credential */
   claims?: Record<string, unknown>;
+  /** Token expiration timestamp (Unix ms) - from JWT exp claim */
+  expiresAt?: number;
 }
 
 /**
@@ -2263,6 +2265,8 @@ export const NOTIFICATION_METHODS = {
   MESSAGE: 'map/message',
   /** Client acknowledges received events (for backpressure) */
   SUBSCRIBE_ACK: 'map/subscribe.ack',
+  /** Server notifies client that auth is about to expire */
+  AUTH_EXPIRING: 'map/auth/expiring',
 } as const;
 
 /** All MAP methods */
@@ -2311,6 +2315,9 @@ export const AUTH_ERROR_CODES = {
   AUTH_FAILED: 1001,
   TOKEN_EXPIRED: 1002,
   PERMISSION_DENIED: 1003,
+  INSUFFICIENT_SCOPE: 1004,
+  METHOD_NOT_SUPPORTED: 1005,
+  INVALID_CREDENTIALS: 1006,
 } as const;
 
 /** Routing error codes */

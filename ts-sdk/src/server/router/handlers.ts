@@ -210,6 +210,41 @@ export function createConnectionHandlers(
       };
     },
 
+    "map/auth/refresh": async (params: unknown, ctx: HandlerContext) => {
+      const rawCredentials = params as AuthCredentials | { method: string; token?: string };
+      const credentials = normalizeAuthParams(rawCredentials);
+
+      if (!authManager) {
+        return {
+          success: true,
+          principal: ctx.session.principal ?? { id: "anonymous" },
+        };
+      }
+
+      // Validate the new credentials
+      const authResult = await authManager.authenticate(credentials, {
+        transportType: ctx.session.metadata?.transportType as string | undefined,
+      });
+
+      if (authResult.success && authResult.principal) {
+        // Update principal on session
+        ctx.session.principal = authResult.principal;
+
+        return {
+          success: true,
+          principal: authResult.principal,
+        };
+      }
+
+      return {
+        success: false,
+        error: authResult.error ?? {
+          code: "invalid_credentials",
+          message: "Token refresh failed",
+        },
+      };
+    },
+
     "map/disconnect": async (_params: unknown, ctx: HandlerContext) => {
       // Disconnect session (makes it resumable)
       // NOTE: We preserve agents, subscriptions, and scope memberships for session resume.

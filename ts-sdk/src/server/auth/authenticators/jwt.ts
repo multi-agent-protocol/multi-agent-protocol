@@ -66,12 +66,14 @@ export interface JWTAuthenticatorOptions extends AuthenticatorOptions {
 
   /**
    * Transform claims to principal.
-   * By default uses 'sub' as principal ID.
+   * By default uses 'sub' as principal ID and 'exp' for expiresAt.
    */
   claimsToPrincipal?: (claims: MAPJWTClaims) => {
     id: string;
     issuer?: string;
     claims?: Record<string, unknown>;
+    /** Token expiration timestamp (Unix ms) */
+    expiresAt?: number;
   };
 
   /**
@@ -289,7 +291,11 @@ export class JWTAuthenticator implements Authenticator {
     id: string;
     issuer?: string;
     claims?: Record<string, unknown>;
+    expiresAt?: number;
   } {
+    // Convert exp (seconds since epoch) to expiresAt (ms since epoch)
+    const expiresAt = claims.exp ? claims.exp * 1000 : undefined;
+
     return {
       id: claims.sub ?? 'unknown',
       issuer: claims.iss,
@@ -301,6 +307,7 @@ export class JWTAuthenticator implements Authenticator {
         exp: claims.exp,
         iat: claims.iat,
       },
+      expiresAt,
     };
   }
 

@@ -14,6 +14,7 @@ import {
   LIFECYCLE_METHODS,
   STATE_METHODS,
   SCOPE_METHODS,
+  AUTH_METHODS,
   NOTIFICATION_METHODS,
   PROTOCOL_VERSION,
   type ParticipantCapabilities,
@@ -49,6 +50,9 @@ import {
   type ScopesCreateResponseResult,
   type ScopesJoinResponseResult,
   type ScopesLeaveResponseResult,
+  type AuthenticateRequestParams,
+  type AuthenticateResponseResult,
+  type AuthPrincipal,
 } from '../types';
 
 /**
@@ -338,6 +342,82 @@ export class AgentConnection {
     this.#connection._transitionTo('connected');
 
     return { connection: connectResult, agent: registerResult.agent };
+  }
+
+  /**
+   * Authenticate with the server after connection.
+   *
+   * Use this when the server returns `authRequired` in the connect response,
+   * indicating that authentication is needed before registering or accessing
+   * protected resources.
+   *
+   * @param auth - Authentication credentials
+   * @returns Authentication result with principal if successful
+   *
+   * @example
+   * ```typescript
+   * const agent = new AgentConnection(stream, { name: 'MyAgent' });
+   *
+   * // First connect to get auth requirements
+   * const connectResult = await agent.connectOnly();
+   *
+   * if (connectResult.authRequired) {
+   *   const authResult = await agent.authenticate({
+   *     method: 'api-key',
+   *     token: process.env.AGENT_API_KEY,
+   *   });
+   *
+   *   if (authResult.success) {
+   *     // Now register the agent
+   *     await agent.register({ name: 'MyAgent', role: 'worker' });
+   *   }
+   * }
+   * ```
+   */
+  async authenticate(auth: {
+    method: 'bearer' | 'api-key' | 'mtls' | 'none';
+    token?: string;
+  }): Promise<AuthenticateResponseResult> {
+    const params: AuthenticateRequestParams = {
+      method: auth.method,
+      credential: auth.token,
+    };
+
+    const result = await this.#connection.sendRequest<
+      AuthenticateRequestParams,
+      AuthenticateResponseResult
+    >(AUTH_METHODS.AUTHENTICATE, params);
+
+    // Update session info if auth succeeded
+    if (result.success && result.sessionId) {
+      this.#sessionId = result.sessionId;
+    }
+
+    return result;
+  }
+
+  /**
+   * Refresh authentication credentials.
+   *
+   * Use this to update credentials before they expire for long-lived connections.
+   *
+   * @param auth - New authentication credentials
+   * @returns Updated principal information
+   */
+  async refreshAuth(auth: {
+    method: "bearer" | "api-key" | "mtls" | "none";
+    token?: string;
+  }): Promise<{
+    success: boolean;
+    principal?: AuthPrincipal;
+    error?: { code: string; message: string };
+  }> {
+    const params: AuthenticateRequestParams = {
+      method: auth.method,
+      credential: auth.token,
+    };
+
+    return this.#connection.sendRequest(AUTH_METHODS.AUTH_REFRESH, params);
   }
 
   /**

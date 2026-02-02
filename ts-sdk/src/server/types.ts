@@ -885,6 +885,9 @@ export interface RouterConnectionOptions {
 
   /** Name for new sessions */
   name?: string;
+
+  /** Metadata for new sessions (e.g., transportType for auth bypass) */
+  metadata?: Record<string, unknown>;
 }
 
 // =============================================================================
