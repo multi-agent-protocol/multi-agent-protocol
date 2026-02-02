@@ -376,3 +376,14 @@ export function createStreamPair(): [Stream, Stream] {
 
   return [clientStream, serverStream];
 }
+
+// ===========================================================================
+// Agentic-Mesh Transport (optional peer dependency)
+// ===========================================================================
+
+export {
+  agenticMeshStream,
+  type AgenticMeshStreamConfig,
+  type MeshPeerEndpoint,
+  type MeshTransportAdapter,
+} from './agentic-mesh';

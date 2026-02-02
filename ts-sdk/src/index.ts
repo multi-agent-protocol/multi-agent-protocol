@@ -26,6 +26,11 @@ export {
   websocketStream,
   waitForOpen,
   createStreamPair,
+  // Agentic-mesh transport (optional peer dependency)
+  agenticMeshStream,
+  type AgenticMeshStreamConfig,
+  type MeshPeerEndpoint,
+  type MeshTransportAdapter,
 } from "./stream";
 
 // ===========================================================================
@@ -60,12 +65,14 @@ export {
   ClientConnection,
   type ClientConnectionOptions,
   type ClientConnectOptions,
+  type MeshConnectOptions,
   type ReconnectionOptions,
   type ReconnectionEventType,
   type ReconnectionEventHandler,
   AgentConnection,
   type AgentConnectionOptions,
   type AgentConnectOptions,
+  type AgentMeshConnectOptions,
   type MessageHandler,
   type AgentReconnectionOptions,
   type AgentReconnectionEventType,
@@ -236,6 +243,31 @@ export {
   // Errors
   InvalidAddressError,
 } from "./server/messages/address";
+
+// ===========================================================================
+// Mesh - Decentralized P2P mesh peer (optional agentic-mesh dependency)
+// ===========================================================================
+export {
+  MAPMeshPeer,
+  type MAPMeshPeerConfig,
+  type MeshGitConfig,
+  type MeshMapServerConfig,
+  type PeerEndpoint,
+  type TransportAdapter,
+  type CreateAgentConfig,
+  type LocalAgent,
+  type SendResult,
+  type CreateScopeConfig,
+  type GitSyncService,
+  type GitSyncClient,
+  type SyncOptions,
+  type SyncResult,
+  type PullOptions,
+  type PushOptions,
+  type CloneOptions,
+  type MeshEventSubscription,
+  type MAPMeshPeerEvents,
+} from "./mesh";
 
 // ===========================================================================
 // ACP - Agent Client Protocol types for ACP-over-MAP tunneling
