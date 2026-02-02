@@ -43,8 +43,26 @@ interface ConnectParams {
   reclaimAgents?: string[];
   /**
    * Authentication credentials.
+   * Supports both new format (credential) and legacy format (token).
    */
-  auth?: AuthCredentials;
+  auth?: AuthCredentials | { method: string; token?: string };
+}
+
+/**
+ * Normalize auth params to AuthCredentials format.
+ * Supports legacy { token } format for backward compatibility.
+ */
+function normalizeAuthParams(
+  auth: AuthCredentials | { method: string; token?: string }
+): AuthCredentials {
+  if ('credential' in auth) {
+    return auth;
+  }
+  // Legacy format with 'token' field
+  return {
+    method: auth.method as AuthCredentials['method'],
+    credential: auth.token,
+  };
 }
 
 /**
@@ -73,8 +91,11 @@ export function createConnectionHandlers(
 
         if (!shouldBypass) {
           if (auth) {
+            // Normalize auth params (support legacy 'token' field)
+            const normalizedAuth = normalizeAuthParams(auth);
+
             // Authenticate with provided credentials
-            const authResult = await authManager.authenticate(auth, {
+            const authResult = await authManager.authenticate(normalizedAuth, {
               transportType: ctx.session.metadata?.transportType as string | undefined,
             });
 
@@ -155,7 +176,8 @@ export function createConnectionHandlers(
     },
 
     "map/authenticate": async (params: unknown, ctx: HandlerContext) => {
-      const credentials = params as AuthCredentials;
+      const rawCredentials = params as AuthCredentials | { method: string; token?: string };
+      const credentials = normalizeAuthParams(rawCredentials);
 
       if (!authManager) {
         return {
