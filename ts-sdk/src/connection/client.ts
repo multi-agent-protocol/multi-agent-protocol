@@ -6,6 +6,11 @@
  */
 
 import { type Stream, websocketStream, waitForOpen } from '../stream';
+import type {
+  AgenticMeshStreamConfig,
+  MeshPeerEndpoint,
+  MeshTransportAdapter,
+} from '../stream/agentic-mesh';
 import { BaseConnection, type BaseConnectionOptions, type ConnectionState } from './base';
 import { Subscription, createSubscription, type EventHandler } from '../subscription';
 import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from '../utils';
@@ -156,6 +161,36 @@ export interface ClientConnectOptions {
 }
 
 /**
+ * Options for ClientConnection.connectMesh() static method
+ */
+export interface MeshConnectOptions {
+  /** The agentic-mesh transport adapter (Nebula, Tailscale, etc.) */
+  transport: MeshTransportAdapter;
+  /** Remote peer to connect to */
+  peer: MeshPeerEndpoint;
+  /** Local peer ID for identification */
+  localPeerId: string;
+  /** Client name for identification */
+  name?: string;
+  /** Client capabilities to advertise */
+  capabilities?: ParticipantCapabilities;
+  /** Authentication credentials */
+  auth?: {
+    method: 'bearer' | 'api-key' | 'mtls' | 'none';
+    token?: string;
+  };
+  /**
+   * Reconnection configuration.
+   * - `true` = enable with defaults
+   * - `false` or omitted = disabled
+   * - `ReconnectionOptions` = enable with custom settings
+   */
+  reconnection?: boolean | ReconnectionOptions;
+  /** Connection timeout in ms (default: 10000) */
+  timeout?: number;
+}
+
+/**
  * Client connection to a MAP system.
  *
  * Provides methods for:
@@ -270,6 +305,78 @@ export class ClientConnection {
 
     // Perform MAP handshake
     await client.connect({ auth: options?.auth });
+
+    return client;
+  }
+
+  /**
+   * Connect to a MAP server via agentic-mesh transport.
+   *
+   * Handles:
+   * - Dynamic import of agentic-mesh (optional peer dependency)
+   * - Stream creation over encrypted mesh tunnel
+   * - Auto-configuration of createStream for reconnection
+   * - Initial MAP protocol connect handshake
+   *
+   * Requires `agentic-mesh` to be installed as a peer dependency.
+   *
+   * @param options - Mesh connection options
+   * @returns Connected ClientConnection instance
+   *
+   * @example
+   * ```typescript
+   * import { createNebulaTransport } from 'agentic-mesh';
+   *
+   * const transport = createNebulaTransport({
+   *   configPath: '/etc/nebula/config.yml',
+   * });
+   *
+   * const client = await ClientConnection.connectMesh({
+   *   transport,
+   *   peer: { peerId: 'server', address: '10.0.0.1', port: 4242 },
+   *   localPeerId: 'my-client',
+   *   name: 'MeshClient',
+   *   reconnection: true
+   * });
+   *
+   * const agents = await client.listAgents();
+   * ```
+   */
+  static async connectMesh(options: MeshConnectOptions): Promise<ClientConnection> {
+    // Dynamic import for optional peer dependency
+    const { agenticMeshStream } = await import('../stream/agentic-mesh');
+
+    const streamConfig: AgenticMeshStreamConfig = {
+      transport: options.transport,
+      peer: options.peer,
+      localPeerId: options.localPeerId,
+      timeout: options.timeout,
+    };
+
+    // Create initial stream
+    const stream = await agenticMeshStream(streamConfig);
+
+    // Configure createStream for reconnection
+    const createStream = async () => agenticMeshStream(streamConfig);
+
+    // Normalize reconnection option
+    const reconnection =
+      options.reconnection === true
+        ? { enabled: true }
+        : typeof options.reconnection === 'object'
+          ? options.reconnection
+          : undefined;
+
+    // Create connection
+    const client = new ClientConnection(stream, {
+      name: options.name,
+      capabilities: options.capabilities,
+      createStream,
+      reconnection,
+    });
+
+    // Perform MAP handshake
+    await client.connect({ auth: options.auth });
 
     return client;
   }

@@ -6,6 +6,11 @@
  */
 
 import { type Stream, websocketStream, waitForOpen } from '../stream';
+import type {
+  AgenticMeshStreamConfig,
+  MeshPeerEndpoint,
+  MeshTransportAdapter,
+} from '../stream/agentic-mesh';
 import { BaseConnection, type BaseConnectionOptions, type ConnectionState } from './base';
 import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from '../utils';
 import { Subscription, createSubscription } from '../subscription';
@@ -150,6 +155,46 @@ export interface AgentConnectOptions {
 }
 
 /**
+ * Options for AgentConnection.connectMesh() static method
+ */
+export interface AgentMeshConnectOptions {
+  /** The agentic-mesh transport adapter (Nebula, Tailscale, etc.) */
+  transport: MeshTransportAdapter;
+  /** Remote peer to connect to */
+  peer: MeshPeerEndpoint;
+  /** Local peer ID for identification */
+  localPeerId: string;
+  /** Agent name */
+  name?: string;
+  /** Agent role */
+  role?: string;
+  /** Agent capabilities to advertise */
+  capabilities?: ParticipantCapabilities;
+  /** Agent visibility settings */
+  visibility?: AgentVisibility;
+  /** Parent agent ID (for child agents) */
+  parent?: AgentId;
+  /** Initial scopes to join */
+  scopes?: ScopeId[];
+  /** Initial metadata */
+  metadata?: Record<string, unknown>;
+  /** Authentication credentials */
+  auth?: {
+    method: 'bearer' | 'api-key' | 'mtls' | 'none';
+    token?: string;
+  };
+  /**
+   * Reconnection configuration.
+   * - `true` = enable with defaults
+   * - `false` or omitted = disabled
+   * - `AgentReconnectionOptions` = enable with custom settings
+   */
+  reconnection?: boolean | AgentReconnectionOptions;
+  /** Connection timeout in ms (default: 10000) */
+  timeout?: number;
+}
+
+/**
  * Agent connection to a MAP system.
  *
  * Provides methods for:
@@ -275,6 +320,85 @@ export class AgentConnection {
 
     // Perform MAP handshake and registration
     await agent.connect({ auth: options?.auth });
+
+    return agent;
+  }
+
+  /**
+   * Connect and register an agent via agentic-mesh transport.
+   *
+   * Handles:
+   * - Dynamic import of agentic-mesh (optional peer dependency)
+   * - Stream creation over encrypted mesh tunnel
+   * - Auto-configuration of createStream for reconnection
+   * - Initial MAP protocol connect handshake
+   * - Agent registration
+   *
+   * Requires `agentic-mesh` to be installed as a peer dependency.
+   *
+   * @param options - Mesh connection and agent options
+   * @returns Connected and registered AgentConnection instance
+   *
+   * @example
+   * ```typescript
+   * import { createNebulaTransport } from 'agentic-mesh';
+   *
+   * const transport = createNebulaTransport({
+   *   configPath: '/etc/nebula/config.yml',
+   * });
+   *
+   * const agent = await AgentConnection.connectMesh({
+   *   transport,
+   *   peer: { peerId: 'server', address: '10.0.0.1', port: 4242 },
+   *   localPeerId: 'my-agent',
+   *   name: 'MeshWorker',
+   *   role: 'processor',
+   *   reconnection: true
+   * });
+   *
+   * agent.onMessage(handleMessage);
+   * await agent.busy();
+   * ```
+   */
+  static async connectMesh(options: AgentMeshConnectOptions): Promise<AgentConnection> {
+    // Dynamic import for optional peer dependency
+    const { agenticMeshStream } = await import('../stream/agentic-mesh');
+
+    const streamConfig: AgenticMeshStreamConfig = {
+      transport: options.transport,
+      peer: options.peer,
+      localPeerId: options.localPeerId,
+      timeout: options.timeout,
+    };
+
+    // Create initial stream
+    const stream = await agenticMeshStream(streamConfig);
+
+    // Configure createStream for reconnection
+    const createStream = async () => agenticMeshStream(streamConfig);
+
+    // Normalize reconnection option
+    const reconnection =
+      options.reconnection === true
+        ? { enabled: true }
+        : typeof options.reconnection === 'object'
+          ? options.reconnection
+          : undefined;
+
+    // Create connection
+    const agent = new AgentConnection(stream, {
+      name: options.name,
+      role: options.role,
+      capabilities: options.capabilities,
+      visibility: options.visibility,
+      parent: options.parent,
+      scopes: options.scopes,
+      createStream,
+      reconnection,
+    });
+
+    // Perform MAP handshake and registration
+    await agent.connect({ auth: options.auth });
 
     return agent;
   }
