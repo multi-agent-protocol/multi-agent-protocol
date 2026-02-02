@@ -46,6 +46,7 @@ export class RouterConnectionImpl implements RouterConnection {
   private readonly role: SessionRole;
   private readonly name?: string;
   private readonly resumeToken?: string;
+  private readonly metadata?: Record<string, unknown>;
 
   private _session: ServerSession | null = null;
   private _closed: Promise<void>;
@@ -63,6 +64,7 @@ export class RouterConnectionImpl implements RouterConnection {
     this.role = options.role;
     this.name = options.name;
     this.resumeToken = options.resumeToken;
+    this.metadata = options.metadata;
 
     this._abortController = new AbortController();
     this._closed = new Promise((resolve) => {
@@ -101,17 +103,23 @@ export class RouterConnectionImpl implements RouterConnection {
       const result = this.sessions.resume(this.resumeToken);
       if (result.success && result.session) {
         this._session = result.session;
+        // Update metadata on resume if provided (e.g., transportType may change)
+        if (this.metadata) {
+          this._session.metadata = { ...this._session.metadata, ...this.metadata };
+        }
       } else {
         // Resume failed - create new session
         this._session = this.sessions.create({
           role: this.role,
           name: this.name,
+          metadata: this.metadata,
         });
       }
     } else {
       this._session = this.sessions.create({
         role: this.role,
         name: this.name,
+        metadata: this.metadata,
       });
     }
 

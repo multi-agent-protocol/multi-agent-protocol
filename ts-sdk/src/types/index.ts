@@ -975,13 +975,98 @@ export interface SessionInfo {
 // Authentication Types
 // =============================================================================
 
-export type AuthMethod = 'bearer' | 'api-key' | 'mtls' | 'none';
+/** Standard authentication methods defined by the protocol */
+export type StandardAuthMethod = 'bearer' | 'api-key' | 'mtls' | 'none';
 
+/** Authentication method - standard or custom (x- prefixed) */
+export type AuthMethod = StandardAuthMethod | `x-${string}`;
+
+/** Authentication error codes */
+export type AuthErrorCode =
+  | 'invalid_credentials'
+  | 'expired'
+  | 'insufficient_scope'
+  | 'method_not_supported'
+  | 'auth_required';
+
+/**
+ * Client-provided authentication credentials.
+ * Used in connect requests and authenticate calls.
+ */
+export interface AuthCredentials {
+  /** The authentication method being used */
+  method: AuthMethod;
+  /** The credential value (token, API key, etc.) */
+  credential?: string;
+  /** Method-specific additional data */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * @deprecated Use AuthCredentials instead
+ */
 export interface AuthParams {
   method: AuthMethod;
   token?: string;
 }
 
+/**
+ * Server-advertised authentication capabilities.
+ * Included in connect response when auth is required.
+ */
+export interface ServerAuthCapabilities {
+  /** Supported authentication methods (in preference order) */
+  methods: AuthMethod[];
+  /** Is authentication required to proceed? */
+  required: boolean;
+  /** OAuth2 authorization server metadata URL (RFC 8414) */
+  oauth2MetadataUrl?: string;
+  /** JWKS URL for local JWT verification (RFC 7517) */
+  jwksUrl?: string;
+  /** Realm identifier for this server */
+  realm?: string;
+}
+
+/**
+ * Authenticated principal information.
+ * Returned after successful authentication.
+ */
+export interface AuthPrincipal {
+  /** Unique identifier for this principal */
+  id: string;
+  /** Token issuer (for federated auth) */
+  issuer?: string;
+  /** Additional claims from the credential */
+  claims?: Record<string, unknown>;
+  /** Token expiration timestamp (Unix ms) - from JWT exp claim */
+  expiresAt?: number;
+}
+
+/**
+ * Authentication error details.
+ */
+export interface AuthError {
+  /** Error code */
+  code: AuthErrorCode;
+  /** Human-readable error message */
+  message: string;
+}
+
+/**
+ * Result of an authentication attempt.
+ */
+export interface AuthResult {
+  /** Whether authentication succeeded */
+  success: boolean;
+  /** Authenticated principal (if success) */
+  principal?: AuthPrincipal;
+  /** Error details (if failure) */
+  error?: AuthError;
+}
+
+/**
+ * Authentication for federated connections.
+ */
 export interface FederationAuth {
   method: 'bearer' | 'api-key' | 'mtls';
   credentials?: string;
@@ -1014,7 +1099,8 @@ export interface ConnectRequestParams {
   reclaimAgents?: AgentId[];
   /** Policy for unexpected disconnect */
   disconnectPolicy?: DisconnectPolicy;
-  auth?: AuthParams;
+  /** Authentication credentials */
+  auth?: AuthCredentials;
   _meta?: Meta;
 }
 
@@ -1038,6 +1124,10 @@ export interface ConnectResponseResult {
   reclaimedAgents?: Agent[];
   /** Currently owned agents */
   ownedAgents?: AgentId[];
+  /** Authenticated principal (if auth succeeded) */
+  principal?: AuthPrincipal;
+  /** Auth required but not provided - client should authenticate */
+  authRequired?: ServerAuthCapabilities;
   _meta?: Meta;
 }
 
@@ -1476,6 +1566,42 @@ export interface AuthRefreshResponseResult {
   accessToken: string;
   expiresAt: Timestamp;
   refreshToken?: string;
+  _meta?: Meta;
+}
+
+/**
+ * Parameters for map/authenticate request.
+ * Used when auth negotiation is required after initial connect.
+ */
+export interface AuthenticateRequestParams {
+  /** The authentication method being used */
+  method: AuthMethod;
+  /** The credential value (token, API key, etc.) */
+  credential?: string;
+  /** Method-specific additional data */
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+export interface AuthenticateRequest extends MAPRequestBase<AuthenticateRequestParams> {
+  method: 'map/authenticate';
+  params: AuthenticateRequestParams;
+}
+
+/**
+ * Response from map/authenticate request.
+ */
+export interface AuthenticateResponseResult {
+  /** Whether authentication succeeded */
+  success: boolean;
+  /** Session ID (if auth succeeded) */
+  sessionId?: SessionId;
+  /** Participant ID (if auth succeeded) */
+  participantId?: ParticipantId;
+  /** Authenticated principal (if auth succeeded) */
+  principal?: AuthPrincipal;
+  /** Error details (if auth failed) */
+  error?: AuthError;
   _meta?: Meta;
 }
 
@@ -2118,6 +2244,7 @@ export const SESSION_METHODS = {
 
 /** Auth methods */
 export const AUTH_METHODS = {
+  AUTHENTICATE: 'map/authenticate',
   AUTH_REFRESH: 'map/auth/refresh',
 } as const;
 
@@ -2138,6 +2265,8 @@ export const NOTIFICATION_METHODS = {
   MESSAGE: 'map/message',
   /** Client acknowledges received events (for backpressure) */
   SUBSCRIBE_ACK: 'map/subscribe.ack',
+  /** Server notifies client that auth is about to expire */
+  AUTH_EXPIRING: 'map/auth/expiring',
 } as const;
 
 /** All MAP methods */
@@ -2186,6 +2315,9 @@ export const AUTH_ERROR_CODES = {
   AUTH_FAILED: 1001,
   TOKEN_EXPIRED: 1002,
   PERMISSION_DENIED: 1003,
+  INSUFFICIENT_SCOPE: 1004,
+  METHOD_NOT_SUPPORTED: 1005,
+  INVALID_CREDENTIALS: 1006,
 } as const;
 
 /** Routing error codes */
@@ -2287,7 +2419,8 @@ export const CAPABILITY_REQUIREMENTS: Record<string, string[]> = {
   [SESSION_METHODS.SESSION_LOAD]: [],
   [SESSION_METHODS.SESSION_CLOSE]: [],
 
-  // Auth
+  // Auth (no capability required - anyone can authenticate)
+  [AUTH_METHODS.AUTHENTICATE]: [],
   [AUTH_METHODS.AUTH_REFRESH]: [],
 
   // Permissions (system-only, no capability check - enforced by participant type)
