@@ -7,13 +7,13 @@ $btn-primary-color: #1e3a5f;
 // Slightly lighter blue for hover states
 $link-color-hover: #2c5282;
 
-// Background and text
+// Background and text - cool grays (no warm tones)
 $body-background-color: #ffffff;
-$body-text-color: #1a202c;
-$sidebar-color: #f7fafc;
+$body-text-color: #18181b;
+$sidebar-color: #f4f4f5;
 
-// Code blocks
-$code-background-color: #f1f5f9;
+// Code blocks - cool gray
+$code-background-color: #f4f4f5;
 
 // Search highlight
 $search-result-preview-color: #1e3a5f;
@@ -21,18 +21,22 @@ $search-result-preview-color: #1e3a5f;
 // Feedback/buttons
 $feedback-color: #1e3a5f;
 
-// Navigation
-$nav-child-link-color: #2d3748;
+// Navigation - cool grays
+$nav-child-link-color: #3f3f46;
 $nav-child-link-color-active: #1e3a5f;
 
 // Headers
 $heading-color: #1a365d;
 
-// Border colors
-$border-color: #e2e8f0;
+// Border colors - cool gray
+$border-color: #e4e4e7;
 
-// Table colors
-$table-background-color: #f8fafc;
+// Table colors - cool gray
+$table-background-color: #fafafa;
 
 // Callout note color (was purple, now blue)
 $note-color: #1e3a5f;
+
+// Content width - wider layout
+$content-width: 1100px;
+$nav-width: 280px;
