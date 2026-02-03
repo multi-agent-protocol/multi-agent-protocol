@@ -32,14 +32,13 @@ How clients connect to MAP systems and the flexibility of subscription patterns.
 
 ### Phase 1: Transport Connection
 
-```
-Client                                    MAP System
-   │                                          │
-   │─────── Transport Connect ───────────────►│
-   │        (WebSocket, stdio, etc.)          │
-   │                                          │
-   │◄────── Transport Accept ────────────────│
-   │                                          │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant MAP System
+
+    Client->>MAP System: Transport Connect (WebSocket, stdio, etc.)
+    MAP System-->>Client: Transport Accept
 ```
 
 ### Phase 2: MAP Handshake
@@ -208,19 +207,17 @@ await client.subscribe({
 
 ## Connection State Management
 
-```
-┌──────────┐  connect   ┌────────────┐  ready    ┌─────────┐
-│ INITIAL  │ ─────────► │ CONNECTING │ ────────► │ ACTIVE  │
-└──────────┘            └────────────┘           └────┬────┘
-                                                      │
-     ┌────────────────────────────────────────────────┤
-     │                                                │
-     │  disconnect                            error   │
-     ▼                                                ▼
-┌──────────┐                                 ┌────────────┐
-│ CLOSED   │ ◄─────────────────────────────  │ RECONNECT  │
-└──────────┘        max retries              └────────────┘
-                    exceeded
+```mermaid
+stateDiagram-v2
+    [*] --> INITIAL
+    INITIAL --> CONNECTING: connect
+    CONNECTING --> ACTIVE: ready
+    CONNECTING --> CLOSED: handshake failure
+    ACTIVE --> CLOSED: disconnect
+    ACTIVE --> RECONNECT: error
+    RECONNECT --> ACTIVE: reconnect success
+    RECONNECT --> CLOSED: max retries exceeded
+    CLOSED --> [*]
 ```
 
 ### State Transitions
@@ -256,22 +253,17 @@ const client = new ClientConnection(stream, {
 
 ### Reconnection Protocol
 
-```
-Client                                    Server
-   │                                         │
-   │◄─────── Connection Lost ───────────────│
-   │                                         │
-   │         (backoff: 1s, 2s, 4s, 8s...)   │
-   │                                         │
-   │─────── Reconnect Attempt ─────────────►│
-   │                                         │
-   │◄────── Connection Accept ──────────────│
-   │                                         │
-   │─────── map/reconnect ─────────────────►│
-   │         { sessionId, lastEventId }     │
-   │                                         │
-   │◄────── Reconnect Response ─────────────│
-   │         { restored, missedEvents }     │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+
+    Server--xClient: Connection Lost
+    Note over Client: Backoff: 1s, 2s, 4s, 8s...
+    Client->>Server: Reconnect Attempt
+    Server-->>Client: Connection Accept
+    Client->>Server: map/reconnect {sessionId, lastEventId}
+    Server-->>Client: Reconnect Response {restored, missedEvents}
 ```
 
 ### Session Restoration

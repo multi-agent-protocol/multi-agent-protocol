@@ -32,18 +32,18 @@ This example brings together all MAP concepts:
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                        MAP Server                             │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐    │
-│  │ EventBus │ │ Agents   │ │ Scopes   │ │ Subscriptions│    │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────────┘    │
-└─────┬────────────────┬──────────────────────┬────────────────┘
-      │                │                      │
-┌─────▼─────┐    ┌─────▼─────┐         ┌─────▼─────┐
-│ Dashboard │    │Coordinator│         │  Workers  │
-│  (Client) │    │  (Agent)  │         │  (Agents) │
-└───────────┘    └───────────┘         └───────────┘
+```mermaid
+flowchart TB
+    subgraph Server["MAP Server"]
+        EventBus["EventBus"]
+        Agents["Agents"]
+        Scopes["Scopes"]
+        Subs["Subscriptions"]
+    end
+
+    Dashboard["Dashboard<br/>(Client)"] --> Server
+    Coordinator["Coordinator<br/>(Agent)"] --> Server
+    Workers["Workers<br/>(Agents)"] --> Server
 ```
 
 ---

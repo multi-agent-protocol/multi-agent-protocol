@@ -80,17 +80,17 @@ for await (const event of subscription) {
 
 ## Three Participant Types
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                      MAP Server                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
-│  │   EventBus  │  │   Agents    │  │   Scopes    │     │
-│  └─────────────┘  └─────────────┘  └─────────────┘     │
-└─────────────────────────────────────────────────────────┘
-        │                   │                    │
-    ┌───┴───┐          ┌────┴────┐          ┌───┴───┐
-    │ Agent │          │ Client  │          │ Agent │
-    └───────┘          └─────────┘          └───────┘
+```mermaid
+flowchart TB
+    subgraph Server["MAP Server"]
+        EventBus["EventBus"]
+        Agents["Agents"]
+        Scopes["Scopes"]
+    end
+
+    Agent1["Agent"] --> Server
+    Client["Client"] --> Server
+    Agent2["Agent"] --> Server
 ```
 
 | Type | Role | Capabilities |

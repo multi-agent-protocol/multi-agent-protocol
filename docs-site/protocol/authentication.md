@@ -126,14 +126,13 @@ type AuthErrorCode =
 
 When the client knows the server's auth requirements:
 
-```
-Client                                         Server
-   │                                              │
-   │──── map/connect ────────────────────────────►│
-   │     { participantType, auth: { method, credential } }
-   │                                              │
-   │◄─── connect response ───────────────────────│
-   │     { session, principal }                   │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+
+    Client->>Server: map/connect {participantType, auth}
+    Server-->>Client: connect response {session, principal}
 ```
 
 ```typescript
@@ -173,34 +172,28 @@ Client                                         Server
 
 When the client doesn't know auth requirements:
 
-```
-Client                                         Server
-   │                                              │
-   │──── map/connect ────────────────────────────►│
-   │     { participantType }                      │
-   │                                              │
-   │◄─── auth_required response ─────────────────│
-   │     { authRequired: { methods, required } }  │
-   │                                              │
-   │──── map/authenticate ───────────────────────►│
-   │     { method, credential }                   │
-   │                                              │
-   │◄─── auth result ────────────────────────────│
-   │     { success, session, principal }          │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+
+    Client->>Server: map/connect {participantType}
+    Server-->>Client: auth_required {methods, required}
+    Client->>Server: map/authenticate {method, credential}
+    Server-->>Client: auth result {success, session, principal}
 ```
 
 ### Flow 3: No Authentication
 
 For trusted local connections:
 
-```
-Client                                         Server
-   │                                              │
-   │──── map/connect ────────────────────────────►│
-   │     { participantType }                      │
-   │                                              │
-   │◄─── connect response ───────────────────────│
-   │     { session }                              │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+
+    Client->>Server: map/connect {participantType}
+    Server-->>Client: connect response {session}
 ```
 
 ---

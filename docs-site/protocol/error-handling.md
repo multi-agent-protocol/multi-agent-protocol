@@ -214,23 +214,13 @@ interface CircuitBreakerState {
 
 ### Circuit Breaker States
 
-```
-           failure
-    ┌──────────────────┐
-    │                  ▼
-┌───────┐         ┌────────┐
-│CLOSED │         │  OPEN  │
-└───┬───┘         └───┬────┘
-    │                 │
-    │ success         │ timeout
-    │                 ▼
-    │           ┌───────────┐
-    └───────────│ HALF-OPEN │
-        success └───────────┘
-                      │
-                      │ failure
-                      ▼
-                 back to OPEN
+```mermaid
+stateDiagram-v2
+    [*] --> CLOSED
+    CLOSED --> OPEN: failure threshold
+    OPEN --> HALF_OPEN: timeout
+    HALF_OPEN --> CLOSED: success
+    HALF_OPEN --> OPEN: failure
 ```
 
 ---
@@ -268,22 +258,17 @@ const DEFAULT_RETRY: RetryPolicy = {
 
 ## Reconnection Protocol
 
-```
-Client                                    Server
-   │                                         │
-   │◄─────── Connection Lost ───────────────│
-   │                                         │
-   │         (backoff: 1s, 2s, 4s, 8s...)   │
-   │                                         │
-   │─────── Reconnect Attempt ─────────────►│
-   │                                         │
-   │◄────── Connection Accept ──────────────│
-   │                                         │
-   │─────── map/reconnect ─────────────────►│
-   │         { lastEventId, subscriptions } │
-   │                                         │
-   │◄────── Reconnect Response ─────────────│
-   │         { missedEvents, newState }     │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+
+    Server--xClient: Connection Lost
+    Note over Client: Backoff: 1s, 2s, 4s, 8s...
+    Client->>Server: Reconnect Attempt
+    Server-->>Client: Connection Accept
+    Client->>Server: map/reconnect {lastEventId, subscriptions}
+    Server-->>Client: Reconnect Response {missedEvents, newState}
 ```
 
 ---

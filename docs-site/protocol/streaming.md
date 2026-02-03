@@ -67,22 +67,15 @@ System-wide event streaming, subscriptions, filtering, and replay.
 
 ### Subscription Lifecycle
 
-```
-   ┌──────────┐    subscribe    ┌──────────┐
-   │ inactive │ ──────────────► │  active  │
-   └──────────┘                 └────┬─────┘
-        ▲                            │
-        │                            │ pause
-        │                            ▼
-        │                       ┌──────────┐
-        │         resume        │  paused  │
-        │ ◄──────────────────── └────┬─────┘
-        │                            │
-        │ unsubscribe               │ unsubscribe
-        │                            ▼
-        └─────────────────────► ┌──────────┐
-                                │  closed  │
-                                └──────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> inactive
+    inactive --> active: subscribe
+    active --> paused: pause
+    paused --> active: resume
+    active --> closed: unsubscribe
+    paused --> closed: unsubscribe
+    closed --> [*]
 ```
 
 ---
