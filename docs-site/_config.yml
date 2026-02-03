@@ -1,0 +1,90 @@
+title: Multi-Agent Protocol
+description: A JSON-RPC based protocol for observing, coordinating, and routing messages within multi-agent AI systems.
+baseurl: "/multi-agent-protocol"
+url: "https://multi-agent-protocol.github.io"
+
+theme: just-the-docs
+color_scheme: light
+
+# Repository
+gh_repo: multi-agent-protocol/multi-agent-protocol
+
+# Aux links (top right)
+aux_links:
+  GitHub: https://github.com/multi-agent-protocol/multi-agent-protocol
+aux_links_new_tab: true
+
+# Footer
+gh_edit_link: true
+gh_edit_link_text: "Edit this page on GitHub"
+gh_edit_repository: "https://github.com/multi-agent-protocol/multi-agent-protocol"
+gh_edit_branch: "main"
+gh_edit_source: docs-site
+gh_edit_view_mode: "edit"
+
+# Footer content
+footer_content: "Copyright &copy; 2024 Multi-Agent Protocol Contributors. Distributed under the MIT License."
+
+# Back to top link
+back_to_top: true
+back_to_top_text: "Back to top"
+
+# Search (Lunr.js)
+search_enabled: true
+search:
+  heading_level: 2
+  previews: 3
+  preview_words_before: 5
+  preview_words_after: 10
+  tokenizer_separator: /[\s/]+/
+  rel_url: true
+  button: false
+
+# Navigation
+nav_sort: case_insensitive
+
+# Heading anchor links
+heading_anchors: true
+
+# External links open in new tab
+external_links:
+  enabled: true
+  new_tab: true
+
+# Callouts
+callouts_level: quiet
+callouts:
+  highlight:
+    color: yellow
+  important:
+    title: Important
+    color: blue
+  new:
+    title: New
+    color: green
+  note:
+    title: Note
+    color: purple
+  warning:
+    title: Warning
+    color: red
+
+# Code copy button
+enable_copy_code_button: true
+
+# Mermaid diagrams
+mermaid:
+  version: "10.6.0"
+
+# Collections for organizing content
+collections:
+  protocol:
+    output: true
+    permalink: /:collection/:name/
+
+# Exclude from build
+exclude:
+  - Gemfile.lock
+  - node_modules/
+  - vendor/
+  - README.md
