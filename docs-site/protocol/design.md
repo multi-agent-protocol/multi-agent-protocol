@@ -223,37 +223,21 @@ interface MAPScope {
 
 Agents can be both clients (to their parent/system) and servers (to their children):
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                  Hierarchical Composition                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  External Client (dashboard)                                    │
-│       │                                                         │
-│       │ MAP (websocket)                                         │
-│       ▼                                                         │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  Coordinator                                             │   │
-│  │  - Is a participant (receives from client)               │   │
-│  │  - Acts as MAP router for children                       │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│       │                     │                                   │
-│       │ MAP (inprocess)     │ MAP (inprocess)                   │
-│       ▼                     ▼                                   │
-│  ┌──────────────┐     ┌──────────────┐                         │
-│  │  Worker A    │     │  Worker B    │                         │
-│  │  - Participant│     │  - Participant│                        │
-│  │  - Has children│    └──────────────┘                         │
-│  └──────────────┘                                               │
-│       │                                                         │
-│       │ MAP (stdio)                                             │
-│       ▼                                                         │
-│  ┌──────────────┐                                               │
-│  │  Sub-agent   │  (Claude Code pattern)                        │
-│  │  - Leaf node │                                               │
-│  └──────────────┘                                               │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    Client["External Client<br/>(dashboard)"]
+
+    subgraph System["MAP System"]
+        Coordinator["Coordinator<br/>• Receives from client<br/>• Routes to children"]
+        WorkerA["Worker A<br/>• Participant<br/>• Has children"]
+        WorkerB["Worker B<br/>• Participant"]
+        SubAgent["Sub-agent<br/>• Leaf node<br/>(Claude Code pattern)"]
+    end
+
+    Client -->|"MAP (websocket)"| Coordinator
+    Coordinator -->|"MAP (inprocess)"| WorkerA
+    Coordinator -->|"MAP (inprocess)"| WorkerB
+    WorkerA -->|"MAP (stdio)"| SubAgent
 ```
 
 ---

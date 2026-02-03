@@ -31,23 +31,18 @@ This example demonstrates:
 
 ## Architecture
 
-```
-        ┌────────────────────────────┐
-        │         Client             │
-        │   (submits tasks)          │
-        └─────────────┬──────────────┘
-                      │
-        ┌─────────────▼──────────────┐
-        │       Coordinator          │
-        │   (assigns to workers)     │
-        └─────────────┬──────────────┘
-                      │
-          ┌───────────┼───────────┐
-          │           │           │
-    ┌─────▼─────┐┌────▼────┐┌────▼────┐
-    │  Worker 1 ││ Worker 2 ││ Worker 3│
-    │  (scope)  ││ (scope)  ││ (scope) │
-    └───────────┘└──────────┘└─────────┘
+```mermaid
+flowchart TB
+    Client["Client<br/>(submits tasks)"]
+    Coord["Coordinator<br/>(assigns to workers)"]
+    W1["Worker 1<br/>(scope)"]
+    W2["Worker 2<br/>(scope)"]
+    W3["Worker 3<br/>(scope)"]
+
+    Client --> Coord
+    Coord --> W1
+    Coord --> W2
+    Coord --> W3
 ```
 
 ---

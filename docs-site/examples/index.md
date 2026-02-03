@@ -3,7 +3,6 @@ title: Examples
 nav_order: 5
 has_children: true
 description: "Complete working examples"
-permalink: /examples/
 ---
 
 # Examples
@@ -43,47 +42,49 @@ Each example has its own README with specific instructions.
 
 One coordinator, multiple workers:
 
-```
-         ┌────────┐
-         │ Client │
-         └───┬────┘
-             │
-       ┌─────▼─────┐
-       │Coordinator│
-       └─────┬─────┘
-         ┌───┼───┐
-         │   │   │
-      ┌──▼┐┌─▼─┐┌▼──┐
-      │W1 ││W2 ││W3 │
-      └───┘└───┘└───┘
+```mermaid
+flowchart TB
+    Client["Client"]
+    Coord["Coordinator"]
+    W1["Worker 1"]
+    W2["Worker 2"]
+    W3["Worker 3"]
+
+    Client --> Coord
+    Coord --> W1
+    Coord --> W2
+    Coord --> W3
 ```
 
 ### Pattern 2: Peer Collaboration
 
 Agents collaborate through shared scopes:
 
-```
-    ┌───────────┐
-    │  Scope A  │
-    │ ┌───┐┌───┐│
-    │ │A1 ││A2 ││
-    │ └───┘└───┘│
-    └───────────┘
-         │
-    ┌────▼──────┐
-    │  Scope B  │
-    │ ┌───┐┌───┐│
-    │ │A2 ││A3 ││
-    │ └───┘└───┘│
-    └───────────┘
+```mermaid
+flowchart TB
+    subgraph ScopeA["Scope A"]
+        A1["Agent 1"]
+        A2["Agent 2"]
+    end
+
+    subgraph ScopeB["Scope B"]
+        A2b["Agent 2"]
+        A3["Agent 3"]
+    end
+
+    A2 -.->|"shared"| A2b
 ```
 
 ### Pattern 3: Pipeline
 
 Sequential processing through agents:
 
-```
-Input ─► Agent1 ─► Agent2 ─► Agent3 ─► Output
+```mermaid
+flowchart LR
+    Input["Input"] --> Agent1["Agent 1"]
+    Agent1 --> Agent2["Agent 2"]
+    Agent2 --> Agent3["Agent 3"]
+    Agent3 --> Output["Output"]
 ```
 
 ---

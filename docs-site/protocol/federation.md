@@ -30,27 +30,29 @@ Multi-system communication enabling distributed multi-agent architectures.
 
 ## Federation Model
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                          Federation                                       │
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌─────────────────────────┐         ┌─────────────────────────┐        │
-│  │   MAP System "Alpha"    │         │   MAP System "Beta"     │        │
-│  │                         │         │                         │        │
-│  │  Internal agents:       │         │  Internal agents:       │        │
-│  │  ┌───┐ ┌───┐ ┌───┐     │   MAP   │  ┌───┐ ┌───┐ ┌───┐     │        │
-│  │  │ A │ │ B │ │ C │     │ ◄─────► │  │ X │ │ Y │ │ Z │     │        │
-│  │  └─┬─┘ └─┬─┘ └─┬─┘     │         │  └─┬─┘ └─┬─┘ └─┬─┘     │        │
-│  │    └─────┼─────┘       │         │    └─────┼─────┘       │        │
-│  │          │             │         │          │             │        │
-│  │    ┌─────▼─────┐       │         │    ┌─────▼─────┐       │        │
-│  │    │  Gateway  │───────┼─────────┼────│  Gateway  │       │        │
-│  │    └───────────┘       │         │    └───────────┘       │        │
-│  │                         │         │                         │        │
-│  └─────────────────────────┘         └─────────────────────────┘        │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Alpha["MAP System 'Alpha'"]
+        A1["Agent A"]
+        A2["Agent B"]
+        A3["Agent C"]
+        GW1["Gateway"]
+        A1 --> GW1
+        A2 --> GW1
+        A3 --> GW1
+    end
+
+    subgraph Beta["MAP System 'Beta'"]
+        B1["Agent X"]
+        B2["Agent Y"]
+        B3["Agent Z"]
+        GW2["Gateway"]
+        B1 --> GW2
+        B2 --> GW2
+        B3 --> GW2
+    end
+
+    GW1 <-->|"MAP Protocol"| GW2
 ```
 
 ---
@@ -268,45 +270,84 @@ type MAPFederatedAddress =
 
 Alpha handles task coordination, Beta handles execution:
 
-```
-Alpha System                    Beta System
-┌────────────────┐              ┌────────────────┐
-│  Coordinator   │              │   Executor 1   │
-│       │        │    tasks     │       │        │
-│  Gateway  ─────┼──────────────┼─► Gateway      │
-│       │        │   results    │       │        │
-│  Dashboard ◄───┼──────────────┼───────┘        │
-└────────────────┘              │   Executor 2   │
-                                └────────────────┘
+```mermaid
+flowchart LR
+    subgraph Alpha["Alpha System"]
+        Coord["Coordinator"]
+        GW1["Gateway"]
+        Dash["Dashboard"]
+        Coord --> GW1
+        GW1 --> Dash
+    end
+
+    subgraph Beta["Beta System"]
+        GW2["Gateway"]
+        Ex1["Executor 1"]
+        Ex2["Executor 2"]
+        GW2 --> Ex1
+        GW2 --> Ex2
+    end
+
+    GW1 -->|"tasks"| GW2
+    GW2 -->|"results"| GW1
 ```
 
 ### Use Case 2: Regional Distribution
 
 Each region has its own MAP system:
 
-```
-US Region          EU Region          Asia Region
-┌──────────┐       ┌──────────┐       ┌──────────┐
-│  Agents  │       │  Agents  │       │  Agents  │
-│    │     │       │    │     │       │    │     │
-│ Gateway ─┼───────┼─ Gateway ┼───────┼─ Gateway │
-└──────────┘       └──────────┘       └──────────┘
-              Global Coordination
+```mermaid
+flowchart TB
+    subgraph US["US Region"]
+        USA["Agents"]
+        USGW["Gateway"]
+        USA --> USGW
+    end
+
+    subgraph EU["EU Region"]
+        EUA["Agents"]
+        EUGW["Gateway"]
+        EUA --> EUGW
+    end
+
+    subgraph Asia["Asia Region"]
+        AsiaA["Agents"]
+        AsiaGW["Gateway"]
+        AsiaA --> AsiaGW
+    end
+
+    USGW <--> EUGW
+    EUGW <--> AsiaGW
+    USGW <--> AsiaGW
+
+    Coord["Global Coordination"]
+    USGW -.-> Coord
+    EUGW -.-> Coord
+    AsiaGW -.-> Coord
 ```
 
 ### Use Case 3: Secure Computation
 
 Sensitive work isolated in secure system:
 
-```
-Public System              Secure System (airgapped)
-┌──────────────┐           ┌──────────────┐
-│  User Agent  │           │  Processor   │
-│      │       │  encrypt  │      │       │
-│  Gateway ────┼───────────┼─► Gateway    │
-│      │       │  results  │      │       │
-│  Aggregator ◄┼───────────┼──────┘       │
-└──────────────┘           └──────────────┘
+```mermaid
+flowchart LR
+    subgraph Public["Public System"]
+        User["User Agent"]
+        PGW["Gateway"]
+        Agg["Aggregator"]
+        User --> PGW
+        PGW --> Agg
+    end
+
+    subgraph Secure["Secure System (airgapped)"]
+        SGW["Gateway"]
+        Proc["Processor"]
+        SGW --> Proc
+    end
+
+    PGW -->|"encrypted"| SGW
+    SGW -->|"results"| PGW
 ```
 
 ---

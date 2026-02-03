@@ -3,7 +3,6 @@ title: Getting Started
 nav_order: 2
 has_children: true
 description: "Get started with the Multi-Agent Protocol SDK"
-permalink: /getting-started/
 ---
 
 # Getting Started

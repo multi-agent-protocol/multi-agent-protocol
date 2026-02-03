@@ -108,13 +108,13 @@ _map/                   # ACP-compat mode (via extMethod)
 
 ### Phase 1: Connection Establishment
 
-```
-Client                                    Server
-   │                                         │
-   │─────── Transport Connect ──────────────►│
-   │                                         │
-   │◄────── Transport Accept ───────────────│
-   │                                         │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+
+    Client->>Server: Transport Connect
+    Server-->>Client: Transport Accept
 ```
 
 ### Phase 2: Protocol Negotiation

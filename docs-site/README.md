@@ -44,8 +44,7 @@ docs-site/
 ├── sdk/                     # SDK documentation
 │   ├── guides/              # Integration guides
 │   └── api/                 # API reference
-├── examples/                # Working examples
-└── advanced/                # Advanced topics
+└── examples/                # Working examples
 ```
 
 ## Adding New Pages
@@ -66,17 +65,13 @@ description: "Brief description"
 
 ## Search
 
-Search is powered by [Lunr.js](https://lunrjs.com/) via the just-the-docs theme. It's automatically enabled and indexes all pages.
+Search is powered by [Lunr.js](https://lunrjs.com/) and is automatically enabled, indexing all pages.
 
 ## Deployment
 
 The site automatically deploys to GitHub Pages when changes are pushed to the `main` branch. See `.github/workflows/docs.yml` for the deployment configuration.
 
-## Theme
-
-This site uses [just-the-docs](https://just-the-docs.github.io/just-the-docs/), a documentation theme for Jekyll with built-in search.
-
-### Customization
+## Customization
 
 - Colors and branding: Edit `_config.yml`
 - Custom CSS: Create `_sass/custom/custom.scss`
@@ -84,5 +79,4 @@ This site uses [just-the-docs](https://just-the-docs.github.io/just-the-docs/), 
 
 ## Links
 
-- [just-the-docs documentation](https://just-the-docs.github.io/just-the-docs/)
 - [Jekyll documentation](https://jekyllrb.com/docs/)

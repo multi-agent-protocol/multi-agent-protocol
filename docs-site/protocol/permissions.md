@@ -30,36 +30,24 @@ The 4-layer permission model controlling visibility and actions.
 
 ## Visibility Layers
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Visibility Stack                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  LAYER 4: Agent Permissions                              │   │
-│  │  What can this agent see/do within its allowed scope?   │   │
-│  └────────────────────────────┬────────────────────────────┘   │
-│                               │                                 │
-│  ┌────────────────────────────▼────────────────────────────┐   │
-│  │  LAYER 3: Scope Permissions                              │   │
-│  │  What's visible within this scope? Who can see it?      │   │
-│  └────────────────────────────┬────────────────────────────┘   │
-│                               │                                 │
-│  ┌────────────────────────────▼────────────────────────────┐   │
-│  │  LAYER 2: Client Permissions                             │   │
-│  │  What can this client see/do in the system?             │   │
-│  └────────────────────────────┬────────────────────────────┘   │
-│                               │                                 │
-│  ┌────────────────────────────▼────────────────────────────┐   │
-│  │  LAYER 1: System Configuration                           │   │
-│  │  What does the system expose at all?                    │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Stack["Visibility Stack"]
+        L4["Layer 4: Agent Permissions<br/>What can this agent see/do?"]
+        L3["Layer 3: Scope Permissions<br/>What's visible in this scope?"]
+        L2["Layer 2: Client Permissions<br/>What can this client see/do?"]
+        L1["Layer 1: System Configuration<br/>What does the system expose?"]
 
-Evaluation: Check Layer 1 → Layer 2 → Layer 3 → Layer 4
-Result: Most restrictive wins (all layers must allow)
+        L4 --> L3
+        L3 --> L2
+        L2 --> L1
+    end
+
+    Request["Request"] --> L4
+    L1 --> Result["Result: Most restrictive wins"]
 ```
+
+**Evaluation:** Check Layer 1 → Layer 2 → Layer 3 → Layer 4. All layers must allow.
 
 ---
 

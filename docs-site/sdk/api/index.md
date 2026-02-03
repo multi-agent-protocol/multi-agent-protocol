@@ -4,7 +4,6 @@ parent: SDK
 nav_order: 2
 has_children: true
 description: "SDK API reference documentation"
-permalink: /sdk/api/
 ---
 
 # API Reference

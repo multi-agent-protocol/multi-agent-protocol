@@ -3,7 +3,6 @@ title: SDK
 nav_order: 4
 has_children: true
 description: "MAP TypeScript SDK documentation"
-permalink: /sdk/
 ---
 
 # TypeScript SDK

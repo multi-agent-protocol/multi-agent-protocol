@@ -105,20 +105,20 @@ The protocol defines **27 methods** across three tiers:
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                      MAP Server                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
-│  │   EventBus  │  │   Agents    │  │   Scopes    │     │
-│  └─────────────┘  └─────────────┘  └─────────────┘     │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
-│  │  Sessions   │  │Subscriptions│  │  Messages   │     │
-│  └─────────────┘  └─────────────┘  └─────────────┘     │
-└─────────────────────────────────────────────────────────┘
-        │                   │                    │
-    ┌───┴───┐          ┌────┴────┐          ┌───┴───┐
-    │ Agent │          │ Client  │          │ Agent │
-    └───────┘          └─────────┘          └───────┘
+```mermaid
+flowchart TB
+    subgraph Server["MAP Server"]
+        EventBus["EventBus"]
+        Agents["Agents"]
+        Scopes["Scopes"]
+        Sessions["Sessions"]
+        Subs["Subscriptions"]
+        Messages["Messages"]
+    end
+
+    Agent1["Agent"] --> Server
+    Client["Client"] --> Server
+    Agent2["Agent"] --> Server
 ```
 
 ---
