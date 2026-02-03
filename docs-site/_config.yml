@@ -30,7 +30,7 @@ gh_edit_source: docs-site
 gh_edit_view_mode: "edit"
 
 # Footer content
-footer_content: "Copyright &copy; 2024 Multi-Agent Protocol Contributors. Distributed under the MIT License."
+footer_content: "Copyright &copy; 2026 Multi-Agent Protocol Contributors. Distributed under the MIT License."
 
 # Back to top link
 back_to_top: true
