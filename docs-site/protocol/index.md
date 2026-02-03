@@ -3,7 +3,6 @@ title: Protocol
 nav_order: 3
 has_children: true
 description: "MAP Protocol Specification"
-permalink: /protocol/
 ---
 
 # Protocol Specification

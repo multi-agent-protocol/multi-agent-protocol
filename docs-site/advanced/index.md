@@ -3,7 +3,6 @@ title: Advanced
 nav_order: 6
 has_children: true
 description: "Advanced topics and reference"
-permalink: /advanced/
 ---
 
 # Advanced Topics

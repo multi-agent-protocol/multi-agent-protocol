@@ -3,7 +3,6 @@ title: Examples
 nav_order: 5
 has_children: true
 description: "Complete working examples"
-permalink: /examples/
 ---
 
 # Examples

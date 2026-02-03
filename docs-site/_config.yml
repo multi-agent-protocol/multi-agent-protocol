@@ -6,6 +6,13 @@ url: "https://multi-agent-protocol.github.io"
 theme: just-the-docs
 color_scheme: light
 
+# Use default layout for all pages
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: "default"
+
 # Repository
 gh_repo: multi-agent-protocol/multi-agent-protocol
 
@@ -72,19 +79,13 @@ callouts:
 # Code copy button
 enable_copy_code_button: true
 
-# Mermaid diagrams
+# Mermaid diagrams - enabled globally
 mermaid:
+  # Version from https://cdn.jsdelivr.net/npm/mermaid/
   version: "10.6.0"
-
-# Collections for organizing content
-collections:
-  protocol:
-    output: true
-    permalink: /:collection/:name/
 
 # Exclude from build
 exclude:
   - Gemfile.lock
   - node_modules/
   - vendor/
-  - README.md
