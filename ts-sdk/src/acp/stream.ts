@@ -725,6 +725,39 @@ export class ACPStreamConnection extends EventEmitter {
   }
 
   // ===========================================================================
+  // Extension Methods
+  // ===========================================================================
+
+  /**
+   * Call an ACP extension method on the target agent.
+   *
+   * Extension methods are prefixed with "_" (e.g., "_macro/spawnAgent").
+   * The agent must support the extension for this to succeed.
+   *
+   * @param method - The extension method name (e.g., "_macro/spawnAgent")
+   * @param params - Parameters to pass to the extension method
+   * @returns The result from the extension method
+   *
+   * @example
+   * ```typescript
+   * const result = await acp.callExtension("_macro/spawnAgent", {
+   *   task: "Implement feature X",
+   *   cwd: "/project"
+   * });
+   * ```
+   */
+  async callExtension<TParams = unknown, TResult = unknown>(
+    method: string,
+    params?: TParams
+  ): Promise<TResult> {
+    if (!this.#initialized) {
+      throw new Error("Must call initialize() before callExtension()");
+    }
+
+    return this.#sendRequest<TParams, TResult>(method, params);
+  }
+
+  // ===========================================================================
   // Lifecycle
   // ===========================================================================
 
