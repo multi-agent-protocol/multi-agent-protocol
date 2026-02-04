@@ -12,6 +12,8 @@ import type {
   HandlerContext,
   HandlerRegistry,
 } from "../types";
+import type { AuthManager } from "../auth";
+import type { AuthCredentials } from "../../types";
 
 /**
  * Options for creating connection handlers.
@@ -25,6 +27,8 @@ export interface ConnectionHandlerOptions {
   serverName?: string;
   /** Server version for connect response */
   serverVersion?: string;
+  /** Authentication manager (optional) */
+  authManager?: AuthManager;
 }
 
 /**
@@ -37,6 +41,28 @@ interface ConnectParams {
    * If not provided, all session agents are reclaimed automatically.
    */
   reclaimAgents?: string[];
+  /**
+   * Authentication credentials.
+   * Supports both new format (credential) and legacy format (token).
+   */
+  auth?: AuthCredentials | { method: string; token?: string };
+}
+
+/**
+ * Normalize auth params to AuthCredentials format.
+ * Supports legacy { token } format for backward compatibility.
+ */
+function normalizeAuthParams(
+  auth: AuthCredentials | { method: string; token?: string }
+): AuthCredentials {
+  if ('credential' in auth) {
+    return auth;
+  }
+  // Legacy format with 'token' field
+  return {
+    method: auth.method as AuthCredentials['method'],
+    credential: auth.token,
+  };
 }
 
 /**
@@ -50,11 +76,47 @@ interface ConnectParams {
 export function createConnectionHandlers(
   options: ConnectionHandlerOptions
 ): HandlerRegistry {
-  const { sessions, agents, subscriptions, scopes, serverName, serverVersion } = options;
+  const { sessions, agents, subscriptions, scopes, serverName, serverVersion, authManager } = options;
 
   return {
     "map/connect": async (params: unknown, ctx: HandlerContext) => {
-      const { reclaimAgents } = (params ?? {}) as ConnectParams;
+      const { reclaimAgents, auth } = (params ?? {}) as ConnectParams;
+
+      // Handle authentication if authManager is configured
+      if (authManager) {
+        // Check if auth should be bypassed for this transport
+        const shouldBypass = authManager.shouldBypass({
+          transportType: ctx.session.metadata?.transportType as string | undefined,
+        });
+
+        if (!shouldBypass) {
+          if (auth) {
+            // Normalize auth params (support legacy 'token' field)
+            const normalizedAuth = normalizeAuthParams(auth);
+
+            // Authenticate with provided credentials
+            const authResult = await authManager.authenticate(normalizedAuth, {
+              transportType: ctx.session.metadata?.transportType as string | undefined,
+            });
+
+            if (authResult.success && authResult.principal) {
+              // Store principal on session
+              ctx.session.principal = authResult.principal;
+            } else if (authManager.config.required) {
+              // Auth failed and is required - return auth required response
+              return {
+                authRequired: authManager.getCapabilities(),
+                error: authResult.error,
+              };
+            }
+          } else if (authManager.config.required) {
+            // No auth provided but required - return auth required response
+            return {
+              authRequired: authManager.getCapabilities(),
+            };
+          }
+        }
+      }
 
       // Session is already created/resumed by RouterConnection.start()
       // Check if this is a resumed session by looking at whether it has pre-existing agents
@@ -109,6 +171,77 @@ export function createConnectionHandlers(
         reconnected: isResumed,
         ownedAgents: ctx.session.agentIds,
         reclaimedAgents: reclaimedAgents,
+        principal: ctx.session.principal,
+      };
+    },
+
+    "map/authenticate": async (params: unknown, ctx: HandlerContext) => {
+      const rawCredentials = params as AuthCredentials | { method: string; token?: string };
+      const credentials = normalizeAuthParams(rawCredentials);
+
+      if (!authManager) {
+        return {
+          success: true,
+          sessionId: ctx.session.id,
+          participantId: ctx.session.id,
+          principal: { id: "anonymous" },
+        };
+      }
+
+      const authResult = await authManager.authenticate(credentials, {
+        transportType: ctx.session.metadata?.transportType as string | undefined,
+      });
+
+      if (authResult.success && authResult.principal) {
+        // Store principal on session
+        ctx.session.principal = authResult.principal;
+
+        return {
+          success: true,
+          sessionId: ctx.session.id,
+          participantId: ctx.session.id,
+          principal: authResult.principal,
+        };
+      }
+
+      return {
+        success: false,
+        error: authResult.error,
+      };
+    },
+
+    "map/auth/refresh": async (params: unknown, ctx: HandlerContext) => {
+      const rawCredentials = params as AuthCredentials | { method: string; token?: string };
+      const credentials = normalizeAuthParams(rawCredentials);
+
+      if (!authManager) {
+        return {
+          success: true,
+          principal: ctx.session.principal ?? { id: "anonymous" },
+        };
+      }
+
+      // Validate the new credentials
+      const authResult = await authManager.authenticate(credentials, {
+        transportType: ctx.session.metadata?.transportType as string | undefined,
+      });
+
+      if (authResult.success && authResult.principal) {
+        // Update principal on session
+        ctx.session.principal = authResult.principal;
+
+        return {
+          success: true,
+          principal: authResult.principal,
+        };
+      }
+
+      return {
+        success: false,
+        error: authResult.error ?? {
+          code: "invalid_credentials",
+          message: "Token refresh failed",
+        },
       };
     },
 

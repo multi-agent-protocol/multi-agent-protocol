@@ -6,6 +6,11 @@
  */
 
 import { type Stream, websocketStream, waitForOpen } from '../stream';
+import type {
+  AgenticMeshStreamConfig,
+  MeshPeerEndpoint,
+  MeshTransportAdapter,
+} from '../stream/agentic-mesh';
 import { BaseConnection, type BaseConnectionOptions, type ConnectionState } from './base';
 import { Subscription, createSubscription, type EventHandler } from '../subscription';
 import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from '../utils';
@@ -19,6 +24,7 @@ import {
   STATE_METHODS,
   STEERING_METHODS,
   SESSION_METHODS,
+  AUTH_METHODS,
   NOTIFICATION_METHODS,
   PROTOCOL_VERSION,
   type ParticipantCapabilities,
@@ -61,6 +67,9 @@ import {
   type ReplayResponseResult,
   type ReplayedEvent,
   type SubscriptionAckParams,
+  type AuthenticateRequestParams,
+  type AuthenticateResponseResult,
+  type AuthPrincipal,
 } from '../types';
 
 /**
@@ -153,6 +162,36 @@ export interface ClientConnectOptions {
   reconnection?: boolean | ReconnectionOptions;
   /** Connection timeout in ms (default: 10000) */
   connectTimeout?: number;
+}
+
+/**
+ * Options for ClientConnection.connectMesh() static method
+ */
+export interface MeshConnectOptions {
+  /** The agentic-mesh transport adapter (Nebula, Tailscale, etc.) */
+  transport: MeshTransportAdapter;
+  /** Remote peer to connect to */
+  peer: MeshPeerEndpoint;
+  /** Local peer ID for identification */
+  localPeerId: string;
+  /** Client name for identification */
+  name?: string;
+  /** Client capabilities to advertise */
+  capabilities?: ParticipantCapabilities;
+  /** Authentication credentials */
+  auth?: {
+    method: 'bearer' | 'api-key' | 'mtls' | 'none';
+    token?: string;
+  };
+  /**
+   * Reconnection configuration.
+   * - `true` = enable with defaults
+   * - `false` or omitted = disabled
+   * - `ReconnectionOptions` = enable with custom settings
+   */
+  reconnection?: boolean | ReconnectionOptions;
+  /** Connection timeout in ms (default: 10000) */
+  timeout?: number;
 }
 
 /**
@@ -274,6 +313,78 @@ export class ClientConnection {
     return client;
   }
 
+  /**
+   * Connect to a MAP server via agentic-mesh transport.
+   *
+   * Handles:
+   * - Dynamic import of agentic-mesh (optional peer dependency)
+   * - Stream creation over encrypted mesh tunnel
+   * - Auto-configuration of createStream for reconnection
+   * - Initial MAP protocol connect handshake
+   *
+   * Requires `agentic-mesh` to be installed as a peer dependency.
+   *
+   * @param options - Mesh connection options
+   * @returns Connected ClientConnection instance
+   *
+   * @example
+   * ```typescript
+   * import { createNebulaTransport } from 'agentic-mesh';
+   *
+   * const transport = createNebulaTransport({
+   *   configPath: '/etc/nebula/config.yml',
+   * });
+   *
+   * const client = await ClientConnection.connectMesh({
+   *   transport,
+   *   peer: { peerId: 'server', address: '10.0.0.1', port: 4242 },
+   *   localPeerId: 'my-client',
+   *   name: 'MeshClient',
+   *   reconnection: true
+   * });
+   *
+   * const agents = await client.listAgents();
+   * ```
+   */
+  static async connectMesh(options: MeshConnectOptions): Promise<ClientConnection> {
+    // Dynamic import for optional peer dependency
+    const { agenticMeshStream } = await import('../stream/agentic-mesh');
+
+    const streamConfig: AgenticMeshStreamConfig = {
+      transport: options.transport,
+      peer: options.peer,
+      localPeerId: options.localPeerId,
+      timeout: options.timeout,
+    };
+
+    // Create initial stream
+    const stream = await agenticMeshStream(streamConfig);
+
+    // Configure createStream for reconnection
+    const createStream = async () => agenticMeshStream(streamConfig);
+
+    // Normalize reconnection option
+    const reconnection =
+      options.reconnection === true
+        ? { enabled: true }
+        : typeof options.reconnection === 'object'
+          ? options.reconnection
+          : undefined;
+
+    // Create connection
+    const client = new ClientConnection(stream, {
+      name: options.name,
+      capabilities: options.capabilities,
+      createStream,
+      reconnection,
+    });
+
+    // Perform MAP handshake
+    await client.connect({ auth: options.auth });
+
+    return client;
+  }
+
   // ===========================================================================
   // Connection Lifecycle
   // ===========================================================================
@@ -313,6 +424,77 @@ export class ClientConnection {
     this.#lastConnectOptions = options;
 
     return result;
+  }
+
+  /**
+   * Authenticate with the server after connection.
+   *
+   * Use this when the server returns `authRequired` in the connect response,
+   * indicating that authentication is needed before accessing protected resources.
+   *
+   * @param auth - Authentication credentials
+   * @returns Authentication result with principal if successful
+   *
+   * @example
+   * ```typescript
+   * const connectResult = await client.connect();
+   *
+   * if (connectResult.authRequired) {
+   *   const authResult = await client.authenticate({
+   *     method: 'api-key',
+   *     token: process.env.API_KEY,
+   *   });
+   *
+   *   if (authResult.success) {
+   *     console.log('Authenticated as:', authResult.principal?.id);
+   *   }
+   * }
+   * ```
+   */
+  async authenticate(auth: {
+    method: 'bearer' | 'api-key' | 'mtls' | 'none';
+    token?: string;
+  }): Promise<AuthenticateResponseResult> {
+    const params: AuthenticateRequestParams = {
+      method: auth.method,
+      credential: auth.token,
+    };
+
+    const result = await this.#connection.sendRequest<
+      AuthenticateRequestParams,
+      AuthenticateResponseResult
+    >(AUTH_METHODS.AUTHENTICATE, params);
+
+    // Update session info if auth succeeded
+    if (result.success && result.sessionId) {
+      this.#sessionId = result.sessionId;
+    }
+
+    return result;
+  }
+
+  /**
+   * Refresh authentication credentials.
+   *
+   * Use this to update credentials before they expire for long-lived connections.
+   *
+   * @param auth - New authentication credentials
+   * @returns Updated principal information
+   */
+  async refreshAuth(auth: {
+    method: "bearer" | "api-key" | "mtls" | "none";
+    token?: string;
+  }): Promise<{
+    success: boolean;
+    principal?: AuthPrincipal;
+    error?: { code: string; message: string };
+  }> {
+    const params: AuthenticateRequestParams = {
+      method: auth.method,
+      credential: auth.token,
+    };
+
+    return this.#connection.sendRequest(AUTH_METHODS.AUTH_REFRESH, params);
   }
 
   /**

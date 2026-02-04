@@ -389,6 +389,12 @@ export interface ServerSession {
   subscriptionIds: string[];
   /** Resume token for reconnection */
   resumeToken?: string;
+  /** Authenticated principal (if authenticated) */
+  principal?: {
+    id: string;
+    issuer?: string;
+    claims?: Record<string, unknown>;
+  };
 }
 
 /**
@@ -879,6 +885,9 @@ export interface RouterConnectionOptions {
 
   /** Name for new sessions */
   name?: string;
+
+  /** Metadata for new sessions (e.g., transportType for auth bypass) */
+  metadata?: Record<string, unknown>;
 }
 
 // =============================================================================

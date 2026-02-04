@@ -131,6 +131,30 @@ export class MAPRequestError extends Error {
     );
   }
 
+  static insufficientScope(required?: string): MAPRequestError {
+    return new MAPRequestError(
+      AUTH_ERROR_CODES.INSUFFICIENT_SCOPE,
+      required ? `Insufficient scope: ${required}` : 'Insufficient scope',
+      { category: 'auth' }
+    );
+  }
+
+  static methodNotSupported(method: string): MAPRequestError {
+    return new MAPRequestError(
+      AUTH_ERROR_CODES.METHOD_NOT_SUPPORTED,
+      `Authentication method not supported: ${method}`,
+      { category: 'auth' }
+    );
+  }
+
+  static invalidCredentials(details?: string): MAPRequestError {
+    return new MAPRequestError(
+      AUTH_ERROR_CODES.INVALID_CREDENTIALS,
+      details ?? 'Invalid credentials',
+      { category: 'auth' }
+    );
+  }
+
   // ==========================================================================
   // Routing Errors (2xxx)
   // ==========================================================================
