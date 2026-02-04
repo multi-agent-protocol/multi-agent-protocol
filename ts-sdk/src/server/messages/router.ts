@@ -66,6 +66,7 @@ export class MessageRouterImpl implements MessageRouter {
 
   /**
    * Send message to a specific agent.
+   * @throws Error if validation is enabled and target agent does not exist
    */
   sendToAgent(params: {
     from: string;
@@ -76,7 +77,17 @@ export class MessageRouterImpl implements MessageRouter {
     ttlMs?: number;
     /** Optional message type for routing/filtering */
     messageType?: string;
+    /** Validate that target agent exists before sending */
+    validateTarget?: boolean;
   }): ServerMessage {
+    // Validate target agent exists if validation is explicitly enabled
+    if (params.validateTarget) {
+      const targetAgent = this.agents.get(params.to);
+      if (!targetAgent) {
+        throw new Error(`Target agent not found: ${params.to}`);
+      }
+    }
+
     const message: ServerMessage = {
       id: ulid(),
       from: params.from,
@@ -227,24 +238,46 @@ export class MessageRouterImpl implements MessageRouter {
 
   /**
    * Queue a message for later delivery.
+   * @returns true if message was queued, false if dropped
    */
-  private queueMessage(agentId: string, message: ServerMessage): void {
+  private queueMessage(agentId: string, message: ServerMessage): boolean {
     // Check total queue limit
     if (this.queueStore.getTotalSize() >= this.queueOptions.maxTotal) {
       // Queue is full - run expiration and try again
       this.queueStore.expireOld();
 
       if (this.queueStore.getTotalSize() >= this.queueOptions.maxTotal) {
-        // Still full after expiration - drop the message
-        return;
+        // Still full after expiration - drop the message and emit event
+        this.eventBus.emit({
+          type: "message.dropped",
+          data: {
+            messageId: message.id,
+            from: message.from,
+            to: agentId,
+            reason: "queue_full",
+            queueSize: this.queueStore.getTotalSize(),
+            maxTotal: this.queueOptions.maxTotal,
+          },
+        });
+        return false;
       }
     }
 
     // Check per-agent limit
     if (this.queueStore.getQueueSize(agentId) >= this.queueOptions.maxPerAgent) {
-      // Agent queue is full - oldest messages will be dropped when new ones arrive
-      // For now, we don't add if at limit
-      return;
+      // Agent queue is full - drop the message and emit event
+      this.eventBus.emit({
+        type: "message.dropped",
+        data: {
+          messageId: message.id,
+          from: message.from,
+          to: agentId,
+          reason: "agent_queue_full",
+          agentQueueSize: this.queueStore.getQueueSize(agentId),
+          maxPerAgent: this.queueOptions.maxPerAgent,
+        },
+      });
+      return false;
     }
 
     const ttlMs = message.ttlMs ?? this.queueOptions.defaultTtlMs;
@@ -264,6 +297,8 @@ export class MessageRouterImpl implements MessageRouter {
       type: "message.queued",
       data: { messageId: message.id, agentId, expiresAt: queuedMessage.expiresAt },
     });
+
+    return true;
   }
 
   /**

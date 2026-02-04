@@ -7,6 +7,7 @@
 import type {
   MessageRouter,
   ScopeManager,
+  AgentRegistry,
   HandlerContext,
   HandlerRegistry,
 } from "../types";
@@ -23,6 +24,11 @@ import {
 export interface MessageHandlerOptions {
   messages: MessageRouter;
   scopes: ScopeManager;
+  /**
+   * AgentRegistry for validating addresses.
+   * When provided, ambiguous addresses (valid as both agent and scope) will throw an error.
+   */
+  agents?: AgentRegistry;
 }
 
 /**
@@ -58,7 +64,7 @@ interface SendToScopeParams {
  * - `map/send/scope` - Send to all agents in a scope
  */
 export function createMessageHandlers(options: MessageHandlerOptions): HandlerRegistry {
-  const { messages, scopes } = options;
+  const { messages, scopes, agents } = options;
 
   return {
     "map/send": async (params: unknown, ctx: HandlerContext) => {
@@ -131,8 +137,18 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
       }
 
       // Backward compatibility: unprefixed address
-      // Check if 'to' is a scope ID by trying to get it
+      // Check for ambiguous addresses (valid as both scope and agent)
       const scope = scopes.get(to);
+      const agent = agents?.get(to);
+
+      if (scope && agent) {
+        // Ambiguous address - throw error requiring explicit prefix
+        throw new Error(
+          `Ambiguous address "${to}" matches both an agent and a scope. ` +
+          `Use "agent:${to}" or "scope:${to}" to disambiguate.`
+        );
+      }
+
       if (scope) {
         // Send to scope
         const message = messages.sendToScope({

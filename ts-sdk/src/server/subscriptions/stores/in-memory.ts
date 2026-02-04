@@ -56,6 +56,21 @@ export class InMemorySubscriptionStore implements SubscriptionStore {
   }
 
   /**
+   * Atomically update the lastEventId for a subscription.
+   * This method performs a single atomic read-modify-write operation.
+   * @returns The updated subscription, or undefined if not found
+   */
+  updateLastEventId(id: string, eventId: string): ServerSubscription | undefined {
+    const subscription = this.subscriptions.get(id);
+    if (!subscription) {
+      return undefined;
+    }
+    // Atomic update - directly mutate the stored object
+    subscription.lastEventId = eventId;
+    return { ...subscription };
+  }
+
+  /**
    * Get the number of stored subscriptions.
    */
   get size(): number {

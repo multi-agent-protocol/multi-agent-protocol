@@ -9,6 +9,7 @@ import type {
   HandlerContext,
   HandlerRegistry,
   ServerAgentState,
+  SessionManager,
 } from "../types";
 
 /**
@@ -16,6 +17,12 @@ import type {
  */
 export interface AgentHandlerOptions {
   agents: AgentRegistry;
+  /**
+   * SessionManager for tracking agent-session associations.
+   * When provided, uses atomic SessionManager methods instead of direct session mutation.
+   * This prevents race conditions and ensures proper cleanup on failure.
+   */
+  sessions?: SessionManager;
 }
 
 /**
@@ -93,7 +100,7 @@ interface UpdateParams {
  * - `map/agents/update/metadata` - Update agent metadata (legacy)
  */
 export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegistry {
-  const { agents } = options;
+  const { agents, sessions } = options;
 
   return {
     "map/agents/register": async (params: unknown, ctx: HandlerContext) => {
@@ -107,8 +114,13 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         capabilities,
       });
 
-      // Track agent in session
-      ctx.session.agentIds.push(registeredAgent.id);
+      // Track agent in session - use SessionManager if available for atomic updates
+      if (sessions) {
+        sessions.addAgent(ctx.session.id, registeredAgent.id);
+      } else {
+        // Legacy fallback: direct mutation (not recommended)
+        ctx.session.agentIds.push(registeredAgent.id);
+      }
 
       // Return protocol-compliant response with agent wrapped
       return {
@@ -132,10 +144,15 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         throw new Error(`Agent not found: ${agentId}`);
       }
 
-      // Remove from session tracking
-      const index = ctx.session.agentIds.indexOf(agentId);
-      if (index !== -1) {
-        ctx.session.agentIds.splice(index, 1);
+      // Remove from session tracking - use SessionManager if available
+      if (sessions) {
+        sessions.removeAgent(ctx.session.id, agentId);
+      } else {
+        // Legacy fallback: direct mutation (not recommended)
+        const index = ctx.session.agentIds.indexOf(agentId);
+        if (index !== -1) {
+          ctx.session.agentIds.splice(index, 1);
+        }
       }
 
       return { success: true };

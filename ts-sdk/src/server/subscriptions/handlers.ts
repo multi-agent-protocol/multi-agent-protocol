@@ -10,6 +10,7 @@ import type {
   HandlerContext,
   HandlerRegistry,
   SubscriptionFilter,
+  SessionManager,
 } from "../types";
 
 /**
@@ -18,6 +19,11 @@ import type {
 export interface SubscriptionHandlerOptions {
   subscriptions: SubscriptionManager;
   eventBus: EventBus;
+  /**
+   * SessionManager for tracking subscription-session associations.
+   * When provided, uses atomic SessionManager methods instead of direct session mutation.
+   */
+  sessions?: SessionManager;
 }
 
 /**
@@ -74,7 +80,7 @@ interface PauseResumeParams {
 export function createSubscriptionHandlers(
   options: SubscriptionHandlerOptions
 ): HandlerRegistry {
-  const { subscriptions, eventBus } = options;
+  const { subscriptions, eventBus, sessions } = options;
 
   return {
     "map/subscribe": async (params: unknown, ctx: HandlerContext) => {
@@ -86,8 +92,13 @@ export function createSubscriptionHandlers(
         startAfter,
       });
 
-      // Track subscription in session
-      ctx.session.subscriptionIds.push(subscription.id);
+      // Track subscription in session - use SessionManager if available
+      if (sessions) {
+        sessions.addSubscription(ctx.session.id, subscription.id);
+      } else {
+        // Legacy fallback: direct mutation (not recommended)
+        ctx.session.subscriptionIds.push(subscription.id);
+      }
 
       // Return protocol-compliant response
       return { subscriptionId: subscription.id };
@@ -101,10 +112,15 @@ export function createSubscriptionHandlers(
         throw new Error(`Subscription not found: ${subscriptionId}`);
       }
 
-      // Remove from session tracking
-      const index = ctx.session.subscriptionIds.indexOf(subscriptionId);
-      if (index !== -1) {
-        ctx.session.subscriptionIds.splice(index, 1);
+      // Remove from session tracking - use SessionManager if available
+      if (sessions) {
+        sessions.removeSubscription(ctx.session.id, subscriptionId);
+      } else {
+        // Legacy fallback: direct mutation (not recommended)
+        const index = ctx.session.subscriptionIds.indexOf(subscriptionId);
+        if (index !== -1) {
+          ctx.session.subscriptionIds.splice(index, 1);
+        }
       }
 
       return { success: true };
