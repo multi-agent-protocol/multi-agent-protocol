@@ -9,6 +9,23 @@ This document provides a comprehensive analysis of the MAP codebase, identifying
 3. **Testing Gaps** - Untested modules and missing test scenarios
 4. **Streamlining Opportunities** - Areas where the codebase needs cleanup and consolidation
 
+### Fix Status
+
+The following high and medium severity bugs have been **FIXED** in commit `434e694`:
+
+| Bug | Severity | Status |
+|-----|----------|--------|
+| Session agent tracking mutation | HIGH | FIXED |
+| Race condition in subscription state updates | HIGH | FIXED |
+| Silent message drop on queue overflow | HIGH | FIXED |
+| Resume token race condition | MEDIUM | FIXED |
+| Lost updates in session agent tracking | MEDIUM | FIXED |
+| Missing agent validation in message router | MEDIUM | FIXED |
+| Ambiguous address resolution | MEDIUM | FIXED |
+| $or/$and filter conflict | MEDIUM | FIXED |
+
+**Test Results**: 1317 tests passing (44/46 test files pass; 2 fail due to external `agentic-mesh` dependency API changes)
+
 ---
 
 ## 1. User Story Coherence Issues
