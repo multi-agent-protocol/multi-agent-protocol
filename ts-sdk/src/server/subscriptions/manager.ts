@@ -595,9 +595,14 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
     // Check if event scope is a descendant of any filter scope
     if (this.scopes) {
       for (const filterScopeId of scopes) {
-        const descendants = this.scopes.getDescendants(filterScopeId);
-        if (descendants.some((d) => d.id === eventScopeId)) {
-          return true;
+        try {
+          const descendants = this.scopes.getDescendants(filterScopeId);
+          if (descendants.some((d) => d.id === eventScopeId)) {
+            return true;
+          }
+        } catch {
+          // Invalid scope ID - skip this filter scope and continue checking others
+          continue;
         }
       }
     }

@@ -11,6 +11,12 @@ import type {
   ServerAgentState,
   SessionManager,
 } from "../types";
+import { MAPRequestError } from "../../errors";
+import {
+  AgentNotFoundError,
+  InvalidStateTransitionError,
+  InvalidAgentStateError,
+} from "./registry";
 
 /**
  * Options for creating agent handlers.
@@ -232,12 +238,32 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
 
     "map/agents/update/state": async (params: unknown) => {
       const { agentId, state } = params as UpdateStateParams;
-      return agents.updateState(agentId, state);
+      try {
+        return agents.updateState(agentId, state);
+      } catch (error) {
+        if (error instanceof AgentNotFoundError) {
+          throw MAPRequestError.agentNotFound(agentId);
+        }
+        if (error instanceof InvalidStateTransitionError) {
+          throw MAPRequestError.stateInvalid(state, "transition");
+        }
+        if (error instanceof InvalidAgentStateError) {
+          throw MAPRequestError.stateInvalid(state, "update");
+        }
+        throw error;
+      }
     },
 
     "map/agents/update/metadata": async (params: unknown) => {
       const { agentId, metadata } = params as UpdateMetadataParams;
-      return agents.updateMetadata(agentId, metadata);
+      try {
+        return agents.updateMetadata(agentId, metadata);
+      } catch (error) {
+        if (error instanceof AgentNotFoundError) {
+          throw MAPRequestError.agentNotFound(agentId);
+        }
+        throw error;
+      }
     },
   };
 }
