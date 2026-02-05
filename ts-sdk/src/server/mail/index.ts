@@ -1,7 +1,7 @@
 /**
  * Mail system - Conversations, Turns, Threads, Participants
  *
- * Storage interfaces and in-memory implementations for the Mail protocol.
+ * Storage interfaces, in-memory implementations, and managers for the Mail protocol.
  */
 
 // Re-export types
@@ -18,6 +18,14 @@ export type {
   TurnStore,
   ThreadStore,
   ParticipantStore,
+  DefaultParticipantPermissions,
+  ConversationGetResult,
+  ConversationManager,
+  ConversationManagerOptions,
+  TurnManager,
+  TurnManagerOptions,
+  ThreadManager,
+  ThreadManagerOptions,
 } from "../types";
 
 // In-memory store implementations
@@ -28,3 +36,26 @@ export {
 export { InMemoryTurnStore } from "./stores/in-memory-turn";
 export { InMemoryThreadStore } from "./stores/in-memory-thread";
 export { InMemoryParticipantStore } from "./stores/in-memory-participant";
+
+// Manager implementations
+export {
+  ConversationManagerImpl,
+  ConversationNotFoundError,
+  ConversationClosedError,
+  ParticipantAlreadyJoinedError,
+  ParticipantNotFoundError,
+} from "./conversation-manager";
+export {
+  TurnManagerImpl,
+  TurnNotFoundError,
+  TurnConversationNotFoundError,
+  InvalidContentTypeError,
+  validateContentType,
+} from "./turn-manager";
+export {
+  ThreadManagerImpl,
+  ThreadNotFoundError,
+  RootTurnNotFoundError,
+  RootTurnConversationMismatchError,
+  ParentThreadNotFoundError,
+} from "./thread-manager";

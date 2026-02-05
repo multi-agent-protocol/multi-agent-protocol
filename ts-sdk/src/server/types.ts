@@ -1399,6 +1399,210 @@ export interface ParticipantStore {
   clear(): void;
 }
 
+// --- Managers ---
+
+/**
+ * Default permissions for new participants.
+ */
+export interface DefaultParticipantPermissions {
+  canSend?: boolean;
+  canObserve?: boolean;
+  canInvite?: boolean;
+  canRemove?: boolean;
+  canCreateThreads?: boolean;
+  historyAccess?: "none" | "from-join" | "full";
+  canSeeInternal?: boolean;
+}
+
+/**
+ * Result of getting a conversation with optional includes.
+ */
+export interface ConversationGetResult {
+  conversation: ServerConversation;
+  participants?: ServerParticipant[];
+  threads?: ServerThread[];
+  recentTurns?: ServerTurn[];
+  stats?: {
+    totalTurns: number;
+    turnsByContentType: Record<string, number>;
+    activeParticipants: number;
+    threadCount: number;
+  };
+}
+
+/**
+ * Manages conversation lifecycle and participants.
+ *
+ * Events emitted:
+ * - mail.created
+ * - mail.closed
+ * - mail.participant.joined
+ * - mail.participant.left
+ */
+export interface ConversationManager {
+  /** Create a new conversation. Creator auto-joins as initiator. */
+  create(params: {
+    type?: ConversationType;
+    subject?: string;
+    createdBy: string;
+    parentConversationId?: string;
+    parentTurnId?: string;
+    metadata?: Record<string, unknown>;
+    /** Initial participants to add (in addition to creator) */
+    initialParticipants?: Array<{
+      id: string;
+      type?: "user" | "agent" | "system";
+      role?: ParticipantRole;
+      permissions?: DefaultParticipantPermissions;
+      agentInfo?: { agentId: string; name?: string; role?: string };
+    }>;
+  }): { conversation: ServerConversation; participant: ServerParticipant };
+
+  /** Get conversation by ID with optional includes */
+  get(
+    id: string,
+    include?: {
+      participants?: boolean;
+      threads?: boolean;
+      recentTurns?: number;
+      stats?: boolean;
+    }
+  ): ConversationGetResult | undefined;
+
+  /** List conversations with filtering */
+  list(filter?: ConversationFilter): ServerConversation[];
+
+  /** Close a conversation */
+  close(id: string, closedBy: string, reason?: string): ServerConversation;
+
+  /** Join a conversation */
+  join(params: {
+    conversationId: string;
+    participantId: string;
+    type?: "user" | "agent" | "system";
+    role?: ParticipantRole;
+    permissions?: DefaultParticipantPermissions;
+    agentInfo?: { agentId: string; name?: string; role?: string };
+  }): { conversation: ServerConversation; participant: ServerParticipant };
+
+  /** Leave a conversation */
+  leave(conversationId: string, participantId: string, reason?: string): void;
+
+  /** Invite a participant */
+  invite(params: {
+    conversationId: string;
+    participant: {
+      id: string;
+      type?: "user" | "agent" | "system";
+      role?: ParticipantRole;
+      permissions?: DefaultParticipantPermissions;
+      agentInfo?: { agentId: string; name?: string; role?: string };
+    };
+  }): ServerParticipant;
+
+  /** Get a participant in a conversation */
+  getParticipant(conversationId: string, participantId: string): ServerParticipant | undefined;
+
+  /** List participants in a conversation */
+  listParticipants(conversationId: string, active?: boolean): ServerParticipant[];
+}
+
+export interface ConversationManagerOptions {
+  eventBus: EventBus;
+  store?: ConversationStore;
+  participantStore?: ParticipantStore;
+}
+
+/**
+ * Manages turn recording, querying, and visibility filtering.
+ *
+ * Events emitted:
+ * - mail.turn.added
+ * - mail.turn.updated
+ */
+export interface TurnManager {
+  /** Record a turn (explicit via mail/turn) */
+  recordTurn(params: {
+    conversationId: string;
+    participant: string;
+    contentType: string;
+    content: unknown;
+    threadId?: string;
+    inReplyTo?: string;
+    visibility?: TurnVisibility;
+    status?: TurnStatus;
+    metadata?: Record<string, unknown>;
+  }): ServerTurn;
+
+  /** Record an intercepted turn (from map/send with mail meta) */
+  recordInterceptedTurn(params: {
+    conversationId: string;
+    participant: string;
+    contentType: string;
+    content: unknown;
+    messageId: string;
+    threadId?: string;
+    inReplyTo?: string;
+    visibility?: TurnVisibility;
+    metadata?: Record<string, unknown>;
+  }): ServerTurn;
+
+  /** Get a turn by ID */
+  get(id: string): ServerTurn | undefined;
+
+  /** List turns with filtering and pagination */
+  list(filter: TurnFilter): ServerTurn[];
+
+  /** Update turn status (e.g., streaming → complete) */
+  updateStatus(id: string, status: TurnStatus): ServerTurn;
+
+  /** Count turns in a conversation */
+  count(conversationId: string, threadId?: string): number;
+}
+
+export interface TurnManagerOptions {
+  eventBus: EventBus;
+  store?: TurnStore;
+  /** ConversationManager for validating conversation exists */
+  conversations: ConversationManager;
+}
+
+/**
+ * Manages conversation threads.
+ *
+ * Events emitted:
+ * - mail.thread.created
+ */
+export interface ThreadManager {
+  /** Create a thread rooted at a specific turn */
+  create(params: {
+    conversationId: string;
+    rootTurnId: string;
+    subject?: string;
+    parentThreadId?: string;
+    createdBy: string;
+  }): ServerThread;
+
+  /** Get a thread by ID */
+  get(id: string): ServerThread | undefined;
+
+  /** List threads in a conversation */
+  list(conversationId: string, parentThreadId?: string): ServerThread[];
+
+  /** Increment turn count for a thread */
+  incrementTurnCount(threadId: string): void;
+
+  /** Increment participant count for a thread */
+  incrementParticipantCount(threadId: string): void;
+}
+
+export interface ThreadManagerOptions {
+  eventBus: EventBus;
+  store?: ThreadStore;
+  /** TurnStore for validating rootTurnId exists */
+  turnStore: TurnStore;
+}
+
 // =============================================================================
 // Optional OOP Interface
 // =============================================================================
