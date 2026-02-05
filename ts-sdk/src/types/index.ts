@@ -1113,6 +1113,8 @@ export interface ConnectResponseResult {
   principal?: AuthPrincipal;
   /** Auth required but not provided - client should authenticate */
   authRequired?: ServerAuthCapabilities;
+  /** Token to resume this session later */
+  resumeToken?: string;
   _meta?: Meta;
 }
 
