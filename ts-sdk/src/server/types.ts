@@ -1183,6 +1183,223 @@ export interface FederatedMessageRouterOptions {
 }
 
 // =============================================================================
+// Mail (Conversations, Turns, Threads, Participants)
+// =============================================================================
+
+import type {
+  ConversationType,
+  ConversationStatus,
+  ParticipantRole,
+  TurnStatus,
+  TurnSource,
+  TurnVisibility,
+} from "../types";
+
+/**
+ * Server-side conversation record.
+ * Extends the client Conversation with server-internal fields.
+ */
+export interface ServerConversation {
+  id: string;
+  type: ConversationType;
+  status: ConversationStatus;
+  subject?: string;
+  participantCount: number;
+  parentConversationId?: string;
+  parentTurnId?: string;
+  createdAt: number;
+  updatedAt: number;
+  closedAt?: number;
+  createdBy: string;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Server-side conversation participant record.
+ */
+export interface ServerParticipant {
+  id: string;
+  conversationId: string;
+  type: "user" | "agent" | "system";
+  role: ParticipantRole;
+  joinedAt: number;
+  leftAt?: number;
+  permissions: {
+    canSend: boolean;
+    canObserve: boolean;
+    canInvite: boolean;
+    canRemove: boolean;
+    canCreateThreads: boolean;
+    historyAccess: "none" | "from-join" | "full";
+    canSeeInternal: boolean;
+  };
+  agentInfo?: {
+    agentId: string;
+    name?: string;
+    role?: string;
+  };
+}
+
+/**
+ * Server-side turn record.
+ */
+export interface ServerTurn {
+  id: string;
+  conversationId: string;
+  participant: string;
+  timestamp: number;
+  contentType: string;
+  content: unknown;
+  threadId?: string;
+  inReplyTo?: string;
+  source: TurnSource;
+  visibility?: TurnVisibility;
+  status?: TurnStatus;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Server-side thread record.
+ */
+export interface ServerThread {
+  id: string;
+  conversationId: string;
+  parentThreadId?: string;
+  subject?: string;
+  rootTurnId: string;
+  turnCount: number;
+  participantCount: number;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: string;
+}
+
+// --- Filters ---
+
+/**
+ * Filter criteria for listing conversations.
+ */
+export interface ConversationFilter {
+  type?: ConversationType[];
+  status?: ConversationStatus[];
+  participantId?: string;
+  createdAfter?: number;
+  createdBefore?: number;
+  parentConversationId?: string;
+}
+
+/**
+ * Filter criteria for listing turns.
+ * conversationId is required — turns always belong to a conversation.
+ */
+export interface TurnFilter {
+  conversationId: string;
+  threadId?: string;
+  contentTypes?: string[];
+  participantId?: string;
+  /** Cursor: return turns after this turn ID */
+  afterTurnId?: string;
+  /** Cursor: return turns before this turn ID */
+  beforeTurnId?: string;
+  /** Return turns after this timestamp */
+  afterTimestamp?: number;
+  /** Return turns before this timestamp */
+  beforeTimestamp?: number;
+  /** Maximum number of turns to return */
+  limit?: number;
+  /** Sort order (default: 'asc') */
+  order?: "asc" | "desc";
+}
+
+/**
+ * Filter criteria for listing threads.
+ */
+export interface ThreadFilter {
+  conversationId: string;
+  parentThreadId?: string;
+}
+
+/**
+ * Filter criteria for listing participants.
+ */
+export interface ParticipantFilter {
+  conversationId?: string;
+  participantId?: string;
+  role?: ParticipantRole;
+  /** Only active participants (not left) */
+  active?: boolean;
+}
+
+// --- Stores ---
+
+/**
+ * Storage backend for conversations. Implement for persistence.
+ */
+export interface ConversationStore {
+  save(conversation: ServerConversation): void;
+  get(id: string): ServerConversation | undefined;
+  list(filter?: ConversationFilter): ServerConversation[];
+  delete(id: string): boolean;
+  clear(): void;
+}
+
+/**
+ * Storage backend for turns. Implement for persistence.
+ *
+ * Turns require efficient querying by conversation with cursor-based
+ * pagination and timestamp range support.
+ */
+export interface TurnStore {
+  /** Append a turn */
+  append(turn: ServerTurn): void;
+  /** Get a specific turn by ID */
+  get(id: string): ServerTurn | undefined;
+  /** List turns matching filter criteria with pagination */
+  list(filter: TurnFilter): ServerTurn[];
+  /** Delete a specific turn */
+  delete(id: string): boolean;
+  /** Delete all turns for a conversation */
+  deleteByConversation(conversationId: string): number;
+  /** Count turns in a conversation (optionally filtered by thread) */
+  count(conversationId: string, threadId?: string): number;
+  clear(): void;
+}
+
+/**
+ * Storage backend for threads. Implement for persistence.
+ */
+export interface ThreadStore {
+  save(thread: ServerThread): void;
+  get(id: string): ServerThread | undefined;
+  list(filter: ThreadFilter): ServerThread[];
+  delete(id: string): boolean;
+  deleteByConversation(conversationId: string): number;
+  clear(): void;
+}
+
+/**
+ * Storage backend for conversation participants. Implement for persistence.
+ *
+ * Supports bidirectional lookup:
+ * - conversation → participants
+ * - participant → conversations
+ */
+export interface ParticipantStore {
+  save(participant: ServerParticipant): void;
+  /** Get a specific participant in a conversation */
+  get(conversationId: string, participantId: string): ServerParticipant | undefined;
+  /** List participants matching filter */
+  list(filter: ParticipantFilter): ServerParticipant[];
+  /** Remove a participant from a conversation */
+  delete(conversationId: string, participantId: string): boolean;
+  /** Delete all participants for a conversation */
+  deleteByConversation(conversationId: string): number;
+  /** Get all conversation IDs a participant belongs to */
+  getConversationsForParticipant(participantId: string, active?: boolean): string[];
+  clear(): void;
+}
+
+// =============================================================================
 // Optional OOP Interface
 // =============================================================================
 

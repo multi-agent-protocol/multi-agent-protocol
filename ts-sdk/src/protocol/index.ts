@@ -49,6 +49,7 @@ export type MethodCategory =
   | 'session'
   | 'auth'
   | 'federation'
+  | 'mail'
   | 'notification';
 
 /** Capability path like 'observation.canQuery' */
@@ -271,6 +272,86 @@ export const METHOD_REGISTRY: Record<string, MethodInfo> = {
     category: 'federation',
     capabilities: ['federation.canFederate'],
     description: 'Route message to federated system',
+  },
+
+  // Mail methods
+  'mail/create': {
+    method: 'mail/create',
+    category: 'mail',
+    capabilities: ['mail.canCreate'],
+    description: 'Create a new conversation',
+  },
+  'mail/get': {
+    method: 'mail/get',
+    category: 'mail',
+    capabilities: ['mail.canJoin'],
+    description: 'Get conversation details',
+  },
+  'mail/list': {
+    method: 'mail/list',
+    category: 'mail',
+    capabilities: ['mail.canJoin'],
+    description: 'List conversations',
+  },
+  'mail/close': {
+    method: 'mail/close',
+    category: 'mail',
+    capabilities: ['mail.canCreate'],
+    description: 'Close a conversation',
+  },
+  'mail/join': {
+    method: 'mail/join',
+    category: 'mail',
+    capabilities: ['mail.canJoin'],
+    description: 'Join an existing conversation',
+  },
+  'mail/leave': {
+    method: 'mail/leave',
+    category: 'mail',
+    capabilities: ['mail.canJoin'],
+    description: 'Leave a conversation',
+  },
+  'mail/invite': {
+    method: 'mail/invite',
+    category: 'mail',
+    capabilities: ['mail.canInvite'],
+    description: 'Invite a participant to a conversation',
+  },
+  'mail/turn': {
+    method: 'mail/turn',
+    category: 'mail',
+    capabilities: ['mail.canJoin'],
+    description: 'Record a turn in a conversation',
+  },
+  'mail/turns/list': {
+    method: 'mail/turns/list',
+    category: 'mail',
+    capabilities: ['mail.canViewHistory'],
+    description: 'List turns in a conversation',
+  },
+  'mail/thread/create': {
+    method: 'mail/thread/create',
+    category: 'mail',
+    capabilities: ['mail.canCreateThreads'],
+    description: 'Create a thread within a conversation',
+  },
+  'mail/thread/list': {
+    method: 'mail/thread/list',
+    category: 'mail',
+    capabilities: ['mail.canJoin'],
+    description: 'List threads in a conversation',
+  },
+  'mail/summary': {
+    method: 'mail/summary',
+    category: 'mail',
+    capabilities: ['mail.canViewHistory'],
+    description: 'Get or generate a conversation summary',
+  },
+  'mail/replay': {
+    method: 'mail/replay',
+    category: 'mail',
+    capabilities: ['mail.canViewHistory'],
+    description: 'Replay turns from a specific point',
   },
 
   // Notification methods (client → server)

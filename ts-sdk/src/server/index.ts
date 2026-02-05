@@ -67,6 +67,11 @@ export * from "./permissions";
 export * from "./cleanup";
 
 // =============================================================================
+// Mail - Conversations, Turns, Threads, Participants
+// =============================================================================
+export * from "./mail";
+
+// =============================================================================
 // Federation - FederationGateway and federated decorators
 // =============================================================================
 export * from "./federation";
