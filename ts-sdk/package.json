@@ -62,7 +62,7 @@
   "devDependencies": {
     "@hey-api/openapi-ts": "^0.61.0",
     "@types/node": "^20.11.0",
-    "agentic-mesh": "^0.0.4",
+    "agentic-mesh": "^0.0.5",
     "json-schema-to-zod": "^2.7.0",
     "tsup": "^8.0.1",
     "typescript": "^5.3.3",
