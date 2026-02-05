@@ -361,7 +361,7 @@ describe("SubscriptionManagerImpl", () => {
     it("should match by agent", () => {
       const subscription = manager.create({
         sessionId: "session-1",
-        filter: { agents: ["agent-1"] },
+        filter: { fromAgents: ["agent-1"] },
       });
 
       const event: MAPEvent = {
@@ -378,7 +378,7 @@ describe("SubscriptionManagerImpl", () => {
     it("should not match if agent not in filter", () => {
       const subscription = manager.create({
         sessionId: "session-1",
-        filter: { agents: ["agent-1"] },
+        filter: { fromAgents: ["agent-1"] },
       });
 
       const event: MAPEvent = {
@@ -718,7 +718,7 @@ describe("SubscriptionManagerImpl", () => {
           sessionId: "session-1",
           filter: {
             eventTypes: ["type.a"],
-            agents: ["agent-1"],
+            fromAgents: ["agent-1"],
             match: "any",
           },
         });
@@ -748,7 +748,7 @@ describe("SubscriptionManagerImpl", () => {
           sessionId: "session-1",
           filter: {
             eventTypes: ["type.a"],
-            agents: ["agent-1"],
+            fromAgents: ["agent-1"],
             match: "any",
           },
         });
@@ -770,7 +770,7 @@ describe("SubscriptionManagerImpl", () => {
           sessionId: "session-1",
           filter: {
             eventTypes: ["type.a"],
-            agents: ["agent-1"],
+            fromAgents: ["agent-1"],
             match: "all", // Explicit, but also default
           },
         });
@@ -801,7 +801,7 @@ describe("SubscriptionManagerImpl", () => {
           sessionId: "session-1",
           filter: {
             eventTypes: ["type.a"],
-            agents: ["agent-1"],
+            fromAgents: ["agent-1"],
             // No match mode specified - defaults to "all"
           },
         });
@@ -860,8 +860,8 @@ describe("SubscriptionManagerImpl", () => {
           sessionId: "session-1",
           filter: {
             $or: [
-              { eventTypes: ["type.a"], agents: ["agent-1"] },
-              { eventTypes: ["type.b"], agents: ["agent-2"] },
+              { eventTypes: ["type.a"], fromAgents: ["agent-1"] },
+              { eventTypes: ["type.b"], fromAgents: ["agent-2"] },
             ],
           },
         });
@@ -905,7 +905,7 @@ describe("SubscriptionManagerImpl", () => {
           filter: {
             $and: [
               { eventTypes: ["type.a"] },
-              { agents: ["agent-1"] },
+              { fromAgents: ["agent-1"] },
             ],
           },
         });
@@ -951,7 +951,7 @@ describe("SubscriptionManagerImpl", () => {
               {
                 $and: [
                   { eventTypes: ["type.a"] },
-                  { agents: ["agent-1"] },
+                  { fromAgents: ["agent-1"] },
                 ],
               },
               { eventTypes: ["type.urgent"] },

@@ -1276,14 +1276,7 @@ export class TestServer {
       }
     }
 
-    // Filter by specific agents (legacy)
-    if (filter.agents?.length && event.source) {
-      if (!filter.agents.includes(event.source)) {
-        return false;
-      }
-    }
-
-    // Filter by source agents (v2)
+    // Filter by source agents
     if (filter.fromAgents?.length && event.source) {
       if (!filter.fromAgents.includes(event.source)) {
         return false;

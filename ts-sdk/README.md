@@ -33,7 +33,7 @@ await client.connect();
 // Subscribe to events
 const subscription = await client.subscribe({
   eventTypes: ['agent.registered', 'agent.state.changed'],
-  agents: ['agent-1', 'agent-2'],
+  fromAgents: ['agent-1', 'agent-2'],
 });
 
 // Async iteration
@@ -154,6 +154,140 @@ buffer.on('ready', (event) => {
 });
 
 buffer.add(event); // Buffered until causedBy dependencies are released
+```
+
+## Server SDK
+
+Build MAP servers using the `MAPServer` class and building blocks.
+
+### Basic Server Setup
+
+```typescript
+import { MAPServer } from '@multi-agent-protocol/sdk/server';
+import { WebSocketServer } from 'ws';
+
+// Create a MAP server
+const server = new MAPServer({
+  name: 'My MAP Server',
+  version: '1.0.0',
+});
+
+// Accept WebSocket connections
+const wss = new WebSocketServer({ port: 8080 });
+wss.on('connection', (ws) => {
+  const router = server.accept(ws, { role: 'client' });
+  router.start();
+});
+
+console.log('MAP server listening on ws://localhost:8080');
+```
+
+### Server with Authentication
+
+```typescript
+import {
+  MAPServer,
+  createSimpleAPIKeyAuthenticator,
+  JWTAuthenticator,
+  NoAuthAuthenticator,
+} from '@multi-agent-protocol/sdk/server';
+
+const server = new MAPServer({
+  name: 'Authenticated Server',
+  auth: {
+    required: true,
+    authenticators: [
+      // API key authentication
+      createSimpleAPIKeyAuthenticator({
+        'api-key-1': 'user-1',
+        'api-key-2': 'user-2',
+      }),
+
+      // JWT authentication
+      new JWTAuthenticator({
+        jwksUrl: 'https://auth.example.com/.well-known/jwks.json',
+        issuer: 'https://auth.example.com',
+        audience: 'my-api',
+      }),
+
+      // Allow unauthenticated for local stdio connections
+      new NoAuthAuthenticator({ defaultPrincipalId: 'local-agent' }),
+    ],
+    // Bypass auth for trusted transports
+    bypassForTransports: { stdio: true },
+  },
+});
+```
+
+### Custom Handlers
+
+Extend the server with application-specific handlers:
+
+```typescript
+import { MAPServer } from '@multi-agent-protocol/sdk/server';
+
+const server = new MAPServer({ name: 'Custom Server' });
+
+// Add custom handlers alongside built-in ones
+const customHandlers = {
+  'myapp/echo': async (params: unknown) => {
+    return { echo: params };
+  },
+
+  'myapp/getStatus': async (params: unknown, ctx) => {
+    // Access session context
+    return {
+      sessionId: ctx.session.id,
+      principal: ctx.session.principal,
+    };
+  },
+};
+
+// Merge with server handlers when accepting connections
+wss.on('connection', (ws) => {
+  const router = server.accept(ws, {
+    role: 'client',
+    additionalHandlers: customHandlers,
+  });
+  router.start();
+});
+```
+
+### Building Blocks
+
+For advanced customization, use individual building blocks:
+
+```typescript
+import {
+  AgentRegistryImpl,
+  ScopeManagerImpl,
+  SessionManagerImpl,
+  SubscriptionManagerImpl,
+  MessageRouterImpl,
+  InMemoryAgentStore,
+  InMemorySessionStore,
+  InMemorySubscriptionStore,
+  InMemoryScopeStore,
+  createAgentHandlers,
+  createSubscriptionHandlers,
+  createMessageHandlers,
+} from '@multi-agent-protocol/sdk/server';
+
+// Create stores (swap with database-backed stores in production)
+const agents = new AgentRegistryImpl({ store: new InMemoryAgentStore() });
+const sessions = new SessionManagerImpl({ store: new InMemorySessionStore() });
+const scopes = new ScopeManagerImpl({ store: new InMemoryScopeStore() });
+const subscriptions = new SubscriptionManagerImpl({
+  store: new InMemorySubscriptionStore(),
+  scopes, // For scope hierarchy filtering
+});
+
+// Create handlers
+const handlers = {
+  ...createAgentHandlers({ agents, sessions }),
+  ...createSubscriptionHandlers({ subscriptions, sessions }),
+  ...createMessageHandlers({ agents, scopes }),
+};
 ```
 
 ## Testing

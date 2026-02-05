@@ -463,12 +463,12 @@ describe('AgentConnection', () => {
 
       const subscription = await agent.subscribe({
         eventTypes: ['agent.state-changed'],
-        agents: ['watched-agent'],
+        fromAgents: ['watched-agent'],
       });
 
       expect(subscription.filter).toEqual({
         eventTypes: ['agent.state-changed'],
-        agents: ['watched-agent'],
+        fromAgents: ['watched-agent'],
       });
     });
 

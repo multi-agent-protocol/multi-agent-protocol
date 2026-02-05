@@ -525,11 +525,11 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
       criteria.push({ name: "eventTypes", matches });
     }
 
-    // Check agents
-    if (filter.agents && filter.agents.length > 0) {
+    // Check fromAgents (source agent filter)
+    if (filter.fromAgents && filter.fromAgents.length > 0) {
       const eventAgentId = event.source?.agentId;
-      const matches = eventAgentId ? filter.agents.includes(eventAgentId) : false;
-      criteria.push({ name: "agents", matches });
+      const matches = eventAgentId ? filter.fromAgents.includes(eventAgentId) : false;
+      criteria.push({ name: "fromAgents", matches });
     }
 
     // Check scopes (including nested scopes)

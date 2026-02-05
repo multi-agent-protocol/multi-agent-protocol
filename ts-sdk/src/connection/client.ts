@@ -202,6 +202,30 @@ export interface MeshConnectOptions {
  * - Subscribing to events
  * - Sending messages to agents
  * - (With permissions) Steering agents
+ *
+ * ## Response Shape Patterns
+ *
+ * Methods follow consistent response shape conventions:
+ *
+ * **Create Operations** return the full entity that was created:
+ * - `registerAgent()` → `{ agent: Agent }`
+ * - `createScope()` → `{ scope: Scope }`
+ * - `subscribe()` → `Subscription` (full subscription object)
+ *
+ * **Query Operations** return the requested data:
+ * - `listAgents()` → `{ agents: Agent[] }`
+ * - `getAgent()` → `{ agent: Agent, children?: Agent[] }`
+ * - `getScope()` → `Scope`
+ * - `listScopes()` → `{ scopes: Scope[] }`
+ *
+ * **Action Operations** return confirmation with reference ID:
+ * - `send()` → `{ messageId: string }`
+ * - `inject()` → `{ accepted: boolean }`
+ *
+ * **Lifecycle Operations** return status:
+ * - `connect()` → `ConnectResponseResult` (session info, capabilities, auth status)
+ * - `disconnect()` → `string | undefined` (resume token)
+ * - `authenticate()` → `{ success: boolean, principal?: AuthPrincipal }`
  */
 export class ClientConnection {
   #connection: BaseConnection;
@@ -216,9 +240,12 @@ export class ClientConnection {
   #connected = false;
   #lastConnectOptions?: {
     sessionId?: SessionId;
-    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
+    resumeToken?: string;
+    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; credential?: string };
   };
   #isReconnecting = false;
+  #lastResumeToken?: string;
+  #onTokenExpiring?: (expiresAt: number) => Promise<{ method: string; credential: string } | void>;
 
   constructor(stream: Stream, options: ClientConnectionOptions = {}) {
     this.#connection = new BaseConnection(stream, options);
@@ -391,12 +418,21 @@ export class ClientConnection {
 
   /**
    * Connect to the MAP system
+   *
+   * @param options - Connection options
+   * @param options.sessionId - Specific session ID to use
+   * @param options.resumeToken - Token to resume a previously disconnected session
+   * @param options.auth - Authentication credentials
+   * @param options.onTokenExpiring - Callback invoked before token expires for proactive refresh
    */
   async connect(options?: {
     sessionId?: SessionId;
     /** Token to resume a previously disconnected session */
     resumeToken?: string;
-    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
+    /** Authentication credentials */
+    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; credential?: string };
+    /** Callback invoked when token is about to expire. Return new credentials to refresh. */
+    onTokenExpiring?: (expiresAt: number) => Promise<{ method: string; credential: string } | void>;
   }): Promise<ConnectResponseResult> {
     const params: ConnectRequestParams = {
       protocolVersion: PROTOCOL_VERSION,
@@ -417,6 +453,17 @@ export class ClientConnection {
     this.#serverCapabilities = result.capabilities;
     this.#connected = true;
 
+    // Store resume token if provided in response
+    if (result.resumeToken) {
+      this.#lastResumeToken = result.resumeToken;
+    }
+
+    // Store token expiring callback
+    if (options?.onTokenExpiring) {
+      this.#onTokenExpiring = options.onTokenExpiring;
+      this.#setupTokenExpiryMonitoring(result);
+    }
+
     // Transition to connected state
     this.#connection._transitionTo('connected');
 
@@ -424,6 +471,84 @@ export class ClientConnection {
     this.#lastConnectOptions = options;
 
     return result;
+  }
+
+  /**
+   * Get the resume token for this session.
+   * Can be used to reconnect and restore session state after disconnection.
+   *
+   * @returns The resume token, or undefined if not available
+   */
+  getResumeToken(): string | undefined {
+    return this.#lastResumeToken;
+  }
+
+  /**
+   * Reconnect to the server, optionally using a resume token to restore session.
+   *
+   * @param resumeToken - Token to resume previous session. If not provided, uses the last known token.
+   * @returns Connect response result
+   *
+   * @example
+   * ```typescript
+   * // Save token before disconnect
+   * const token = await client.disconnect();
+   *
+   * // Later, reconnect with the token
+   * const result = await client.reconnect(token);
+   * console.log('Reconnected:', result.reconnected);
+   * ```
+   */
+  async reconnect(resumeToken?: string): Promise<ConnectResponseResult> {
+    const tokenToUse = resumeToken ?? this.#lastResumeToken;
+
+    return this.connect({
+      ...this.#lastConnectOptions,
+      resumeToken: tokenToUse,
+    });
+  }
+
+  /**
+   * Set up monitoring for token expiration
+   */
+  #setupTokenExpiryMonitoring(connectResult: ConnectResponseResult): void {
+    const principal = connectResult.principal;
+    if (!principal?.expiresAt || !this.#onTokenExpiring) {
+      return;
+    }
+
+    const expiresAt = principal.expiresAt;
+    const now = Date.now();
+
+    // Trigger callback 60 seconds before expiration
+    const warningTime = expiresAt - 60000;
+    const delay = warningTime - now;
+
+    if (delay > 0) {
+      setTimeout(async () => {
+        if (!this.#connected || !this.#onTokenExpiring) return;
+
+        try {
+          const newCredentials = await this.#onTokenExpiring(expiresAt);
+          if (newCredentials) {
+            const refreshResult = await this.refreshAuth({
+              method: newCredentials.method as 'bearer' | 'api-key' | 'mtls' | 'none',
+              credential: newCredentials.credential,
+            });
+
+            // If refresh succeeded and we got a new expiry, set up monitoring again
+            if (refreshResult.success && refreshResult.principal?.expiresAt) {
+              this.#setupTokenExpiryMonitoring({
+                ...connectResult,
+                principal: refreshResult.principal
+              } as ConnectResponseResult);
+            }
+          }
+        } catch {
+          // Token refresh failed - let the connection handle expiration naturally
+        }
+      }, delay);
+    }
   }
 
   /**
@@ -442,7 +567,7 @@ export class ClientConnection {
    * if (connectResult.authRequired) {
    *   const authResult = await client.authenticate({
    *     method: 'api-key',
-   *     token: process.env.API_KEY,
+   *     credential: process.env.API_KEY,
    *   });
    *
    *   if (authResult.success) {
@@ -453,11 +578,11 @@ export class ClientConnection {
    */
   async authenticate(auth: {
     method: 'bearer' | 'api-key' | 'mtls' | 'none';
-    token?: string;
+    credential?: string;
   }): Promise<AuthenticateResponseResult> {
     const params: AuthenticateRequestParams = {
       method: auth.method,
-      credential: auth.token,
+      credential: auth.credential,
     };
 
     const result = await this.#connection.sendRequest<
@@ -483,7 +608,7 @@ export class ClientConnection {
    */
   async refreshAuth(auth: {
     method: "bearer" | "api-key" | "mtls" | "none";
-    token?: string;
+    credential?: string;
   }): Promise<{
     success: boolean;
     principal?: AuthPrincipal;
@@ -491,7 +616,7 @@ export class ClientConnection {
   }> {
     const params: AuthenticateRequestParams = {
       method: auth.method,
-      credential: auth.token,
+      credential: auth.credential,
     };
 
     return this.#connection.sendRequest(AUTH_METHODS.AUTH_REFRESH, params);
@@ -512,6 +637,11 @@ export class ClientConnection {
         reason ? { reason } : undefined
       );
       resumeToken = result.resumeToken;
+
+      // Store resume token for potential reconnection
+      if (resumeToken) {
+        this.#lastResumeToken = resumeToken;
+      }
     } finally {
       // Close all ACP streams
       for (const stream of this.#acpStreams.values()) {
