@@ -723,7 +723,6 @@ export function createEvent(input: EventInput): Event {
  * | Field | Within-field | Cross-field | Description |
  * |-------|--------------|-------------|-------------|
  * | `eventTypes` | OR | AND | Event type is one of the listed types |
- * | `agents` | OR | AND | Event relates to one of the listed agents (legacy) |
  * | `fromAgents` | OR | AND | Event source is one of the listed agents |
  * | `fromRoles` | OR | AND | Event source agent has one of the listed roles |
  * | `roles` | OR | AND | Event relates to agents with one of the listed roles |
@@ -733,12 +732,6 @@ export function createEvent(input: EventInput): Event {
  * | `metadataMatch` | AND | AND | Event metadata contains ALL specified key-value pairs |
  */
 export interface SubscriptionFilter {
-  /**
-   * Filter by agents the event relates to.
-   * @deprecated Use `fromAgents` for clearer semantics
-   */
-  agents?: AgentId[];
-
   /**
    * Filter by roles the event relates to.
    * Matches events where the related agent has one of these roles.
@@ -1000,14 +993,6 @@ export interface AuthCredentials {
   credential?: string;
   /** Method-specific additional data */
   metadata?: Record<string, unknown>;
-}
-
-/**
- * @deprecated Use AuthCredentials instead
- */
-export interface AuthParams {
-  method: AuthMethod;
-  token?: string;
 }
 
 /**

@@ -444,11 +444,20 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
    */
   private deliverEvent(state: SubscriptionState, event: MAPEvent): void {
     // Track last delivered event ID for replay support
-    const subscription = this.store.get(state.subscription.id);
-    if (subscription) {
-      subscription.lastEventId = event.id;
-      this.store.save(subscription);
-      state.subscription = subscription;
+    // Use atomic update if available to prevent race conditions
+    if (this.store.updateLastEventId) {
+      const updated = this.store.updateLastEventId(state.subscription.id, event.id);
+      if (updated) {
+        state.subscription = updated;
+      }
+    } else {
+      // Fallback for stores without atomic update (not recommended)
+      const subscription = this.store.get(state.subscription.id);
+      if (subscription) {
+        subscription.lastEventId = event.id;
+        this.store.save(subscription);
+        state.subscription = subscription;
+      }
     }
 
     // If there are waiting iterators, resolve the first one
@@ -478,18 +487,30 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
    * Supports:
    * - Basic filters: eventTypes, agents, scopes, messageTypes
    * - Match modes: "all" (default) vs "any"
-   * - Logical operators: $or, $and
+   * - Logical operators: $or, $and (can be combined - both must be satisfied)
    * - Nested filters with operators
    */
   private matchesFilter(event: MAPEvent, filter: SubscriptionFilter): boolean {
-    // Handle $or operator - match if ANY sub-filter matches
-    if (filter.$or && filter.$or.length > 0) {
-      return filter.$or.some((subFilter) => this.matchesFilter(event, subFilter));
+    // Handle combined $or and $and operators
+    // When both are present, the event must satisfy both constraints
+    const hasOr = filter.$or && filter.$or.length > 0;
+    const hasAnd = filter.$and && filter.$and.length > 0;
+
+    if (hasOr && hasAnd) {
+      // Both operators present - event must match at least one $or AND all $and filters
+      const orMatch = filter.$or!.some((subFilter) => this.matchesFilter(event, subFilter));
+      const andMatch = filter.$and!.every((subFilter) => this.matchesFilter(event, subFilter));
+      return orMatch && andMatch;
     }
 
-    // Handle $and operator - match if ALL sub-filters match
-    if (filter.$and && filter.$and.length > 0) {
-      return filter.$and.every((subFilter) => this.matchesFilter(event, subFilter));
+    // Handle $or operator alone - match if ANY sub-filter matches
+    if (hasOr) {
+      return filter.$or!.some((subFilter) => this.matchesFilter(event, subFilter));
+    }
+
+    // Handle $and operator alone - match if ALL sub-filters match
+    if (hasAnd) {
+      return filter.$and!.every((subFilter) => this.matchesFilter(event, subFilter));
     }
 
     // Get match mode (default: "all")
@@ -504,11 +525,11 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
       criteria.push({ name: "eventTypes", matches });
     }
 
-    // Check agents
-    if (filter.agents && filter.agents.length > 0) {
+    // Check fromAgents (source agent filter)
+    if (filter.fromAgents && filter.fromAgents.length > 0) {
       const eventAgentId = event.source?.agentId;
-      const matches = eventAgentId ? filter.agents.includes(eventAgentId) : false;
-      criteria.push({ name: "agents", matches });
+      const matches = eventAgentId ? filter.fromAgents.includes(eventAgentId) : false;
+      criteria.push({ name: "fromAgents", matches });
     }
 
     // Check scopes (including nested scopes)
@@ -539,19 +560,33 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
   }
 
   /**
+   * Normalize event type to use dot notation.
+   * Accepts both "agent.registered" and "agent_registered" for compatibility.
+   */
+  private normalizeEventType(type: string): string {
+    return type.replace(/_/g, ".");
+  }
+
+  /**
    * Check if event matches any of the event types.
+   * Accepts both dot notation (agent.registered) and underscore notation (agent_registered).
    */
   private matchesEventTypes(event: MAPEvent, eventTypes: string[]): boolean {
+    const normalizedEventType = this.normalizeEventType(event.type);
+
+    // Normalize all filter types for comparison
+    const normalizedFilters = eventTypes.map((t) => this.normalizeEventType(t));
+
     // Direct match
-    if (eventTypes.includes(event.type)) {
+    if (normalizedFilters.includes(normalizedEventType)) {
       return true;
     }
 
     // Check for prefix matches (e.g., "agent.*" matches "agent.registered")
-    return eventTypes.some((type) => {
+    return normalizedFilters.some((type) => {
       if (type.endsWith(".*")) {
         const prefix = type.slice(0, -2);
-        return event.type.startsWith(prefix + ".");
+        return normalizedEventType.startsWith(prefix + ".");
       }
       return false;
     });
@@ -574,9 +609,14 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
     // Check if event scope is a descendant of any filter scope
     if (this.scopes) {
       for (const filterScopeId of scopes) {
-        const descendants = this.scopes.getDescendants(filterScopeId);
-        if (descendants.some((d) => d.id === eventScopeId)) {
-          return true;
+        try {
+          const descendants = this.scopes.getDescendants(filterScopeId);
+          if (descendants.some((d) => d.id === eventScopeId)) {
+            return true;
+          }
+        } catch {
+          // Invalid scope ID - skip this filter scope and continue checking others
+          continue;
         }
       }
     }

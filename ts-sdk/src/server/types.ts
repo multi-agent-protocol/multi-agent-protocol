@@ -97,9 +97,25 @@ export interface EventBus {
   readonly store: EventStore;
 }
 
+/**
+ * Callback invoked when a subscriber throws during event handling.
+ * Provides context for debugging and monitoring.
+ */
+export type SubscriberErrorCallback = (
+  error: Error,
+  event: MAPEvent,
+  subscriberIndex: number
+) => void;
+
 export interface EventBusOptions {
   /** Custom event store (defaults to InMemoryEventStore) */
   store?: EventStore;
+  /**
+   * Callback invoked when a subscriber throws during event handling.
+   * Subscribers are isolated - one throwing won't affect others.
+   * Default: logs to console.error
+   */
+  onSubscriberError?: SubscriberErrorCallback;
 }
 
 // =============================================================================
@@ -419,6 +435,12 @@ export interface SessionStore {
   list(filter?: { role?: SessionRole; status?: SessionStatus }): ServerSession[];
   delete(id: string): boolean;
   clear(): void;
+  /**
+   * Atomically claim and invalidate a resume token.
+   * Returns the session if the token was valid and claimed, undefined otherwise.
+   * This prevents race conditions where multiple clients could resume the same session.
+   */
+  claimResumeToken?(token: string): ServerSession | undefined;
 }
 
 /**
@@ -581,6 +603,12 @@ export interface SubscriptionStore {
   list(filter?: { sessionId?: string }): ServerSubscription[];
   delete(id: string): boolean;
   clear(): void;
+  /**
+   * Atomically update the lastEventId for a subscription.
+   * This prevents race conditions when multiple events are delivered concurrently.
+   * @returns The updated subscription, or undefined if not found
+   */
+  updateLastEventId?(id: string, eventId: string): ServerSubscription | undefined;
 }
 
 /**

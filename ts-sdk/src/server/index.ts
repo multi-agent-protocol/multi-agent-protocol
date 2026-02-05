@@ -75,3 +75,8 @@ export * from "./federation";
 // Authentication - Pluggable authentication for MAP servers
 // =============================================================================
 export * from "./auth";
+
+// =============================================================================
+// Middleware - Request processing middleware
+// =============================================================================
+export * from "./middleware";

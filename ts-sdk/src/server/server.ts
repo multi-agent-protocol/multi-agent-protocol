@@ -309,12 +309,13 @@ export class MAPServer {
           serverVersion: options.version ?? "1.0.0",
           authManager: this.auth ?? undefined,
         }),
-        createAgentHandlers({ agents: this.agents }),
+        createAgentHandlers({ agents: this.agents, sessions: this.sessions }),
         createScopeHandlers({ scopes: this.scopes }),
         createMessageHandlers({ messages: this.messages, scopes: this.scopes }),
         createSubscriptionHandlers({
           subscriptions: this.subscriptions,
           eventBus: this.eventBus,
+          sessions: this.sessions,
         }),
         options.additionalHandlers ?? {}
       );
