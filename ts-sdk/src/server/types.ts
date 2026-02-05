@@ -547,6 +547,23 @@ export interface SubscriptionFilter {
    * When present, other filter fields are ignored.
    */
   $and?: SubscriptionFilter[];
+  /** Mail-specific filter for conversation events */
+  mail?: MailSubscriptionFilter;
+}
+
+/**
+ * Mail-specific subscription filter.
+ * Matches mail events by conversation, thread, participant, or content type.
+ */
+export interface MailSubscriptionFilter {
+  /** Filter by conversation ID */
+  conversationId?: string;
+  /** Filter by thread ID */
+  threadId?: string;
+  /** Filter by participant ID */
+  participantId?: string;
+  /** Filter by content type */
+  contentType?: string;
 }
 
 /**

@@ -7,6 +7,7 @@
 import type {
   ServerSubscription,
   SubscriptionFilter,
+  MailSubscriptionFilter,
   SubscriptionStore,
   SubscriptionManager,
   SubscriptionManagerOptions,
@@ -544,6 +545,12 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
       criteria.push({ name: "messageTypes", matches });
     }
 
+    // Check mail filter (for mail events)
+    if (filter.mail) {
+      const matches = this.matchesMailFilter(event, filter.mail);
+      criteria.push({ name: "mail", matches });
+    }
+
     // If no criteria specified, match everything
     if (criteria.length === 0) {
       return true;
@@ -646,5 +653,64 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
     }
 
     return messageTypes.includes(messageType);
+  }
+
+  /**
+   * Check if a mail event matches a mail subscription filter.
+   * Extracts conversationId, threadId, participantId, and contentType
+   * from the event data based on the mail event type.
+   */
+  private matchesMailFilter(event: MAPEvent, mailFilter: MailSubscriptionFilter): boolean {
+    // Only match mail.* events
+    if (!event.type.startsWith("mail.")) {
+      return false;
+    }
+
+    const data = event.data as Record<string, unknown> | undefined;
+    if (!data) {
+      return false;
+    }
+
+    // Check conversationId (all mail events have this)
+    if (mailFilter.conversationId) {
+      if (data.conversationId !== mailFilter.conversationId) {
+        return false;
+      }
+    }
+
+    // Check threadId - found in turn.threadId or thread.id
+    if (mailFilter.threadId) {
+      const turn = data.turn as Record<string, unknown> | undefined;
+      const thread = data.thread as Record<string, unknown> | undefined;
+      const threadId = turn?.threadId ?? thread?.id ?? data.threadId;
+      if (threadId !== mailFilter.threadId) {
+        return false;
+      }
+    }
+
+    // Check participantId - found in various locations depending on event type
+    if (mailFilter.participantId) {
+      const participant = data.participant as Record<string, unknown> | undefined;
+      const turn = data.turn as Record<string, unknown> | undefined;
+      const pid =
+        participant?.id ??
+        data.participantId ??
+        data.createdBy ??
+        data.closedBy ??
+        turn?.participant;
+      if (pid !== mailFilter.participantId) {
+        return false;
+      }
+    }
+
+    // Check contentType - found in turn.contentType
+    if (mailFilter.contentType) {
+      const turn = data.turn as Record<string, unknown> | undefined;
+      if (turn?.contentType !== mailFilter.contentType) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }

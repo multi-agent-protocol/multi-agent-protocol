@@ -8,9 +8,11 @@ import type {
   MessageRouter,
   ScopeManager,
   AgentRegistry,
+  TurnManager,
   HandlerContext,
   HandlerRegistry,
 } from "../types";
+import type { TurnVisibility } from "../../types";
 import {
   isAddress,
   isAgentAddress,
@@ -29,6 +31,11 @@ export interface MessageHandlerOptions {
    * When provided, ambiguous addresses (valid as both agent and scope) will throw an error.
    */
   agents?: AgentRegistry;
+  /**
+   * TurnManager for mail meta interception.
+   * When provided and meta.mail is present on a send, records an intercepted turn.
+   */
+  turns?: TurnManager;
 }
 
 /**
@@ -42,6 +49,15 @@ interface SendParams {
   ttlMs?: number;
   /** Optional message type for routing/filtering */
   messageType?: string;
+  /** Optional metadata including mail turn tracking */
+  meta?: {
+    mail?: {
+      conversationId: string;
+      threadId?: string;
+      inReplyTo?: string;
+      visibility?: TurnVisibility;
+    };
+  };
 }
 
 /**
@@ -64,14 +80,17 @@ interface SendToScopeParams {
  * - `map/send/scope` - Send to all agents in a scope
  */
 export function createMessageHandlers(options: MessageHandlerOptions): HandlerRegistry {
-  const { messages, scopes, agents } = options;
+  const { messages, scopes, agents, turns } = options;
 
   return {
     "map/send": async (params: unknown, ctx: HandlerContext) => {
-      const { to, payload, replyTo, priority, ttlMs, messageType } = params as SendParams;
+      const { to, payload, replyTo, priority, ttlMs, messageType, meta } =
+        params as SendParams;
 
       // Determine sender - use first agent from session, or session ID
       const from = ctx.session.agentIds[0] ?? ctx.session.id;
+
+      let result: { messageId: string; delivered?: string[] };
 
       // Handle array of recipients
       if (Array.isArray(to)) {
@@ -103,12 +122,8 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
             results.push(message.id);
           }
         }
-        // Return protocol-compliant response
-        return { messageId: results[0], delivered: results };
-      }
-
-      // Handle prefixed addresses
-      if (isAddress(to)) {
+        result = { messageId: results[0], delivered: results };
+      } else if (isAddress(to)) {
         if (isScopeAddress(to)) {
           // Prefixed scope address: "scope:room-1"
           const scopeId = extractId(to);
@@ -119,7 +134,7 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
             excludeSender: true,
             messageType,
           });
-          return { messageId: message.id };
+          result = { messageId: message.id };
         } else {
           // Prefixed agent address: "agent:abc123"
           const agentId = extractId(to);
@@ -132,49 +147,66 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
             ttlMs,
             messageType,
           });
-          return { messageId: message.id };
+          result = { messageId: message.id };
+        }
+      } else {
+        // Backward compatibility: unprefixed address
+        // Check for ambiguous addresses (valid as both scope and agent)
+        const scope = scopes.get(to);
+        const agent = agents?.get(to);
+
+        if (scope && agent) {
+          // Ambiguous address - throw error requiring explicit prefix
+          throw new Error(
+            `Ambiguous address "${to}" matches both an agent and a scope. ` +
+            `Use "agent:${to}" or "scope:${to}" to disambiguate.`
+          );
+        }
+
+        if (scope) {
+          // Send to scope
+          const message = messages.sendToScope({
+            from,
+            scopeId: to,
+            payload,
+            excludeSender: true,
+            messageType,
+          });
+          result = { messageId: message.id };
+        } else {
+          // Send to single agent (unprefixed)
+          const message = messages.sendToAgent({
+            from,
+            to,
+            payload,
+            replyTo,
+            priority,
+            ttlMs,
+            messageType,
+          });
+          result = { messageId: message.id };
         }
       }
 
-      // Backward compatibility: unprefixed address
-      // Check for ambiguous addresses (valid as both scope and agent)
-      const scope = scopes.get(to);
-      const agent = agents?.get(to);
-
-      if (scope && agent) {
-        // Ambiguous address - throw error requiring explicit prefix
-        throw new Error(
-          `Ambiguous address "${to}" matches both an agent and a scope. ` +
-          `Use "agent:${to}" or "scope:${to}" to disambiguate.`
-        );
+      // Mail meta interception: record turn if mail metadata present
+      if (turns && meta?.mail?.conversationId) {
+        try {
+          turns.recordInterceptedTurn({
+            conversationId: meta.mail.conversationId,
+            participant: from,
+            contentType: "data",
+            content: payload,
+            messageId: result.messageId,
+            threadId: meta.mail.threadId,
+            inReplyTo: meta.mail.inReplyTo,
+            visibility: meta.mail.visibility,
+          });
+        } catch {
+          // Non-blocking: turn recording failure does not affect message delivery
+        }
       }
 
-      if (scope) {
-        // Send to scope
-        const message = messages.sendToScope({
-          from,
-          scopeId: to,
-          payload,
-          excludeSender: true,
-          messageType,
-        });
-        // Return protocol-compliant response
-        return { messageId: message.id };
-      }
-
-      // Send to single agent (unprefixed)
-      const message = messages.sendToAgent({
-        from,
-        to,
-        payload,
-        replyTo,
-        priority,
-        ttlMs,
-        messageType,
-      });
-
-      // Return protocol-compliant response
-      return { messageId: message.id };
+      return result;
     },
 
     "map/send/scope": async (params: unknown, ctx: HandlerContext) => {

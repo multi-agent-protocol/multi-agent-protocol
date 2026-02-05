@@ -59,3 +59,6 @@ export {
   RootTurnConversationMismatchError,
   ParentThreadNotFoundError,
 } from "./thread-manager";
+
+// Handler factory
+export { createMailHandlers, type MailHandlerOptions } from "./handlers";
