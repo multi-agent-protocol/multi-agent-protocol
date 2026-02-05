@@ -320,6 +320,24 @@ await client.connect();
 | `AgentConnection` | Agent participant with registration, scope, and message handling |
 | `GatewayConnection` | Federation gateway with routing and buffering |
 
+### Connection States
+
+All connections go through these lifecycle states:
+
+| State | Description |
+|-------|-------------|
+| `initial` | Connection created but not yet started |
+| `connecting` | Connect handshake in progress |
+| `connected` | Successfully connected and ready |
+| `reconnecting` | Disconnected, attempting to reconnect |
+| `closed` | Connection permanently closed |
+
+```typescript
+client.onStateChange((newState, oldState) => {
+  console.log(`State changed: ${oldState} -> ${newState}`);
+});
+```
+
 ### Key Methods
 
 **ClientConnection:**
@@ -329,6 +347,9 @@ await client.connect();
 - `send(to, payload)` - Send messages
 - `listAgents()` / `getAgent(id)` - Query agents
 - `listScopes()` - Query scopes
+- `getResumeToken()` - Get token for session resumption
+- `reconnect(token?)` - Reconnect using resume token
+- `authenticate(auth)` / `refreshAuth(auth)` - Authentication
 
 **AgentConnection:**
 - `register(options)` - Register agent
@@ -338,11 +359,14 @@ await client.connect();
 
 **Subscription:**
 - `pause()` / `resume()` - Flow control
-- `ack(sequenceNumber?)` - Acknowledge events
+- `ack(sequenceNumber?)` - Acknowledge events (requires server support)
+- `supportsAck` - Whether server advertises ack support
 - `close()` - End subscription
 - Async iterable - `for await (const event of subscription)`
 
 ### Event Types
+
+Event types use dot notation (e.g., `agent.registered`). Subscription filters accept both dot notation and underscore notation for compatibility.
 
 ```typescript
 type EventType =
@@ -354,9 +378,10 @@ type EventType =
   | 'scope.left'
   | 'message.sent'
   | 'message.delivered'
-  | 'permissions.client.updated'
-  | 'permissions.agent.updated'
-  // ... and more
+  | 'session.started'
+  | 'session.ended'
+  | 'system.error'
+  | 'system.shutdown'
 ```
 
 ## Protocol Methods

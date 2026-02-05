@@ -97,9 +97,25 @@ export interface EventBus {
   readonly store: EventStore;
 }
 
+/**
+ * Callback invoked when a subscriber throws during event handling.
+ * Provides context for debugging and monitoring.
+ */
+export type SubscriberErrorCallback = (
+  error: Error,
+  event: MAPEvent,
+  subscriberIndex: number
+) => void;
+
 export interface EventBusOptions {
   /** Custom event store (defaults to InMemoryEventStore) */
   store?: EventStore;
+  /**
+   * Callback invoked when a subscriber throws during event handling.
+   * Subscribers are isolated - one throwing won't affect others.
+   * Default: logs to console.error
+   */
+  onSubscriberError?: SubscriberErrorCallback;
 }
 
 // =============================================================================

@@ -11,6 +11,7 @@ import type {
   EventHandler,
   EventBus,
   EventBusOptions,
+  SubscriberErrorCallback,
 } from "../types";
 import { monotonicFactory } from "../../utils/ulid";
 import { InMemoryEventStore } from "./stores/in-memory";
@@ -36,13 +37,22 @@ interface Subscription {
  * - Notifies registered handlers synchronously
  * - Supports wildcard subscriptions with '*'
  */
+/**
+ * Default error handler - logs to console.error
+ */
+const defaultErrorHandler: SubscriberErrorCallback = (error, event, subscriberIndex) => {
+  console.error(`EventBus subscriber ${subscriberIndex} error handling ${event.type}:`, error);
+};
+
 export class EventBusImpl implements EventBus {
   readonly store: EventStore;
   private readonly subscriptions: Map<number, Subscription> = new Map();
   private nextSubscriptionId = 0;
+  private readonly onSubscriberError: SubscriberErrorCallback;
 
   constructor(options: EventBusOptions = {}) {
     this.store = options.store ?? new InMemoryEventStore();
+    this.onSubscriberError = options.onSubscriberError ?? defaultErrorHandler;
   }
 
   /**
@@ -66,13 +76,17 @@ export class EventBusImpl implements EventBus {
     this.store.append(completeEvent);
 
     // Notify handlers synchronously
-    for (const subscription of this.subscriptions.values()) {
+    for (const [subscriptionId, subscription] of this.subscriptions.entries()) {
       if (this.matchesSubscription(completeEvent, subscription)) {
         try {
           subscription.handler(completeEvent);
         } catch (error) {
-          // Log but don't throw - one handler failing shouldn't affect others
-          console.error("EventBus handler error:", error);
+          // Isolate subscriber errors - one failing shouldn't affect others
+          this.onSubscriberError(
+            error instanceof Error ? error : new Error(String(error)),
+            completeEvent,
+            subscriptionId
+          );
         }
       }
     }

@@ -358,6 +358,54 @@ describe("SubscriptionManagerImpl", () => {
       expect(manager.match(event)).toContain(subscription.id);
     });
 
+    it("should normalize underscore to dot notation in filter", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["agent_registered"] }, // underscore notation
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "agent.registered", // dot notation
+        timestamp: Date.now(),
+        data: {},
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should normalize underscore to dot notation in event type", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["agent.registered"] }, // dot notation
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "agent_registered", // underscore notation
+        timestamp: Date.now(),
+        data: {},
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should normalize prefix matches with underscore notation", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["agent_*"] }, // underscore notation with prefix
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "agent.registered", // dot notation
+        timestamp: Date.now(),
+        data: {},
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
     it("should match by agent", () => {
       const subscription = manager.create({
         sessionId: "session-1",

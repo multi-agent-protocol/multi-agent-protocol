@@ -560,19 +560,33 @@ export class SubscriptionManagerImpl implements SubscriptionManager {
   }
 
   /**
+   * Normalize event type to use dot notation.
+   * Accepts both "agent.registered" and "agent_registered" for compatibility.
+   */
+  private normalizeEventType(type: string): string {
+    return type.replace(/_/g, ".");
+  }
+
+  /**
    * Check if event matches any of the event types.
+   * Accepts both dot notation (agent.registered) and underscore notation (agent_registered).
    */
   private matchesEventTypes(event: MAPEvent, eventTypes: string[]): boolean {
+    const normalizedEventType = this.normalizeEventType(event.type);
+
+    // Normalize all filter types for comparison
+    const normalizedFilters = eventTypes.map((t) => this.normalizeEventType(t));
+
     // Direct match
-    if (eventTypes.includes(event.type)) {
+    if (normalizedFilters.includes(normalizedEventType)) {
       return true;
     }
 
     // Check for prefix matches (e.g., "agent.*" matches "agent.registered")
-    return eventTypes.some((type) => {
+    return normalizedFilters.some((type) => {
       if (type.endsWith(".*")) {
         const prefix = type.slice(0, -2);
-        return event.type.startsWith(prefix + ".");
+        return normalizedEventType.startsWith(prefix + ".");
       }
       return false;
     });
