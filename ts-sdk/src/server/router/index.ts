@@ -32,6 +32,7 @@ export {
   createConnectionHandlers,
   combineHandlers,
   type ConnectionHandlerOptions,
+  type MailCapabilityConfig,
 } from "./handlers";
 
 // MAPRouter OOP interface
