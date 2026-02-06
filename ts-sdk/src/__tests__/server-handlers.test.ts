@@ -739,6 +739,95 @@ describe("Handler Factories", () => {
         expect(result.reconnected).toBe(false);
       });
     });
+
+    describe("mail capabilities", () => {
+      it("should not include mail capabilities when not configured", async () => {
+        const handlers = createConnectionHandlers({ sessions });
+
+        const result = await handlers["map/connect"]({}, mockContext);
+
+        expect(result.capabilities.mail).toBeUndefined();
+      });
+
+      it("should not include mail capabilities when disabled", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          mailCapabilities: { enabled: false },
+        });
+
+        const result = await handlers["map/connect"]({}, mockContext);
+
+        expect(result.capabilities.mail).toBeUndefined();
+      });
+
+      it("should include mail capabilities when enabled", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          mailCapabilities: { enabled: true },
+        });
+
+        const result = await handlers["map/connect"]({}, mockContext);
+
+        expect(result.capabilities.mail).toBeDefined();
+        expect(result.capabilities.mail.enabled).toBe(true);
+      });
+
+      it("should default all sub-capabilities to true", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          mailCapabilities: { enabled: true },
+        });
+
+        const result = await handlers["map/connect"]({}, mockContext);
+
+        const mail = result.capabilities.mail;
+        expect(mail.canCreate).toBe(true);
+        expect(mail.canJoin).toBe(true);
+        expect(mail.canInvite).toBe(true);
+        expect(mail.canViewHistory).toBe(true);
+        expect(mail.canCreateThreads).toBe(true);
+      });
+
+      it("should respect custom sub-capability overrides", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          mailCapabilities: {
+            enabled: true,
+            canCreate: false,
+            canInvite: false,
+            canCreateThreads: false,
+          },
+        });
+
+        const result = await handlers["map/connect"]({}, mockContext);
+
+        const mail = result.capabilities.mail;
+        expect(mail.canCreate).toBe(false);
+        expect(mail.canJoin).toBe(true);
+        expect(mail.canInvite).toBe(false);
+        expect(mail.canViewHistory).toBe(true);
+        expect(mail.canCreateThreads).toBe(false);
+      });
+
+      it("should include capabilities alongside existing fields", async () => {
+        const handlers = createConnectionHandlers({
+          sessions,
+          mailCapabilities: { enabled: true },
+          serverName: "TestServer",
+          serverVersion: "2.0.0",
+        });
+
+        const result = await handlers["map/connect"]({}, mockContext);
+
+        // Existing fields still present
+        expect(result.systemInfo.name).toBe("TestServer");
+        expect(result.systemInfo.version).toBe("2.0.0");
+        expect(result.capabilities.roles).toEqual([mockSession.role]);
+
+        // Mail capabilities also present
+        expect(result.capabilities.mail.enabled).toBe(true);
+      });
+    });
   });
 
   describe("combineHandlers", () => {

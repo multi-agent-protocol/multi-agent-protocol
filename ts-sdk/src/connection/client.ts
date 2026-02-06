@@ -25,6 +25,7 @@ import {
   STEERING_METHODS,
   SESSION_METHODS,
   AUTH_METHODS,
+  MAIL_METHODS,
   NOTIFICATION_METHODS,
   PROTOCOL_VERSION,
   type ParticipantCapabilities,
@@ -70,6 +71,34 @@ import {
   type AuthenticateRequestParams,
   type AuthenticateResponseResult,
   type AuthPrincipal,
+  type ConversationId,
+  type ThreadId,
+  type MailCreateRequestParams,
+  type MailCreateResponseResult,
+  type MailGetRequestParams,
+  type MailGetResponseResult,
+  type MailListRequestParams,
+  type MailListResponseResult,
+  type MailCloseRequestParams,
+  type MailCloseResponseResult,
+  type MailJoinRequestParams,
+  type MailJoinResponseResult,
+  type MailLeaveRequestParams,
+  type MailLeaveResponseResult,
+  type MailInviteRequestParams,
+  type MailInviteResponseResult,
+  type MailTurnRequestParams,
+  type MailTurnResponseResult,
+  type MailTurnsListRequestParams,
+  type MailTurnsListResponseResult,
+  type MailThreadCreateRequestParams,
+  type MailThreadCreateResponseResult,
+  type MailThreadListRequestParams,
+  type MailThreadListResponseResult,
+  type MailSummaryRequestParams,
+  type MailSummaryResponseResult,
+  type MailReplayRequestParams,
+  type MailReplayResponseResult,
 } from '../types';
 
 /**
@@ -1177,6 +1206,236 @@ export class ClientConnection {
    */
   async resumeAgent(agentId: AgentId): Promise<{ resumed: boolean; agent?: Agent }> {
     return this.#connection.sendRequest(STATE_METHODS.AGENTS_RESUME, { agentId });
+  }
+
+  // ===========================================================================
+  // Mail
+  // ===========================================================================
+
+  /**
+   * Create a new mail conversation.
+   *
+   * @param params - Conversation creation parameters
+   * @returns Created conversation and participant info
+   */
+  async createConversation(
+    params?: Omit<MailCreateRequestParams, '_meta'>
+  ): Promise<MailCreateResponseResult> {
+    return this.#connection.sendRequest<MailCreateRequestParams, MailCreateResponseResult>(
+      MAIL_METHODS.MAIL_CREATE,
+      params ?? {}
+    );
+  }
+
+  /**
+   * Get a conversation by ID with optional includes.
+   *
+   * @param conversationId - ID of the conversation to retrieve
+   * @param include - Optional fields to include (participants, threads, recentTurns, stats)
+   * @returns Conversation details with requested includes
+   */
+  async getConversation(
+    conversationId: ConversationId,
+    include?: MailGetRequestParams['include']
+  ): Promise<MailGetResponseResult> {
+    return this.#connection.sendRequest<MailGetRequestParams, MailGetResponseResult>(
+      MAIL_METHODS.MAIL_GET,
+      { conversationId, include }
+    );
+  }
+
+  /**
+   * List conversations with optional filters.
+   *
+   * @param params - Optional filter, limit, and cursor parameters
+   * @returns Paginated list of conversations
+   */
+  async listConversations(
+    params?: Omit<MailListRequestParams, '_meta'>
+  ): Promise<MailListResponseResult> {
+    return this.#connection.sendRequest<MailListRequestParams, MailListResponseResult>(
+      MAIL_METHODS.MAIL_LIST,
+      params ?? {}
+    );
+  }
+
+  /**
+   * Close a conversation.
+   *
+   * @param conversationId - ID of the conversation to close
+   * @param reason - Optional reason for closing
+   * @returns The closed conversation
+   */
+  async closeConversation(
+    conversationId: ConversationId,
+    reason?: string
+  ): Promise<MailCloseResponseResult> {
+    return this.#connection.sendRequest<MailCloseRequestParams, MailCloseResponseResult>(
+      MAIL_METHODS.MAIL_CLOSE,
+      { conversationId, reason }
+    );
+  }
+
+  /**
+   * Join an existing conversation.
+   *
+   * @param params - Join parameters including conversationId and optional catch-up config
+   * @returns Conversation, participant, and optional history
+   */
+  async joinConversation(
+    params: Omit<MailJoinRequestParams, '_meta'>
+  ): Promise<MailJoinResponseResult> {
+    return this.#connection.sendRequest<MailJoinRequestParams, MailJoinResponseResult>(
+      MAIL_METHODS.MAIL_JOIN,
+      params
+    );
+  }
+
+  /**
+   * Leave a conversation.
+   *
+   * @param conversationId - ID of the conversation to leave
+   * @param reason - Optional reason for leaving
+   * @returns Leave confirmation with timestamp
+   */
+  async leaveConversation(
+    conversationId: ConversationId,
+    reason?: string
+  ): Promise<MailLeaveResponseResult> {
+    return this.#connection.sendRequest<MailLeaveRequestParams, MailLeaveResponseResult>(
+      MAIL_METHODS.MAIL_LEAVE,
+      { conversationId, reason }
+    );
+  }
+
+  /**
+   * Invite a participant to a conversation.
+   *
+   * @param params - Invite parameters including conversationId and participant info
+   * @returns Invite result
+   */
+  async inviteToConversation(
+    params: Omit<MailInviteRequestParams, '_meta'>
+  ): Promise<MailInviteResponseResult> {
+    return this.#connection.sendRequest<MailInviteRequestParams, MailInviteResponseResult>(
+      MAIL_METHODS.MAIL_INVITE,
+      params
+    );
+  }
+
+  /**
+   * Record a turn (message) in a conversation.
+   *
+   * @param params - Turn parameters including conversationId, contentType, and content
+   * @returns The created turn
+   */
+  async recordTurn(
+    params: Omit<MailTurnRequestParams, '_meta'>
+  ): Promise<MailTurnResponseResult> {
+    return this.#connection.sendRequest<MailTurnRequestParams, MailTurnResponseResult>(
+      MAIL_METHODS.MAIL_TURN,
+      params
+    );
+  }
+
+  /**
+   * List turns in a conversation with optional filters.
+   *
+   * @param params - List parameters including conversationId and optional filters
+   * @returns Paginated list of turns
+   */
+  async listTurns(
+    params: Omit<MailTurnsListRequestParams, '_meta'>
+  ): Promise<MailTurnsListResponseResult> {
+    return this.#connection.sendRequest<MailTurnsListRequestParams, MailTurnsListResponseResult>(
+      MAIL_METHODS.MAIL_TURNS_LIST,
+      params
+    );
+  }
+
+  /**
+   * Create a thread in a conversation.
+   *
+   * @param params - Thread creation parameters including conversationId and rootTurnId
+   * @returns The created thread
+   */
+  async createThread(
+    params: Omit<MailThreadCreateRequestParams, '_meta'>
+  ): Promise<MailThreadCreateResponseResult> {
+    return this.#connection.sendRequest<MailThreadCreateRequestParams, MailThreadCreateResponseResult>(
+      MAIL_METHODS.MAIL_THREAD_CREATE,
+      params
+    );
+  }
+
+  /**
+   * List threads in a conversation.
+   *
+   * @param params - List parameters including conversationId
+   * @returns Paginated list of threads
+   */
+  async listThreads(
+    params: Omit<MailThreadListRequestParams, '_meta'>
+  ): Promise<MailThreadListResponseResult> {
+    return this.#connection.sendRequest<MailThreadListRequestParams, MailThreadListResponseResult>(
+      MAIL_METHODS.MAIL_THREAD_LIST,
+      params
+    );
+  }
+
+  /**
+   * Get a summary of a conversation.
+   *
+   * @param params - Summary parameters including conversationId and optional scope/includes
+   * @returns Generated summary with optional key points, decisions, and questions
+   */
+  async getConversationSummary(
+    params: Omit<MailSummaryRequestParams, '_meta'>
+  ): Promise<MailSummaryResponseResult> {
+    return this.#connection.sendRequest<MailSummaryRequestParams, MailSummaryResponseResult>(
+      MAIL_METHODS.MAIL_SUMMARY,
+      params
+    );
+  }
+
+  /**
+   * Replay turns from a conversation, optionally from a specific point.
+   *
+   * @param params - Replay parameters including conversationId and optional starting point
+   * @returns Replayed turns with pagination info
+   */
+  async replayConversation(
+    params: Omit<MailReplayRequestParams, '_meta'>
+  ): Promise<MailReplayResponseResult> {
+    return this.#connection.sendRequest<MailReplayRequestParams, MailReplayResponseResult>(
+      MAIL_METHODS.MAIL_REPLAY,
+      params
+    );
+  }
+
+  /**
+   * Send a message to an address with mail context attached.
+   *
+   * Wraps the standard `send()` method, automatically attaching `meta.mail`
+   * with the specified conversationId so the message is recorded as a turn
+   * in the conversation.
+   *
+   * @param to - Target address
+   * @param payload - Message payload
+   * @param conversationId - Conversation to associate with
+   * @param options - Optional threadId and additional message meta
+   * @returns Send result
+   */
+  async sendWithMail(
+    to: Address,
+    payload: unknown,
+    conversationId: ConversationId,
+    options?: { threadId?: ThreadId; meta?: MessageMeta }
+  ): Promise<SendResponseResult> {
+    return this.send(to, payload, {
+      ...options?.meta,
+      mail: { conversationId, threadId: options?.threadId },
+    });
   }
 
   // ===========================================================================

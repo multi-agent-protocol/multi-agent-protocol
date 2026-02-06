@@ -18,6 +18,25 @@ import type { AuthCredentials } from "../../types";
 /**
  * Options for creating connection handlers.
  */
+/**
+ * Mail capability configuration for the server.
+ * When provided, mail capabilities are included in the connect response.
+ */
+export interface MailCapabilityConfig {
+  /** Whether mail is enabled on this server */
+  enabled: boolean;
+  /** Can create new conversations (default: true) */
+  canCreate?: boolean;
+  /** Can join existing conversations (default: true) */
+  canJoin?: boolean;
+  /** Can invite participants (default: true) */
+  canInvite?: boolean;
+  /** Can view conversation history (default: true) */
+  canViewHistory?: boolean;
+  /** Can create threads within conversations (default: true) */
+  canCreateThreads?: boolean;
+}
+
 export interface ConnectionHandlerOptions {
   sessions: SessionManager;
   agents?: AgentRegistry;
@@ -29,6 +48,8 @@ export interface ConnectionHandlerOptions {
   serverVersion?: string;
   /** Authentication manager (optional) */
   authManager?: AuthManager;
+  /** Mail capability configuration (optional). When provided and enabled, mail capabilities are advertised. */
+  mailCapabilities?: MailCapabilityConfig;
 }
 
 /**
@@ -58,7 +79,7 @@ interface ConnectParams {
 export function createConnectionHandlers(
   options: ConnectionHandlerOptions
 ): HandlerRegistry {
-  const { sessions, agents, subscriptions, scopes, serverName, serverVersion, authManager } = options;
+  const { sessions, agents, subscriptions, scopes, serverName, serverVersion, authManager, mailCapabilities } = options;
 
   return {
     "map/connect": async (params: unknown, ctx: HandlerContext) => {
@@ -134,15 +155,30 @@ export function createConnectionHandlers(
         reclaimedAgents = [...ctx.session.agentIds];
       }
 
+      // Build capabilities
+      const capabilities: Record<string, unknown> = {
+        roles: [ctx.session.role],
+        features: [],
+      };
+
+      // Include mail capabilities if configured and enabled
+      if (mailCapabilities?.enabled) {
+        capabilities.mail = {
+          enabled: true,
+          canCreate: mailCapabilities.canCreate ?? true,
+          canJoin: mailCapabilities.canJoin ?? true,
+          canInvite: mailCapabilities.canInvite ?? true,
+          canViewHistory: mailCapabilities.canViewHistory ?? true,
+          canCreateThreads: mailCapabilities.canCreateThreads ?? true,
+        };
+      }
+
       // Return protocol-compliant connect response
       return {
         protocolVersion: "2024-12",
         sessionId: ctx.session.id,
         participantId: ctx.session.id, // Use session ID as participant ID
-        capabilities: {
-          roles: [ctx.session.role],
-          features: [],
-        },
+        capabilities,
         systemInfo: {
           name: serverName ?? "MAP Server",
           version: serverVersion ?? "1.0.0",

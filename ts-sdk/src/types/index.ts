@@ -42,6 +42,15 @@ export type SubscriptionId = string;
 /** Identifier for correlating related messages */
 export type CorrelationId = string;
 
+/** Unique identifier for a conversation (format: 'conv-{ulid}') */
+export type ConversationId = string;
+
+/** Unique identifier for a turn within a conversation (format: 'turn-{ulid}') */
+export type TurnId = string;
+
+/** Unique identifier for a thread within a conversation (format: 'thread-{ulid}') */
+export type ThreadId = string;
+
 /** JSON-RPC request ID */
 export type RequestId = string | number;
 
@@ -114,6 +123,21 @@ export interface ParticipantCapabilities {
   federation?: {
     /** Can connect to and route to federated systems */
     canFederate?: boolean;
+  };
+  /** Mail protocol capabilities for conversation/turn tracking */
+  mail?: {
+    /** Whether mail is enabled (server response only) */
+    enabled?: boolean;
+    /** Can create new conversations */
+    canCreate?: boolean;
+    /** Can join existing conversations */
+    canJoin?: boolean;
+    /** Can invite participants to conversations */
+    canInvite?: boolean;
+    /** Can view conversation history */
+    canViewHistory?: boolean;
+    /** Can create threads within conversations */
+    canCreateThreads?: boolean;
   };
   /** Streaming/backpressure capabilities */
   streaming?: StreamingCapabilities;
@@ -552,6 +576,12 @@ export interface MessageMeta {
    * Used to identify the protocol of the payload.
    */
   protocol?: string;
+  /**
+   * Mail turn tracking metadata.
+   * When present on map/send, the server records a turn in the specified
+   * conversation in addition to routing the message.
+   */
+  mail?: MailMessageMeta;
   _meta?: Meta;
 }
 
@@ -639,6 +669,16 @@ export const EVENT_TYPES = {
   // Federation events
   FEDERATION_CONNECTED: 'federation_connected',
   FEDERATION_DISCONNECTED: 'federation_disconnected',
+
+  // Mail events
+  MAIL_CREATED: 'mail.created',
+  MAIL_CLOSED: 'mail.closed',
+  MAIL_PARTICIPANT_JOINED: 'mail.participant.joined',
+  MAIL_PARTICIPANT_LEFT: 'mail.participant.left',
+  MAIL_TURN_ADDED: 'mail.turn.added',
+  MAIL_TURN_UPDATED: 'mail.turn.updated',
+  MAIL_THREAD_CREATED: 'mail.thread.created',
+  MAIL_SUMMARY_GENERATED: 'mail.summary.generated',
 } as const;
 
 /** Type of system event (derived from EVENT_TYPES) */
@@ -780,6 +820,13 @@ export interface SubscriptionFilter {
    */
   metadataMatch?: Record<string, unknown>;
 
+  /**
+   * Mail-specific filter for conversation events.
+   * Matches mail events related to a specific conversation, thread,
+   * participant, or content type.
+   */
+  mail?: MailSubscriptionFilter;
+
   _meta?: Meta;
 }
 
@@ -896,6 +943,7 @@ export type ErrorCategory =
   | 'agent'
   | 'resource'
   | 'federation'
+  | 'mail'
   | 'internal';
 
 /** Structured error data */
@@ -1113,6 +1161,8 @@ export interface ConnectResponseResult {
   principal?: AuthPrincipal;
   /** Auth required but not provided - client should authenticate */
   authRequired?: ServerAuthCapabilities;
+  /** Token to resume this session later */
+  resumeToken?: string;
   _meta?: Meta;
 }
 
@@ -2051,6 +2101,582 @@ export interface FederationRouteResponseResult {
 }
 
 // =============================================================================
+// Mail Types - Conversation, Turn, and Thread types
+// =============================================================================
+
+/**
+ * Type of conversation.
+ */
+export type ConversationType =
+  | 'user-session'
+  | 'agent-task'
+  | 'multi-agent'
+  | 'mixed';
+
+/**
+ * Status of a conversation.
+ */
+export type ConversationStatus =
+  | 'active'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'archived';
+
+/**
+ * A conversation - a container for tracking related interactions.
+ */
+export interface Conversation {
+  id: ConversationId;
+  type: ConversationType;
+  status: ConversationStatus;
+  subject?: string;
+  participantCount: number;
+  parentConversationId?: ConversationId;
+  parentTurnId?: TurnId;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  closedAt?: Timestamp;
+  createdBy: ParticipantId;
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+/**
+ * Role of a participant within a conversation.
+ */
+export type ParticipantRole =
+  | 'initiator'
+  | 'assistant'
+  | 'worker'
+  | 'observer'
+  | 'moderator';
+
+/**
+ * Permissions for a participant within a conversation.
+ */
+export interface ConversationPermissions {
+  canSend: boolean;
+  canObserve: boolean;
+  canInvite: boolean;
+  canRemove: boolean;
+  canCreateThreads: boolean;
+  historyAccess: 'none' | 'from-join' | 'full';
+  canSeeInternal: boolean;
+  _meta?: Meta;
+}
+
+/**
+ * A participant in a conversation with role and permissions.
+ */
+export interface ConversationParticipant {
+  id: ParticipantId;
+  type: 'user' | 'agent' | 'system';
+  role: ParticipantRole;
+  joinedAt: Timestamp;
+  leftAt?: Timestamp;
+  permissions: ConversationPermissions;
+  agentInfo?: {
+    agentId: AgentId;
+    name?: string;
+    role?: string;
+  };
+  _meta?: Meta;
+}
+
+/**
+ * A thread within a conversation for focused discussion.
+ */
+export interface Thread {
+  id: ThreadId;
+  conversationId: ConversationId;
+  parentThreadId?: ThreadId;
+  subject?: string;
+  rootTurnId: TurnId;
+  turnCount: number;
+  participantCount: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  createdBy: ParticipantId;
+  _meta?: Meta;
+}
+
+/**
+ * How a turn was created.
+ * - 'explicit': Created directly via mail/turn call
+ * - 'intercepted': Auto-recorded from map/send with mail meta
+ */
+export type TurnSource =
+  | { type: 'explicit'; method: 'mail/turn' }
+  | { type: 'intercepted'; messageId: MessageId };
+
+/**
+ * Visibility of a turn within a conversation.
+ */
+export type TurnVisibility =
+  | { type: 'all' }
+  | { type: 'participants'; ids: ParticipantId[] }
+  | { type: 'role'; roles: ParticipantRole[] }
+  | { type: 'private' };
+
+/**
+ * Status of a turn's content lifecycle.
+ */
+export type TurnStatus = 'pending' | 'streaming' | 'complete' | 'failed';
+
+/**
+ * A turn - the atomic unit of conversation.
+ * Records what a participant intentionally communicates.
+ *
+ * Content uses a generic model:
+ * - Well-known types: 'text', 'data', 'event', 'reference'
+ * - Custom types use 'x-' prefix (e.g., 'x-tool-call')
+ */
+export interface Turn {
+  id: TurnId;
+  conversationId: ConversationId;
+  participant: ParticipantId;
+  timestamp: Timestamp;
+  /** Content type - well-known ('text', 'data', 'event', 'reference') or custom ('x-*') */
+  contentType: string;
+  /** Content payload - shape determined by contentType */
+  content: unknown;
+  /** Thread this turn belongs to */
+  threadId?: ThreadId;
+  /** Turn this is in reply to */
+  inReplyTo?: TurnId;
+  /** How this turn was created */
+  source: TurnSource;
+  /** Who can see this turn */
+  visibility?: TurnVisibility;
+  /** Status of the turn content */
+  status?: TurnStatus;
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+/**
+ * Mail metadata for map/send turn tracking.
+ * Include in MessageMeta.mail to route AND record a turn.
+ */
+export interface MailMessageMeta {
+  conversationId: ConversationId;
+  threadId?: ThreadId;
+  inReplyTo?: TurnId;
+  visibility?: TurnVisibility;
+}
+
+/**
+ * Mail-specific subscription filter.
+ * Used in SubscriptionFilter.mail for filtering mail events.
+ */
+export interface MailSubscriptionFilter {
+  conversationId?: ConversationId;
+  threadId?: ThreadId;
+  participantId?: ParticipantId;
+  contentType?: string;
+}
+
+// =============================================================================
+// Mail Event Data Types
+// =============================================================================
+
+/** Data for mail.created events */
+export interface MailCreatedEventData {
+  conversationId: ConversationId;
+  type: ConversationType;
+  subject?: string;
+  createdBy: ParticipantId;
+}
+
+/** Data for mail.closed events */
+export interface MailClosedEventData {
+  conversationId: ConversationId;
+  closedBy: ParticipantId;
+  reason?: string;
+}
+
+/** Data for mail.participant.joined events */
+export interface MailParticipantJoinedEventData {
+  conversationId: ConversationId;
+  participant: ConversationParticipant;
+}
+
+/** Data for mail.participant.left events */
+export interface MailParticipantLeftEventData {
+  conversationId: ConversationId;
+  participantId: ParticipantId;
+  reason?: string;
+}
+
+/** Data for mail.turn.added events */
+export interface MailTurnAddedEventData {
+  conversationId: ConversationId;
+  turn: Turn;
+}
+
+/** Data for mail.turn.updated events */
+export interface MailTurnUpdatedEventData {
+  conversationId: ConversationId;
+  turnId: TurnId;
+  status?: TurnStatus;
+}
+
+/** Data for mail.thread.created events */
+export interface MailThreadCreatedEventData {
+  conversationId: ConversationId;
+  thread: Thread;
+}
+
+/** Data for mail.summary.generated events */
+export interface MailSummaryGeneratedEventData {
+  conversationId: ConversationId;
+  summary: string;
+}
+
+// =============================================================================
+// Mail Request/Response Types
+// =============================================================================
+
+// --- mail/create ---
+
+export interface MailCreateRequestParams {
+  type?: ConversationType;
+  subject?: string;
+  parentConversationId?: ConversationId;
+  parentTurnId?: TurnId;
+  initialParticipants?: Array<{
+    id: ParticipantId;
+    role?: ParticipantRole;
+    permissions?: Partial<ConversationPermissions>;
+  }>;
+  initialTurn?: {
+    contentType: string;
+    content: unknown;
+    visibility?: TurnVisibility;
+  };
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+export interface MailCreateRequest extends MAPRequestBase<MailCreateRequestParams> {
+  method: 'mail/create';
+  params: MailCreateRequestParams;
+}
+
+export interface MailCreateResponseResult {
+  conversation: Conversation;
+  participant: ConversationParticipant;
+  initialTurn?: Turn;
+  _meta?: Meta;
+}
+
+// --- mail/get ---
+
+export interface MailGetRequestParams {
+  conversationId: ConversationId;
+  include?: {
+    participants?: boolean;
+    threads?: boolean;
+    recentTurns?: number;
+    stats?: boolean;
+  };
+  _meta?: Meta;
+}
+
+export interface MailGetRequest extends MAPRequestBase<MailGetRequestParams> {
+  method: 'mail/get';
+  params: MailGetRequestParams;
+}
+
+export interface MailGetResponseResult {
+  conversation: Conversation;
+  participants?: ConversationParticipant[];
+  threads?: Thread[];
+  recentTurns?: Turn[];
+  stats?: {
+    totalTurns: number;
+    turnsByContentType: Record<string, number>;
+    activeParticipants: number;
+    threadCount: number;
+  };
+  _meta?: Meta;
+}
+
+// --- mail/list ---
+
+export interface MailListRequestParams {
+  filter?: {
+    type?: ConversationType[];
+    status?: ConversationStatus[];
+    participantId?: ParticipantId;
+    createdAfter?: Timestamp;
+    createdBefore?: Timestamp;
+    parentConversationId?: ConversationId;
+  };
+  limit?: number;
+  cursor?: string;
+  _meta?: Meta;
+}
+
+export interface MailListRequest extends MAPRequestBase<MailListRequestParams> {
+  method: 'mail/list';
+  params?: MailListRequestParams;
+}
+
+export interface MailListResponseResult {
+  conversations: Conversation[];
+  nextCursor?: string;
+  hasMore: boolean;
+  _meta?: Meta;
+}
+
+// --- mail/close ---
+
+export interface MailCloseRequestParams {
+  conversationId: ConversationId;
+  reason?: string;
+  _meta?: Meta;
+}
+
+export interface MailCloseRequest extends MAPRequestBase<MailCloseRequestParams> {
+  method: 'mail/close';
+  params: MailCloseRequestParams;
+}
+
+export interface MailCloseResponseResult {
+  conversation: Conversation;
+  _meta?: Meta;
+}
+
+// --- mail/join ---
+
+export interface MailJoinRequestParams {
+  conversationId: ConversationId;
+  role?: ParticipantRole;
+  catchUp?: {
+    from: string | number;
+    limit?: number;
+    includeSummary?: boolean;
+  };
+  _meta?: Meta;
+}
+
+export interface MailJoinRequest extends MAPRequestBase<MailJoinRequestParams> {
+  method: 'mail/join';
+  params: MailJoinRequestParams;
+}
+
+export interface MailJoinResponseResult {
+  conversation: Conversation;
+  participant: ConversationParticipant;
+  history?: Turn[];
+  historyCursor?: string;
+  summary?: string;
+  _meta?: Meta;
+}
+
+// --- mail/leave ---
+
+export interface MailLeaveRequestParams {
+  conversationId: ConversationId;
+  reason?: string;
+  _meta?: Meta;
+}
+
+export interface MailLeaveRequest extends MAPRequestBase<MailLeaveRequestParams> {
+  method: 'mail/leave';
+  params: MailLeaveRequestParams;
+}
+
+export interface MailLeaveResponseResult {
+  success: boolean;
+  leftAt: Timestamp;
+  _meta?: Meta;
+}
+
+// --- mail/invite ---
+
+export interface MailInviteRequestParams {
+  conversationId: ConversationId;
+  participant: {
+    id: ParticipantId;
+    role?: ParticipantRole;
+    permissions?: Partial<ConversationPermissions>;
+  };
+  message?: string;
+  _meta?: Meta;
+}
+
+export interface MailInviteRequest extends MAPRequestBase<MailInviteRequestParams> {
+  method: 'mail/invite';
+  params: MailInviteRequestParams;
+}
+
+export interface MailInviteResponseResult {
+  invited: boolean;
+  participant?: ConversationParticipant;
+  invitationId?: string;
+  pending?: boolean;
+  _meta?: Meta;
+}
+
+// --- mail/turn ---
+
+export interface MailTurnRequestParams {
+  conversationId: ConversationId;
+  contentType: string;
+  content: unknown;
+  threadId?: ThreadId;
+  inReplyTo?: TurnId;
+  visibility?: TurnVisibility;
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+export interface MailTurnRequest extends MAPRequestBase<MailTurnRequestParams> {
+  method: 'mail/turn';
+  params: MailTurnRequestParams;
+}
+
+export interface MailTurnResponseResult {
+  turn: Turn;
+  _meta?: Meta;
+}
+
+// --- mail/turns/list ---
+
+export interface MailTurnsListRequestParams {
+  conversationId: ConversationId;
+  filter?: {
+    threadId?: ThreadId;
+    includeAllThreads?: boolean;
+    contentTypes?: string[];
+    participantId?: ParticipantId;
+    afterTurnId?: TurnId;
+    beforeTurnId?: TurnId;
+    afterTimestamp?: Timestamp;
+    beforeTimestamp?: Timestamp;
+  };
+  limit?: number;
+  order?: 'asc' | 'desc';
+  _meta?: Meta;
+}
+
+export interface MailTurnsListRequest extends MAPRequestBase<MailTurnsListRequestParams> {
+  method: 'mail/turns/list';
+  params: MailTurnsListRequestParams;
+}
+
+export interface MailTurnsListResponseResult {
+  turns: Turn[];
+  hasMore: boolean;
+  nextCursor?: string;
+  _meta?: Meta;
+}
+
+// --- mail/thread/create ---
+
+export interface MailThreadCreateRequestParams {
+  conversationId: ConversationId;
+  rootTurnId: TurnId;
+  subject?: string;
+  parentThreadId?: ThreadId;
+  _meta?: Meta;
+}
+
+export interface MailThreadCreateRequest extends MAPRequestBase<MailThreadCreateRequestParams> {
+  method: 'mail/thread/create';
+  params: MailThreadCreateRequestParams;
+}
+
+export interface MailThreadCreateResponseResult {
+  thread: Thread;
+  _meta?: Meta;
+}
+
+// --- mail/thread/list ---
+
+export interface MailThreadListRequestParams {
+  conversationId: ConversationId;
+  parentThreadId?: ThreadId;
+  limit?: number;
+  cursor?: string;
+  _meta?: Meta;
+}
+
+export interface MailThreadListRequest extends MAPRequestBase<MailThreadListRequestParams> {
+  method: 'mail/thread/list';
+  params?: MailThreadListRequestParams;
+}
+
+export interface MailThreadListResponseResult {
+  threads: Thread[];
+  hasMore: boolean;
+  nextCursor?: string;
+  _meta?: Meta;
+}
+
+// --- mail/summary ---
+
+export interface MailSummaryRequestParams {
+  conversationId: ConversationId;
+  scope?: {
+    fromTurnId?: TurnId;
+    toTurnId?: TurnId;
+    threadId?: ThreadId;
+  };
+  regenerate?: boolean;
+  include?: {
+    keyPoints?: boolean;
+    keyDecisions?: boolean;
+    openQuestions?: boolean;
+    participants?: boolean;
+  };
+  _meta?: Meta;
+}
+
+export interface MailSummaryRequest extends MAPRequestBase<MailSummaryRequestParams> {
+  method: 'mail/summary';
+  params: MailSummaryRequestParams;
+}
+
+export interface MailSummaryResponseResult {
+  summary: string;
+  keyPoints?: string[];
+  keyDecisions?: string[];
+  openQuestions?: string[];
+  generated: boolean;
+  cachedAt?: Timestamp;
+  _meta?: Meta;
+}
+
+// --- mail/replay ---
+
+export interface MailReplayRequestParams {
+  conversationId: ConversationId;
+  fromTurnId?: TurnId;
+  fromTimestamp?: Timestamp;
+  threadId?: ThreadId;
+  limit?: number;
+  contentTypes?: string[];
+  _meta?: Meta;
+}
+
+export interface MailReplayRequest extends MAPRequestBase<MailReplayRequestParams> {
+  method: 'mail/replay';
+  params: MailReplayRequestParams;
+}
+
+export interface MailReplayResponseResult {
+  turns: Turn[];
+  hasMore: boolean;
+  nextCursor?: string;
+  missedCount: number;
+  _meta?: Meta;
+}
+
+// =============================================================================
 // Notification Types
 // =============================================================================
 
@@ -2163,7 +2789,21 @@ export type MAPRequest =
   // Extension
   | InjectRequest
   | FederationConnectRequest
-  | FederationRouteRequest;
+  | FederationRouteRequest
+  // Mail
+  | MailCreateRequest
+  | MailGetRequest
+  | MailListRequest
+  | MailCloseRequest
+  | MailJoinRequest
+  | MailLeaveRequest
+  | MailInviteRequest
+  | MailTurnRequest
+  | MailTurnsListRequest
+  | MailThreadCreateRequest
+  | MailThreadListRequest
+  | MailSummaryRequest
+  | MailReplayRequest;
 
 /** All MAP notification types */
 export type MAPNotification = EventNotification | MessageNotification | SubscriptionAckNotification;
@@ -2244,6 +2884,23 @@ export const FEDERATION_METHODS = {
   FEDERATION_ROUTE: 'map/federation/route',
 } as const;
 
+/** Mail methods - Conversation and turn management */
+export const MAIL_METHODS = {
+  MAIL_CREATE: 'mail/create',
+  MAIL_GET: 'mail/get',
+  MAIL_LIST: 'mail/list',
+  MAIL_CLOSE: 'mail/close',
+  MAIL_JOIN: 'mail/join',
+  MAIL_LEAVE: 'mail/leave',
+  MAIL_INVITE: 'mail/invite',
+  MAIL_TURN: 'mail/turn',
+  MAIL_TURNS_LIST: 'mail/turns/list',
+  MAIL_THREAD_CREATE: 'mail/thread/create',
+  MAIL_THREAD_LIST: 'mail/thread/list',
+  MAIL_SUMMARY: 'mail/summary',
+  MAIL_REPLAY: 'mail/replay',
+} as const;
+
 /** Notification methods */
 export const NOTIFICATION_METHODS = {
   EVENT: 'map/event',
@@ -2266,6 +2923,7 @@ export const MAP_METHODS = {
   ...AUTH_METHODS,
   ...PERMISSION_METHODS,
   ...FEDERATION_METHODS,
+  ...MAIL_METHODS,
 } as const;
 
 // Legacy aliases for backward compatibility
@@ -2342,6 +3000,21 @@ export const FEDERATION_ERROR_CODES = {
   FEDERATION_MAX_HOPS_EXCEEDED: 5011,
 } as const;
 
+/** Mail error codes - prefixed to avoid collision with PERMISSION_DENIED */
+export const MAIL_ERROR_CODES = {
+  MAIL_CONVERSATION_NOT_FOUND: 10000,
+  MAIL_CONVERSATION_CLOSED: 10001,
+  MAIL_NOT_A_PARTICIPANT: 10002,
+  MAIL_PERMISSION_DENIED: 10003,
+  MAIL_TURN_NOT_FOUND: 10004,
+  MAIL_THREAD_NOT_FOUND: 10005,
+  MAIL_INVALID_TURN_CONTENT: 10006,
+  MAIL_PARTICIPANT_ALREADY_JOINED: 10007,
+  MAIL_INVITATION_REQUIRED: 10008,
+  MAIL_HISTORY_ACCESS_DENIED: 10009,
+  MAIL_PARENT_CONVERSATION_NOT_FOUND: 10010,
+} as const;
+
 /** All error codes */
 export const ERROR_CODES = {
   ...PROTOCOL_ERROR_CODES,
@@ -2350,6 +3023,7 @@ export const ERROR_CODES = {
   ...AGENT_ERROR_CODES,
   ...RESOURCE_ERROR_CODES,
   ...FEDERATION_ERROR_CODES,
+  ...MAIL_ERROR_CODES,
 } as const;
 
 /** Protocol version */
@@ -2414,6 +3088,21 @@ export const CAPABILITY_REQUIREMENTS: Record<string, string[]> = {
   // Federation
   [FEDERATION_METHODS.FEDERATION_CONNECT]: ['federation.canFederate'],
   [FEDERATION_METHODS.FEDERATION_ROUTE]: ['federation.canFederate'],
+
+  // Mail
+  [MAIL_METHODS.MAIL_CREATE]: ['mail.canCreate'],
+  [MAIL_METHODS.MAIL_GET]: ['mail.canJoin'],
+  [MAIL_METHODS.MAIL_LIST]: ['mail.canJoin'],
+  [MAIL_METHODS.MAIL_CLOSE]: ['mail.canCreate'],
+  [MAIL_METHODS.MAIL_JOIN]: ['mail.canJoin'],
+  [MAIL_METHODS.MAIL_LEAVE]: ['mail.canJoin'],
+  [MAIL_METHODS.MAIL_INVITE]: ['mail.canInvite'],
+  [MAIL_METHODS.MAIL_TURN]: ['mail.canJoin'],
+  [MAIL_METHODS.MAIL_TURNS_LIST]: ['mail.canViewHistory'],
+  [MAIL_METHODS.MAIL_THREAD_CREATE]: ['mail.canCreateThreads'],
+  [MAIL_METHODS.MAIL_THREAD_LIST]: ['mail.canJoin'],
+  [MAIL_METHODS.MAIL_SUMMARY]: ['mail.canViewHistory'],
+  [MAIL_METHODS.MAIL_REPLAY]: ['mail.canViewHistory'],
 } as const;
 
 // =============================================================================
