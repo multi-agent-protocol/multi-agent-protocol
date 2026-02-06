@@ -51,6 +51,8 @@ export interface ConnectionHandlerOptions {
   authManager?: AuthManager;
   /** Mail capability configuration (optional). When provided and enabled, mail capabilities are advertised. */
   mailCapabilities?: MailCapabilityConfig;
+  /** Credential brokering configuration (optional). When provided and enabled, credential capabilities are advertised. */
+  credentialCapabilities?: import('../credentials').CredentialCapabilityConfig;
 }
 
 /**
@@ -107,6 +109,7 @@ export function createConnectionHandlers(
   options: ConnectionHandlerOptions
 ): HandlerRegistry {
   const { sessions, agents, subscriptions, scopes, serverName, serverVersion, authManager, mailCapabilities } = options;
+  const credentialCapabilities = options.credentialCapabilities;
 
   return {
     "map/connect": async (params: unknown, ctx: HandlerContext) => {
@@ -218,6 +221,16 @@ export function createConnectionHandlers(
           canInvite: mailCapabilities.canInvite ?? true,
           canViewHistory: mailCapabilities.canViewHistory ?? true,
           canCreateThreads: mailCapabilities.canCreateThreads ?? true,
+        };
+      }
+
+      // Include credential brokering capabilities if configured and enabled
+      if (credentialCapabilities?.enabled) {
+        capabilities.credentials = {
+          enabled: true,
+          canGet: credentialCapabilities.canGet ?? true,
+          canList: credentialCapabilities.canList ?? true,
+          canStatus: credentialCapabilities.canStatus ?? true,
         };
       }
 

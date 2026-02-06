@@ -54,6 +54,7 @@ import {
   createConnectionHandlers,
 } from "./router";
 import type { MailCapabilityConfig } from "./router/handlers";
+import { createCredentialHandlers } from "./credentials";
 import { AuthManagerImpl, authMiddleware } from "./auth";
 import type { AuthManager } from "./auth";
 
@@ -181,6 +182,22 @@ export interface MAPServerOptions {
     turns?: TurnManager;
     /** Replace ThreadManager entirely */
     threads?: ThreadManager;
+  };
+
+  // === Credential Brokering Config ===
+  /**
+   * Credential brokering configuration. Omit or set enabled=false to disable.
+   * When enabled, `broker` must be provided.
+   */
+  credentials?: {
+    /** Enable credential brokering (default: false) */
+    enabled?: boolean;
+    /** Broker instance (e.g. agent-iam Broker). Required when enabled=true. */
+    broker?: import('./credentials').BrokerLike;
+    /** Credential capability overrides for connect handshake */
+    capabilities?: Omit<import('./credentials').CredentialCapabilityConfig, 'enabled'>;
+    /** If set, only these providers are visible */
+    allowedProviders?: string[];
   };
 }
 
@@ -349,6 +366,13 @@ export class MAPServer {
       this.threads = null;
     }
 
+    // Validate credential brokering config
+    if (options.credentials?.enabled && !options.credentials.broker) {
+      throw new Error(
+        'MAPServer: credentials.broker is required when credentials.enabled is true',
+      );
+    }
+
     // Set up authentication if configured
     if (options.auth?.authenticators?.length) {
       this.auth = new AuthManagerImpl({
@@ -387,6 +411,9 @@ export class MAPServer {
           mailCapabilities: options.mail?.enabled
             ? { enabled: true, ...options.mail.capabilities }
             : undefined,
+          credentialCapabilities: options.credentials?.enabled
+            ? { enabled: true, ...options.credentials.capabilities }
+            : undefined,
         }),
         createAgentHandlers({ agents: this.agents, sessions: this.sessions }),
         createScopeHandlers({ scopes: this.scopes }),
@@ -407,6 +434,15 @@ export class MAPServer {
                 conversations: this.conversations,
                 turns: this.turns,
                 threads: this.threads,
+              }),
+            ]
+          : []),
+        ...(options.credentials?.enabled
+          ? [
+              createCredentialHandlers({
+                broker: options.credentials.broker!,
+                eventBus: this.eventBus,
+                allowedProviders: options.credentials.allowedProviders,
               }),
             ]
           : []),

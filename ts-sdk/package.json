@@ -58,7 +58,8 @@
   "dependencies": {
     "ulid": "^3.0.2",
     "zod": "^3.24.0",
-    "agentic-mesh": "^0.0.5"
+    "agentic-mesh": "^0.0.5",
+    "agent-iam": "^0.0.2"
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "^0.61.0",
@@ -70,6 +71,9 @@
   },
   "peerDependenciesMeta": {
     "agentic-mesh": {
+      "optional": true
+    },
+    "agent-iam": {
       "optional": true
     }
   },

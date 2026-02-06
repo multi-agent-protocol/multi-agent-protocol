@@ -77,6 +77,11 @@ export * from "./mail";
 export * from "./federation";
 
 // =============================================================================
+// Credentials - Credential brokering via agent-iam
+// =============================================================================
+export * from "./credentials";
+
+// =============================================================================
 // Authentication - Pluggable authentication for MAP servers
 // =============================================================================
 export * from "./auth";
