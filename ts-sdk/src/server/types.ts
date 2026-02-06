@@ -411,6 +411,11 @@ export interface ServerSession {
     issuer?: string;
     claims?: Record<string, unknown>;
   };
+  /** Provider-specific auth data, keyed by providerId */
+  providers?: Record<string, {
+    principal: { id: string; issuer?: string; claims?: Record<string, unknown> };
+    providerData: unknown;
+  }>;
 }
 
 /**

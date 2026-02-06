@@ -10,6 +10,8 @@ import type {
   AuthResult,
   AuthPrincipal,
   ServerAuthCapabilities,
+  ParticipantCapabilities,
+  AgentPermissions,
 } from '../../types';
 
 /**
@@ -149,6 +151,9 @@ export interface AuthManagerOptions {
   /** Authenticators to register */
   authenticators?: Authenticator[];
 
+  /** Auth providers (extended authenticators with capability mapping) */
+  providers?: AuthProvider[];
+
   /** OAuth2 metadata URL */
   oauth2MetadataUrl?: string;
 
@@ -169,6 +174,128 @@ export interface AuthenticatorOptions {
   /** Optional name for this authenticator instance */
   name?: string;
 }
+
+// =============================================================================
+// Auth Provider (Extended Authenticator)
+// =============================================================================
+
+/**
+ * Extended authenticator that manages its own token lifecycle.
+ *
+ * Providers go beyond simple credential validation to provide:
+ * - Capability mapping (external permissions → MAP capabilities)
+ * - Spawn delegation (create attenuated credentials for child agents)
+ * - Federation (cross-system token handling)
+ *
+ * Existing Authenticator implementations continue to work unchanged.
+ */
+export interface AuthProvider extends Authenticator {
+  /** Unique identifier for this provider (e.g., 'agent-iam') */
+  readonly providerId: string;
+
+  /**
+   * Map provider-specific data to MAP capabilities.
+   * Called after successful authentication to determine what the principal can do.
+   */
+  mapCapabilities?(
+    principal: AuthPrincipal,
+    providerData: unknown
+  ): CapabilityMapping;
+
+  /**
+   * Delegate credentials when spawning a child agent.
+   * Creates attenuated credentials for the child.
+   */
+  delegateForSpawn?(
+    parentPrincipal: AuthPrincipal,
+    parentProviderData: unknown,
+    spawnRequest: SpawnDelegationRequest
+  ): Promise<DelegatedCredentials>;
+
+  /**
+   * Handle an incoming federated token from another system.
+   */
+  handleFederatedToken?(
+    sourceSystemId: string,
+    token: unknown,
+    context: FederationContext
+  ): Promise<FederationResult>;
+
+  /**
+   * Prepare a token for use in another system.
+   */
+  prepareFederatedToken?(
+    principal: AuthPrincipal,
+    providerData: unknown,
+    targetSystemId: string
+  ): Promise<{ token: string; allowed: boolean; reason?: string }>;
+}
+
+/**
+ * Result of mapping provider capabilities to MAP capabilities.
+ */
+export interface CapabilityMapping {
+  /** Mapped participant capabilities */
+  participantCapabilities: Partial<ParticipantCapabilities>;
+  /** Default agent-level permissions */
+  defaultAgentPermissions?: Partial<AgentPermissions>;
+  /** Additional claims to merge into principal */
+  additionalClaims?: Record<string, unknown>;
+}
+
+/**
+ * Request to delegate credentials for a spawned child agent.
+ */
+export interface SpawnDelegationRequest {
+  childAgentId: string;
+  requestedScopes?: string[];
+  requestedCapabilities?: Record<string, boolean>;
+  ttlMinutes?: number;
+  inheritIdentity?: boolean;
+}
+
+/**
+ * Credentials returned for a spawned child agent.
+ */
+export interface DelegatedCredentials {
+  /** Auth method for the child to use */
+  method: AuthMethod;
+  /** Credentials the child should present to connect */
+  credentials: Record<string, unknown>;
+  /** Environment variables to pass to the child process */
+  env?: Record<string, string>;
+}
+
+/**
+ * Context for federation token handling.
+ */
+export interface FederationContext {
+  localSystemId: string;
+  trustConfig?: FederationTrustConfig;
+}
+
+/**
+ * Trust configuration for federated systems.
+ */
+export interface FederationTrustConfig {
+  trustedSystems?: string[];
+  scopeMapping?: Record<string, string>;
+  maxHops?: number;
+}
+
+/**
+ * Result of handling a federated token.
+ */
+export interface FederationResult {
+  allowed: boolean;
+  principal?: AuthPrincipal;
+  providerData?: unknown;
+  reason?: string;
+}
+
+// =============================================================================
+// JWT Claims
+// =============================================================================
 
 /**
  * JWT-specific claims that MAP recognizes.
