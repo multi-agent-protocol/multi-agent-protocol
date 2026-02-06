@@ -1095,6 +1095,8 @@ export interface AuthResult {
   principal?: AuthPrincipal;
   /** Error details (if failure) */
   error?: AuthError;
+  /** Provider-specific data to store on session (e.g., verified AgentToken) */
+  providerData?: unknown;
 }
 
 /**

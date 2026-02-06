@@ -46,6 +46,9 @@ export * from './types';
 // Manager
 export { AuthManagerImpl, createAuthManager } from './manager';
 
+// Capabilities intersection
+export { intersectCapabilities, intersectAgentPermissions, and } from './capabilities';
+
 // Middleware
 export {
   authMiddleware,
@@ -73,3 +76,17 @@ export type {
   JsonWebKeySet,
   MTLSAuthenticatorOptions,
 } from './authenticators';
+
+// Providers (extended authenticators with capability mapping)
+export {
+  AgentIAMProvider,
+  AgentIAMCapabilityMapper,
+} from './providers';
+
+export type {
+  AgentIAMProviderOptions,
+  AgentIAMToken,
+  TokenServiceLike,
+  AgentIAMCapabilityMapperOptions,
+  MappableToken,
+} from './providers';
