@@ -52,7 +52,7 @@ export interface ConnectionHandlerOptions {
   /** Mail capability configuration (optional). When provided and enabled, mail capabilities are advertised. */
   mailCapabilities?: MailCapabilityConfig;
   /** Credential brokering configuration (optional). When provided and enabled, credential capabilities are advertised. */
-  credentialCapabilities?: import('../credentials').CredentialCapabilityConfig;
+  credentialCapabilities?: import("../credentials").CredentialCapabilityConfig;
 }
 
 /**
@@ -79,12 +79,17 @@ function storeProviderData(
   authManager: AuthManager,
   session: ServerSession,
   method: string,
-  authResult: AuthResult
+  authResult: AuthResult,
 ): void {
-  if (!authResult.success || !authResult.principal || authResult.providerData === undefined) return;
+  if (
+    !authResult.success ||
+    !authResult.principal ||
+    authResult.providerData === undefined
+  )
+    return;
 
   const manager = authManager as AuthManagerImpl;
-  if (typeof manager.getProvider !== 'function') return;
+  if (typeof manager.getProvider !== "function") return;
 
   const provider = manager.getProvider(method);
   if (!provider) return;
@@ -106,9 +111,18 @@ function storeProviderData(
  * - `map/session/info` - Get current session information
  */
 export function createConnectionHandlers(
-  options: ConnectionHandlerOptions
+  options: ConnectionHandlerOptions,
 ): HandlerRegistry {
-  const { sessions, agents, subscriptions, scopes, serverName, serverVersion, authManager, mailCapabilities } = options;
+  const {
+    sessions,
+    agents,
+    subscriptions,
+    scopes,
+    serverName,
+    serverVersion,
+    authManager,
+    mailCapabilities,
+  } = options;
   const credentialCapabilities = options.credentialCapabilities;
 
   return {
@@ -119,21 +133,30 @@ export function createConnectionHandlers(
       if (authManager) {
         // Check if auth should be bypassed for this transport
         const shouldBypass = authManager.shouldBypass({
-          transportType: ctx.session.metadata?.transportType as string | undefined,
+          transportType: ctx.session.metadata?.transportType as
+            | string
+            | undefined,
         });
 
         if (!shouldBypass) {
           if (auth) {
             // Authenticate with provided credentials
             const authResult = await authManager.authenticate(auth, {
-              transportType: ctx.session.metadata?.transportType as string | undefined,
+              transportType: ctx.session.metadata?.transportType as
+                | string
+                | undefined,
             });
 
             if (authResult.success && authResult.principal) {
               // Store principal on session
               ctx.session.principal = authResult.principal;
               // Store provider data if auth backed by a provider
-              storeProviderData(authManager, ctx.session, auth.method, authResult);
+              storeProviderData(
+                authManager,
+                ctx.session,
+                auth.method,
+                authResult,
+              );
             } else if (authManager.config.required) {
               // Auth failed and is required - return auth required response
               return {
@@ -193,21 +216,24 @@ export function createConnectionHandlers(
         features: [],
       };
 
-      // Intersect provider-mapped capabilities if an auth provider contributed
+      // Intersect provider-mapped capabilities into the top-level capabilities.
+      // Provider capabilities are resolved server-side and not leaked as separate fields.
       if (authManager && auth && ctx.session.providers) {
         const manager = authManager as AuthManagerImpl;
-        if (typeof manager.getCapabilityMapping === 'function') {
+        if (typeof manager.getCapabilityMapping === "function") {
           const mapping = manager.getCapabilityMapping(
             auth.method,
             ctx.session.principal!,
-            Object.values(ctx.session.providers)[0]?.providerData
+            Object.values(ctx.session.providers)[0]?.providerData,
           );
-          if (mapping) {
-            // Merge provider-mapped participant capabilities into the response
-            capabilities.providerCapabilities = mapping.participantCapabilities;
-            if (mapping.defaultAgentPermissions) {
-              capabilities.defaultAgentPermissions = mapping.defaultAgentPermissions;
-            }
+          if (mapping?.participantCapabilities) {
+            Object.assign(capabilities, mapping.participantCapabilities);
+          }
+          // Store defaultAgentPermissions in session metadata for internal use
+          // (e.g. agent registration/spawn) but don't send on the wire
+          if (mapping?.defaultAgentPermissions) {
+            ctx.session.metadata.defaultAgentPermissions =
+              mapping.defaultAgentPermissions;
           }
         }
       }
@@ -264,14 +290,21 @@ export function createConnectionHandlers(
       }
 
       const authResult = await authManager.authenticate(credentials, {
-        transportType: ctx.session.metadata?.transportType as string | undefined,
+        transportType: ctx.session.metadata?.transportType as
+          | string
+          | undefined,
       });
 
       if (authResult.success && authResult.principal) {
         // Store principal on session
         ctx.session.principal = authResult.principal;
         // Store provider data if auth backed by a provider
-        storeProviderData(authManager, ctx.session, credentials.method, authResult);
+        storeProviderData(
+          authManager,
+          ctx.session,
+          credentials.method,
+          authResult,
+        );
 
         return {
           success: true,
@@ -299,14 +332,21 @@ export function createConnectionHandlers(
 
       // Validate the new credentials
       const authResult = await authManager.authenticate(credentials, {
-        transportType: ctx.session.metadata?.transportType as string | undefined,
+        transportType: ctx.session.metadata?.transportType as
+          | string
+          | undefined,
       });
 
       if (authResult.success && authResult.principal) {
         // Update principal on session
         ctx.session.principal = authResult.principal;
         // Update provider data if auth backed by a provider
-        storeProviderData(authManager, ctx.session, credentials.method, authResult);
+        storeProviderData(
+          authManager,
+          ctx.session,
+          credentials.method,
+          authResult,
+        );
 
         return {
           success: true,
@@ -378,7 +418,9 @@ export function createConnectionHandlers(
 /**
  * Combine all handler factories into a single registry.
  */
-export function combineHandlers(...registries: HandlerRegistry[]): HandlerRegistry {
+export function combineHandlers(
+  ...registries: HandlerRegistry[]
+): HandlerRegistry {
   const combined: HandlerRegistry = {};
 
   for (const registry of registries) {

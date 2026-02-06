@@ -320,7 +320,7 @@ describe("map/connect handler with auth provider", () => {
     expect(session.principal?.id).toBe("agent-001");
   });
 
-  it("should include providerCapabilities in connect response", async () => {
+  it("should merge provider capabilities into top-level capabilities", async () => {
     const token = createMockToken({
       agentCapabilities: {
         canSpawn: true,
@@ -337,8 +337,9 @@ describe("map/connect handler with auth provider", () => {
       ctx
     ) as any;
 
-    expect(result.capabilities.providerCapabilities).toBeDefined();
-    expect(result.capabilities.providerCapabilities.lifecycle?.canSpawn).toBe(true);
+    // Provider capabilities are merged into top-level, not leaked as separate field
+    expect(result.capabilities.providerCapabilities).toBeUndefined();
+    expect(result.capabilities.lifecycle?.canSpawn).toBe(true);
   });
 
   it("should return auth required when no credentials provided", async () => {

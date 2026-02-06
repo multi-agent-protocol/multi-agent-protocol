@@ -74,7 +74,10 @@
         { "$ref": "#/$defs/MailThreadCreateRequest" },
         { "$ref": "#/$defs/MailThreadListRequest" },
         { "$ref": "#/$defs/MailSummaryRequest" },
-        { "$ref": "#/$defs/MailReplayRequest" }
+        { "$ref": "#/$defs/MailReplayRequest" },
+        { "$ref": "#/$defs/CredGetRequest" },
+        { "$ref": "#/$defs/CredListRequest" },
+        { "$ref": "#/$defs/CredStatusRequest" }
       ]
     },
     "MAPResponse": {
@@ -304,6 +307,17 @@
             "canInvite": { "type": "boolean", "description": "Can invite participants to conversations" },
             "canViewHistory": { "type": "boolean", "description": "Can view conversation history" },
             "canCreateThreads": { "type": "boolean", "description": "Can create threads within conversations" }
+          },
+          "additionalProperties": false
+        },
+        "credentials": {
+          "type": "object",
+          "description": "Credential brokering capabilities",
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Whether credential brokering is enabled (server response only)" },
+            "canGet": { "type": "boolean", "description": "Can request credentials via cred/get" },
+            "canList": { "type": "boolean", "description": "Can list available scopes via cred/list" },
+            "canStatus": { "type": "boolean", "description": "Can check broker status via cred/status" }
           },
           "additionalProperties": false
         },
@@ -818,7 +832,10 @@
               "properties": {
                 "method": {
                   "type": "string",
-                  "enum": ["bearer", "api-key", "mtls", "none"]
+                  "oneOf": [
+                    { "enum": ["bearer", "api-key", "mtls", "none"] },
+                    { "type": "string", "pattern": "^x-" }
+                  ]
                 },
                 "token": { "type": "string" }
               }
@@ -1254,6 +1271,16 @@
             "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
             "initialMessage": { "$ref": "#/$defs/Message" },
             "metadata": { "type": "object" },
+            "requestedScopes": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Scopes to request for the delegated credential (defaults to parent's scopes)"
+            },
+            "ttlMinutes": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "TTL in minutes for the delegated credential"
+            },
             "_meta": { "$ref": "#/$defs/Meta" }
           }
         }
@@ -1266,6 +1293,20 @@
       "properties": {
         "agent": { "$ref": "#/$defs/Agent" },
         "messageId": { "$ref": "#/$defs/MessageId" },
+        "delegatedCredentials": {
+          "type": "object",
+          "description": "Credentials delegated to the spawned child agent (when auth provider supports delegation)",
+          "properties": {
+            "method": { "type": "string", "description": "Auth method for the delegated credential" },
+            "credentials": { "type": "object", "description": "The delegated credential data" },
+            "env": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Environment variables for the child agent"
+            }
+          },
+          "required": ["method", "credentials"]
+        },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
       "required": ["agent"]
@@ -1764,7 +1805,10 @@
               "properties": {
                 "method": {
                   "type": "string",
-                  "enum": ["bearer", "api-key", "mtls"]
+                  "oneOf": [
+                    { "enum": ["bearer", "api-key", "mtls"] },
+                    { "type": "string", "pattern": "^x-" }
+                  ]
                 },
                 "credentials": { "type": "string" }
               },
@@ -2553,6 +2597,100 @@
         "_meta": { "$ref": "#/$defs/Meta" }
       },
       "required": ["turns", "hasMore", "missedCount"]
+    },
+
+    "CredGetRequest": {
+      "type": "object",
+      "x-method": "cred/get",
+      "x-tier": "extension",
+      "description": "Request a short-lived credential for a scope and resource",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "cred/get" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "scope": { "type": "string", "description": "Scope to request (e.g. 'github:repo:write')" },
+            "resource": { "type": "string", "description": "Resource to access (e.g. 'acme-corp/frontend')" },
+            "_meta": { "$ref": "#/$defs/Meta" }
+          },
+          "required": ["scope", "resource"]
+        }
+      },
+      "required": ["jsonrpc", "id", "method", "params"]
+    },
+    "CredGetResponse": {
+      "type": "object",
+      "description": "Response to cred/get",
+      "properties": {
+        "credentialType": {
+          "type": "string",
+          "enum": ["bearer_token", "aws_credentials", "api_key"],
+          "description": "Type of credential returned"
+        },
+        "credential": { "type": "object", "description": "Provider-specific credential data" },
+        "expiresAt": { "type": "string", "format": "date-time", "description": "When the credential expires (ISO 8601)" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["credentialType", "credential"]
+    },
+    "CredListRequest": {
+      "type": "object",
+      "x-method": "cred/list",
+      "x-tier": "extension",
+      "description": "List available scopes for the authenticated token",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "cred/list" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "CredListResponse": {
+      "type": "object",
+      "description": "Response to cred/list",
+      "properties": {
+        "agentId": { "type": "string", "description": "Agent ID from the authenticated token" },
+        "scopes": { "type": "array", "items": { "type": "string" }, "description": "Available scopes" },
+        "constraints": { "type": "object", "description": "Token constraints" },
+        "expiresAt": { "type": "string", "format": "date-time", "description": "Token expiration" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["agentId", "scopes"]
+    },
+    "CredStatusRequest": {
+      "type": "object",
+      "x-method": "cred/status",
+      "x-tier": "extension",
+      "description": "Check credential broker status and available providers",
+      "properties": {
+        "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "method": { "const": "cred/status" },
+        "params": {
+          "type": "object",
+          "properties": {
+            "_meta": { "$ref": "#/$defs/Meta" }
+          }
+        }
+      },
+      "required": ["jsonrpc", "id", "method"]
+    },
+    "CredStatusResponse": {
+      "type": "object",
+      "description": "Response to cred/status",
+      "properties": {
+        "providers": { "type": "array", "items": { "type": "string" }, "description": "Available credential providers" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["providers"]
     }
   }
 }

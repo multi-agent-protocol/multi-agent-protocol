@@ -381,6 +381,33 @@
       "description": "Replay conversation turns from a specific point",
       "requestType": "MailReplayRequest",
       "responseType": "MailReplayResponse"
+    },
+    "cred/get": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["agent"],
+      "capabilities": ["credentials.canGet"],
+      "description": "Request a short-lived credential for a scope and resource",
+      "requestType": "CredGetRequest",
+      "responseType": "CredGetResponse"
+    },
+    "cred/list": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["agent"],
+      "capabilities": ["credentials.canList"],
+      "description": "List available scopes for the authenticated token",
+      "requestType": "CredListRequest",
+      "responseType": "CredListResponse"
+    },
+    "cred/status": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": [],
+      "description": "Check credential broker status and available providers",
+      "requestType": "CredStatusRequest",
+      "responseType": "CredStatusResponse"
     }
   },
   "notifications": {
@@ -448,6 +475,12 @@
       "10008": "Invalid content type",
       "10009": "Thread nesting limit exceeded",
       "10010": "Mail not enabled"
+    },
+    "credentials": {
+      "11000": "Credential broker not enabled",
+      "11001": "Credential scope denied",
+      "11002": "Credential provider unavailable",
+      "11003": "Credential request failed"
     }
   },
   "tiers": {
