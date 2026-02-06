@@ -29,6 +29,152 @@ Without environment awareness, agents cannot:
 4. **Versioned**: Schema evolution via version field
 5. **Inspired by prior art**: Draws from OpenTelemetry, Kubernetes, OCI, and cloud IMDS patterns
 
+## Standardization Philosophy
+
+Environment awareness uses a **layered approach** to balance interoperability with flexibility:
+
+### Layer 1: Core Structure (Normative)
+
+The top-level `AgentEnvironment` structure and category names are standardized:
+
+```typescript
+interface AgentEnvironment {
+  schemaVersion: string;  // Required
+  host?: HostInfo;
+  os?: OSInfo;
+  process?: ProcessInfo;
+  container?: ContainerInfo;
+  cloud?: CloudInfo;
+  k8s?: KubernetesInfo;
+  filesystem?: FilesystemInfo;
+  network?: NetworkInfo;
+  tools?: ToolsInfo;
+  resources?: ResourceInfo;
+  security?: SecurityInfo;
+  services?: ServicesInfo;
+  extensions?: Record<string, unknown>;  // Escape hatch
+}
+```
+
+**Why standardize this?** Agents need to know where to look. If one agent puts network info in `network` and another in `connectivity`, interop breaks.
+
+### Layer 2: Semantic Conventions (Recommended)
+
+The fields within each category are **semantic conventions** — documented patterns that implementations SHOULD follow for interoperability, but MAY extend or ignore.
+
+```typescript
+// These field names are conventions, not mandates
+interface NetworkInfo {
+  connectivity?: 'full' | 'restricted' | 'internal' | 'isolated';  // Recommended
+  hostname?: string;        // Recommended
+  addresses?: NetworkAddress[];  // Recommended
+  // ... other recommended fields
+
+  // Implementations can add their own
+  [key: string]: unknown;
+}
+```
+
+**Convention documentation** lives separately (like OTel's semantic conventions). The schema shows common patterns; implementations decide what to populate.
+
+### Layer 3: Extensions (Open)
+
+The `extensions` field and `metadata` fields within types are completely open:
+
+```typescript
+const environment: AgentEnvironment = {
+  schemaVersion: '1.0',
+  os: { type: 'linux' },
+
+  // Completely open - no schema validation
+  extensions: {
+    'x-company-internal': { teamId: 'platform', costCenter: '12345' },
+    'x-experimental-feature': { enabled: true }
+  }
+};
+```
+
+### Layer 4: Profiles (Optional Bundles)
+
+For specific use cases, define **profiles** that bundle required fields:
+
+```typescript
+// A "cloud-native" profile might require:
+interface CloudNativeProfile {
+  // Must have cloud info
+  cloud: Required<Pick<CloudInfo, 'provider' | 'region'>>;
+  // Must have container or k8s
+  container?: ContainerInfo;
+  k8s?: KubernetesInfo;
+  // Must declare network connectivity
+  network: Required<Pick<NetworkInfo, 'connectivity'>>;
+}
+
+// Agent can declare profile compliance
+const environment: AgentEnvironment = {
+  schemaVersion: '1.0',
+  profiles: ['cloud-native', 'ml-ready'],  // Self-declared
+  // ... fields that satisfy those profiles
+};
+```
+
+### What This Means in Practice
+
+**For workspace integrations (task trackers, etc.):**
+
+```typescript
+// The STRUCTURE is standardized (where to look)
+filesystem?.workspace?.integrations?.taskTrackers
+
+// The CONTENT is conventions (common patterns, not required)
+taskTrackers: {
+  'my-tracker': {
+    type: 'beads',       // Convention: use known type strings
+    available: true,     // Convention: boolean availability
+    configPath: '.beads/', // Convention: path to config
+
+    // Open: add whatever else you need
+    customField: 'anything'
+  }
+}
+```
+
+**For services (API access):**
+
+```typescript
+// The STRUCTURE is standardized
+services?.aiProviders
+
+// The CONTENT is conventions
+aiProviders: {
+  'huggingface': {
+    available: true,     // Convention
+    models: ['...'],     // Convention
+    tier: 'pro',         // Convention
+
+    // Open: implementation-specific
+    organizationId: 'org-123',
+    quotaRemaining: 42
+  }
+}
+```
+
+### Implementation Guidance
+
+| If you're... | Do this |
+|--------------|---------|
+| **Building a MAP server** | Accept any valid `AgentEnvironment`, don't validate field contents deeply |
+| **Building an agent SDK** | Provide helpers for common conventions, allow arbitrary extensions |
+| **Building a routing/orchestration layer** | Document which conventions you rely on, gracefully degrade if missing |
+| **Experimenting with new patterns** | Use `extensions` or add fields to existing categories, propose as conventions later |
+
+### Evolution Path
+
+1. **Experiment** in `extensions` with `x-` prefix
+2. **Propose** as semantic convention if pattern proves useful
+3. **Document** in conventions registry
+4. **Optionally** add to a profile if commonly required together
+
 ## Schema Design
 
 ### Top-Level Structure
