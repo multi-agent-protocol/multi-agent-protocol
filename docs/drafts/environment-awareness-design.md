@@ -183,10 +183,17 @@ aiProviders: {
 /**
  * Compute environment information for an agent.
  * Describes the runtime context where the agent executes.
+ *
+ * Layer 1 (Normative): The category names (host, os, network, etc.) are standardized.
+ * Layer 2 (Conventions): Fields within categories are recommended patterns.
+ * Layer 3 (Open): Use extensions or add fields to any category.
  */
 interface AgentEnvironment {
   /** Schema version for evolution (e.g., "1.0") */
   schemaVersion: string;
+
+  /** Self-declared profile compliance (e.g., ["cloud-native", "ml-ready"]) */
+  profiles?: string[];
 
   /** Host/machine information */
   host?: HostInfo;
@@ -224,8 +231,11 @@ interface AgentEnvironment {
   /** External services and API access */
   services?: ServicesInfo;
 
-  /** Vendor/custom extensions (x-* prefix) */
+  /** Vendor/custom extensions (x-* prefix recommended) */
   extensions?: Record<string, unknown>;
+
+  /** Allow additional categories not yet standardized */
+  [key: string]: unknown;
 }
 ```
 
@@ -234,9 +244,11 @@ interface AgentEnvironment {
 ```typescript
 /**
  * Information about the host machine.
- * Follows OpenTelemetry semantic conventions for host.*.
+ * Conventions follow OpenTelemetry semantic conventions for host.*.
  */
 interface HostInfo {
+  // --- Recommended fields (conventions) ---
+
   /** Unique host identifier */
   id?: string;
 
@@ -260,13 +272,14 @@ interface HostInfo {
 
   /** GPU information (if available) */
   gpu?: {
-    /** Number of GPUs */
     count?: number;
-    /** GPU model names */
     models?: string[];
-    /** Total GPU memory in bytes */
     memoryBytes?: number;
+    [key: string]: unknown;  // Allow vendor-specific GPU fields
   };
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -275,11 +288,11 @@ interface HostInfo {
 ```typescript
 /**
  * Operating system information.
- * Follows OpenTelemetry semantic conventions for os.*.
+ * Conventions follow OpenTelemetry semantic conventions for os.*.
  */
 interface OSInfo {
-  /** OS type (e.g., "linux", "darwin", "windows") */
-  type: string;
+  /** OS type (e.g., "linux", "darwin", "windows") - recommended */
+  type?: string;
 
   /** OS name (e.g., "Ubuntu", "macOS", "Windows 11") */
   name?: string;
@@ -292,6 +305,9 @@ interface OSInfo {
 
   /** Kernel version */
   kernelVersion?: string;
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -325,6 +341,9 @@ interface ProcessInfo {
 
   /** Environment variables (filtered for safety) */
   envVars?: Record<string, string>;
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -362,6 +381,9 @@ interface ContainerInfo {
 
   /** Linux capabilities granted to the container */
   capabilities?: string[];
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -370,7 +392,7 @@ interface ContainerInfo {
 ```typescript
 /**
  * Cloud provider information.
- * Follows OpenTelemetry semantic conventions for cloud.*.
+ * Conventions follow OpenTelemetry semantic conventions for cloud.*.
  */
 interface CloudInfo {
   /** Cloud provider (e.g., "aws", "gcp", "azure", "digitalocean") */
@@ -393,6 +415,9 @@ interface CloudInfo {
 
   /** Instance type (e.g., "m5.large", "n1-standard-4") */
   instanceType?: string;
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -436,6 +461,9 @@ interface KubernetesInfo {
 
   /** Service account name */
   serviceAccount?: string;
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -448,7 +476,7 @@ interface KubernetesInfo {
  */
 interface FilesystemInfo {
   /** Current working directory (absolute path) */
-  cwd: string;
+  cwd?: string;
 
   /** Home directory */
   homeDir?: string;
@@ -458,7 +486,7 @@ interface FilesystemInfo {
 
   /**
    * Mount points relevant to the agent's work.
-   * Maps logical names to paths for cross-agent coordination.
+   * Maps logical names to mount info for cross-agent coordination.
    */
   mounts?: Record<string, MountInfo>;
 
@@ -476,8 +504,15 @@ interface FilesystemInfo {
 
   /** Available disk space in bytes */
   availableBytes?: number;
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 
+/**
+ * Mount point information.
+ * path is the only recommended field; others are conventions.
+ */
 interface MountInfo {
   /** Absolute path on this agent's filesystem */
   path: string;
@@ -493,11 +528,18 @@ interface MountInfo {
 
   /** IDs of agents that share this mount (if known) */
   sharedWith?: string[];
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 
+/**
+ * Workspace/project information.
+ * All fields are conventions - populate what's relevant.
+ */
 interface WorkspaceInfo {
   /** Workspace root path */
-  root: string;
+  root?: string;
 
   /** Workspace/project name */
   name?: string;
@@ -518,57 +560,25 @@ interface WorkspaceInfo {
   remoteUrl?: string;
 
   /**
-   * Project integrations and tooling available in this workspace.
-   * Describes task trackers, design tools, CI/CD, and other project-level integrations.
+   * Project integrations and tooling.
+   * Open-ended: add whatever integrations are relevant.
    */
-  integrations?: WorkspaceIntegrations;
+  integrations?: Record<string, IntegrationInfo>;
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 
 /**
- * Project-level integrations and tooling.
- * Describes what project management, design, and CI/CD tools are available.
+ * Integration info for project tooling.
+ * Completely open-ended - 'available' is the only recommended field.
  */
-interface WorkspaceIntegrations {
-  /**
-   * Task/issue tracking systems accessible from this workspace.
-   * Maps integration name to details.
-   */
-  taskTrackers?: Record<string, IntegrationInfo>;
-
-  /**
-   * Design and specification tools.
-   * Examples: Speckit, Notion, Confluence, ADRs
-   */
-  designTools?: Record<string, IntegrationInfo>;
-
-  /**
-   * CI/CD systems configured for this workspace.
-   */
-  cicd?: Record<string, IntegrationInfo>;
-
-  /**
-   * Documentation systems.
-   */
-  documentation?: Record<string, IntegrationInfo>;
-
-  /**
-   * Code quality and analysis tools.
-   * Examples: SonarQube, CodeClimate, linters configured in project
-   */
-  codeQuality?: Record<string, IntegrationInfo>;
-
-  /**
-   * Other project-level integrations.
-   */
-  other?: Record<string, IntegrationInfo>;
-}
-
 interface IntegrationInfo {
-  /** Integration type/provider (e.g., "linear", "jira", "github-issues", "beads", "speckit") */
-  type: string;
+  /** Whether the integration is currently accessible/authenticated (recommended) */
+  available?: boolean;
 
-  /** Whether the integration is currently accessible/authenticated */
-  available: boolean;
+  /** Integration type/provider (e.g., "linear", "jira", "beads", "speckit") */
+  type?: string;
 
   /** URL or path to access this integration */
   url?: string;
@@ -576,14 +586,8 @@ interface IntegrationInfo {
   /** Local config file path (if file-based like .beads/) */
   configPath?: string;
 
-  /** Version of the integration/tool */
-  version?: string;
-
-  /** Capabilities this integration provides */
-  capabilities?: string[];
-
-  /** Additional metadata */
-  metadata?: Record<string, unknown>;
+  /** Allow any additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -596,19 +600,21 @@ interface IntegrationInfo {
  */
 interface NetworkInfo {
   /**
-   * Network connectivity level.
-   * - "full": Full internet access
-   * - "restricted": Limited outbound (e.g., allowlist)
-   * - "internal": Only internal/private network
-   * - "isolated": No network access
+   * Network connectivity level (recommended convention).
+   * Common values: "full", "restricted", "internal", "isolated"
    */
-  connectivity?: 'full' | 'restricted' | 'internal' | 'isolated';
+  connectivity?: string;
 
   /** Hostname as seen on the network */
   hostname?: string;
 
   /** Primary IP addresses */
-  addresses?: NetworkAddress[];
+  addresses?: Array<{
+    ip: string;
+    type?: string;  // "ipv4" | "ipv6"
+    public?: boolean;
+    [key: string]: unknown;
+  }>;
 
   /** DNS servers */
   dnsServers?: string[];
@@ -622,39 +628,8 @@ interface NetworkInfo {
   /** VPN/mesh network membership */
   meshNetworks?: string[];
 
-  /**
-   * Firewall/security group rules affecting this agent.
-   * Simplified representation of what's allowed.
-   */
-  allowedOutbound?: NetworkRule[];
-
-  /** Allowed inbound connections */
-  allowedInbound?: NetworkRule[];
-}
-
-interface NetworkAddress {
-  /** IP address */
-  ip: string;
-
-  /** Address type ("ipv4" | "ipv6") */
-  type: 'ipv4' | 'ipv6';
-
-  /** Whether this is a public/external address */
-  public?: boolean;
-
-  /** Network interface name */
-  interface?: string;
-}
-
-interface NetworkRule {
-  /** Protocol (e.g., "tcp", "udp", "icmp", "*") */
-  protocol: string;
-
-  /** Port or port range (e.g., "443", "8000-9000", "*") */
-  ports: string;
-
-  /** CIDR or hostname pattern */
-  destination: string;
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -667,10 +642,10 @@ interface NetworkRule {
  */
 interface ToolsInfo {
   /**
-   * Installed tools/executables with versions.
-   * Key is tool name, value is version or ToolDetail.
+   * Installed tools/executables.
+   * Key is tool name, value can be version string or object with details.
    */
-  installed?: Record<string, string | ToolDetail>;
+  installed?: Record<string, unknown>;
 
   /** Shell available (e.g., "bash", "zsh", "sh", "powershell") */
   shell?: string;
@@ -682,21 +657,13 @@ interface ToolsInfo {
    * Language runtimes available.
    * Maps language to version(s).
    */
-  runtimes?: Record<string, string | string[]>;
+  runtimes?: Record<string, unknown>;
 
   /** Whether the agent can install new tools */
   canInstall?: boolean;
-}
 
-interface ToolDetail {
-  /** Tool version */
-  version: string;
-
-  /** Path to the tool executable */
-  path?: string;
-
-  /** Additional tool metadata */
-  metadata?: Record<string, unknown>;
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -705,7 +672,7 @@ interface ToolDetail {
 ```typescript
 /**
  * Resource limits and constraints.
- * Describes what resources the agent can use.
+ * All fields are conventions - report what's relevant.
  */
 interface ResourceInfo {
   /** CPU limit (in cores or millicores, e.g., "2", "500m") */
@@ -732,8 +699,11 @@ interface ResourceInfo {
   /** Whether resources are shared with other workloads */
   shared?: boolean;
 
-  /** Cost profile for resource usage */
-  costProfile?: 'free' | 'low' | 'medium' | 'high' | 'premium';
+  /** Cost profile for resource usage (convention: "free", "low", "medium", "high", "premium") */
+  costProfile?: string;
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -746,14 +716,10 @@ interface ResourceInfo {
  */
 interface SecurityInfo {
   /**
-   * Isolation level.
-   * - "none": No isolation (bare metal, same user)
-   * - "process": Process-level isolation
-   * - "container": Container isolation
-   * - "vm": Virtual machine isolation
-   * - "hardware": Hardware-level isolation (SGX, TDX)
+   * Isolation level (convention).
+   * Common values: "none", "process", "container", "vm", "hardware"
    */
-  isolation?: 'none' | 'process' | 'container' | 'vm' | 'hardware';
+  isolation?: string;
 
   /** Whether running as root/admin */
   privileged?: boolean;
@@ -778,6 +744,9 @@ interface SecurityInfo {
 
   /** Data residency region */
   dataResidency?: string;
+
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -788,119 +757,61 @@ interface SecurityInfo {
  * External services and APIs the agent has access to.
  * Describes authenticated integrations without exposing credentials.
  *
- * This enables routing decisions like "send ML inference to an agent with HuggingFace access"
- * without exposing actual API keys or tokens.
+ * Structure is open-ended - use whatever categorization makes sense.
+ * The examples below are conventions, not requirements.
  */
 interface ServicesInfo {
   /**
-   * AI/ML model providers the agent can access.
-   * Examples: huggingface, openai, anthropic, replicate, together
+   * AI/ML model providers (convention).
+   * Examples: huggingface, openai, anthropic
    */
   aiProviders?: Record<string, ServiceAccess>;
 
   /**
-   * Cloud service APIs the agent can access.
-   * Examples: aws, gcp, azure (beyond just running on their compute)
-   */
-  cloudApis?: Record<string, ServiceAccess>;
-
-  /**
-   * Database services the agent can connect to.
-   * Examples: postgres, mongodb, redis, pinecone, weaviate
-   */
-  databases?: Record<string, ServiceAccess>;
-
-  /**
-   * Communication/messaging services.
-   * Examples: slack, discord, email, twilio
-   */
-  messaging?: Record<string, ServiceAccess>;
-
-  /**
-   * Version control and code hosting APIs.
-   * Examples: github, gitlab, bitbucket
-   */
-  codeHosting?: Record<string, ServiceAccess>;
-
-  /**
-   * MCP (Model Context Protocol) servers available to this agent.
-   * These extend the agent's capabilities via the MCP protocol.
+   * MCP servers available to this agent (convention).
    */
   mcp?: Record<string, MCPServerInfo>;
 
   /**
-   * Other external services.
+   * Allow any other service categories.
+   * Examples: databases, messaging, codeHosting, cloudApis
    */
-  other?: Record<string, ServiceAccess>;
+  [key: string]: unknown;
 }
 
 /**
  * Access information for an external service.
- * Describes availability without exposing credentials.
+ * 'available' is the only recommended field.
  */
 interface ServiceAccess {
-  /** Whether access is currently available/authenticated */
-  available: boolean;
+  /** Whether access is currently available/authenticated (recommended) */
+  available?: boolean;
 
-  /**
-   * Access level or tier.
-   * Examples: "free", "pro", "enterprise", "read-only", "full"
-   */
+  /** Access level or tier */
   tier?: string;
 
-  /**
-   * Specific capabilities or scopes available.
-   * For APIs with granular permissions.
-   */
+  /** Specific capabilities or scopes available */
   scopes?: string[];
 
-  /**
-   * Rate limits that apply to this service.
-   */
-  rateLimit?: {
-    requestsPerMinute?: number;
-    requestsPerDay?: number;
-    tokensPerMinute?: number;
-  };
+  /** Rate limits */
+  rateLimit?: Record<string, unknown>;
 
-  /**
-   * Specific models or resources accessible (for AI providers).
-   * Examples: ["gpt-4", "gpt-3.5-turbo"] or ["meta-llama/Llama-2-70b"]
-   */
+  /** Specific models or resources accessible (for AI providers) */
   models?: string[];
 
-  /**
-   * Regions/endpoints this access is valid for.
-   */
-  regions?: string[];
-
-  /**
-   * When access expires (if known).
-   */
-  expiresAt?: number;
-
-  /**
-   * Additional metadata about this service access.
-   */
-  metadata?: Record<string, unknown>;
+  /** Allow any additional fields */
+  [key: string]: unknown;
 }
 
 /**
- * MCP server information.
- * Describes an MCP server available to this agent.
+ * MCP server information (convention).
  */
 interface MCPServerInfo {
-  /** Server name/identifier */
-  name: string;
+  /** Whether the server is currently available */
+  available?: boolean;
 
-  /** Whether the server is currently connected/available */
-  available: boolean;
-
-  /** Transport type (stdio, http, sse) */
+  /** Transport type */
   transport?: string;
-
-  /** Server URL (for HTTP-based transports) */
-  url?: string;
 
   /** Tools provided by this MCP server */
   tools?: string[];
@@ -908,11 +819,8 @@ interface MCPServerInfo {
   /** Resources provided by this MCP server */
   resources?: string[];
 
-  /** Prompts provided by this MCP server */
-  prompts?: string[];
-
-  /** Server version */
-  version?: string;
+  /** Allow additional fields */
+  [key: string]: unknown;
 }
 ```
 
@@ -921,44 +829,38 @@ interface MCPServerInfo {
 ```typescript
 // Agent with HuggingFace and OpenAI access
 const services: ServicesInfo = {
+  // Convention: aiProviders for ML APIs
   aiProviders: {
-    'huggingface': {
+    huggingface: {
       available: true,
       tier: 'pro',
-      models: ['meta-llama/Llama-2-70b-chat-hf', 'mistralai/Mixtral-8x7B-v0.1'],
-      rateLimit: { requestsPerMinute: 60 }
+      models: ['meta-llama/Llama-2-70b-chat-hf'],
+      // Custom field - not in schema but allowed
+      organizationId: 'my-org'
     },
-    'openai': {
-      available: true,
-      tier: 'enterprise',
-      scopes: ['chat', 'embeddings', 'images'],
-      models: ['gpt-4', 'gpt-4-turbo', 'text-embedding-3-large']
-    },
-    'anthropic': {
-      available: false  // No access
-    }
+    openai: { available: true, models: ['gpt-4'] },
+    anthropic: { available: false }
   },
-  databases: {
-    'pinecone': {
-      available: true,
-      tier: 'starter',
-      metadata: { indexes: ['product-embeddings', 'doc-search'] }
-    }
-  },
+
+  // Convention: mcp for MCP servers
   mcp: {
-    'filesystem': {
-      name: 'filesystem',
+    filesystem: {
       available: true,
       transport: 'stdio',
-      tools: ['read_file', 'write_file', 'list_directory']
+      tools: ['read_file', 'write_file']
     },
-    'github': {
-      name: 'github-mcp',
+    github: {
       available: true,
-      transport: 'stdio',
-      tools: ['create_issue', 'create_pr', 'search_code'],
-      resources: ['repo://owner/repo']
+      tools: ['create_issue', 'create_pr']
     }
+  },
+
+  // Custom categories - just add them
+  databases: {
+    pinecone: { available: true, indexes: ['embeddings'] }
+  },
+  internalApis: {
+    userService: { available: true, baseUrl: 'http://users.internal' }
   }
 };
 ```
