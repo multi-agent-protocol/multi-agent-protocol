@@ -75,6 +75,9 @@ interface AgentEnvironment {
   /** Security and isolation context */
   security?: SecurityInfo;
 
+  /** External services and API access */
+  services?: ServicesInfo;
+
   /** Vendor/custom extensions (x-* prefix) */
   extensions?: Record<string, unknown>;
 }
@@ -367,6 +370,74 @@ interface WorkspaceInfo {
 
   /** Remote repository URL */
   remoteUrl?: string;
+
+  /**
+   * Project integrations and tooling available in this workspace.
+   * Describes task trackers, design tools, CI/CD, and other project-level integrations.
+   */
+  integrations?: WorkspaceIntegrations;
+}
+
+/**
+ * Project-level integrations and tooling.
+ * Describes what project management, design, and CI/CD tools are available.
+ */
+interface WorkspaceIntegrations {
+  /**
+   * Task/issue tracking systems accessible from this workspace.
+   * Maps integration name to details.
+   */
+  taskTrackers?: Record<string, IntegrationInfo>;
+
+  /**
+   * Design and specification tools.
+   * Examples: Speckit, Notion, Confluence, ADRs
+   */
+  designTools?: Record<string, IntegrationInfo>;
+
+  /**
+   * CI/CD systems configured for this workspace.
+   */
+  cicd?: Record<string, IntegrationInfo>;
+
+  /**
+   * Documentation systems.
+   */
+  documentation?: Record<string, IntegrationInfo>;
+
+  /**
+   * Code quality and analysis tools.
+   * Examples: SonarQube, CodeClimate, linters configured in project
+   */
+  codeQuality?: Record<string, IntegrationInfo>;
+
+  /**
+   * Other project-level integrations.
+   */
+  other?: Record<string, IntegrationInfo>;
+}
+
+interface IntegrationInfo {
+  /** Integration type/provider (e.g., "linear", "jira", "github-issues", "beads", "speckit") */
+  type: string;
+
+  /** Whether the integration is currently accessible/authenticated */
+  available: boolean;
+
+  /** URL or path to access this integration */
+  url?: string;
+
+  /** Local config file path (if file-based like .beads/) */
+  configPath?: string;
+
+  /** Version of the integration/tool */
+  version?: string;
+
+  /** Capabilities this integration provides */
+  capabilities?: string[];
+
+  /** Additional metadata */
+  metadata?: Record<string, unknown>;
 }
 ```
 
@@ -562,6 +633,188 @@ interface SecurityInfo {
   /** Data residency region */
   dataResidency?: string;
 }
+```
+
+### Services Information
+
+```typescript
+/**
+ * External services and APIs the agent has access to.
+ * Describes authenticated integrations without exposing credentials.
+ *
+ * This enables routing decisions like "send ML inference to an agent with HuggingFace access"
+ * without exposing actual API keys or tokens.
+ */
+interface ServicesInfo {
+  /**
+   * AI/ML model providers the agent can access.
+   * Examples: huggingface, openai, anthropic, replicate, together
+   */
+  aiProviders?: Record<string, ServiceAccess>;
+
+  /**
+   * Cloud service APIs the agent can access.
+   * Examples: aws, gcp, azure (beyond just running on their compute)
+   */
+  cloudApis?: Record<string, ServiceAccess>;
+
+  /**
+   * Database services the agent can connect to.
+   * Examples: postgres, mongodb, redis, pinecone, weaviate
+   */
+  databases?: Record<string, ServiceAccess>;
+
+  /**
+   * Communication/messaging services.
+   * Examples: slack, discord, email, twilio
+   */
+  messaging?: Record<string, ServiceAccess>;
+
+  /**
+   * Version control and code hosting APIs.
+   * Examples: github, gitlab, bitbucket
+   */
+  codeHosting?: Record<string, ServiceAccess>;
+
+  /**
+   * MCP (Model Context Protocol) servers available to this agent.
+   * These extend the agent's capabilities via the MCP protocol.
+   */
+  mcp?: Record<string, MCPServerInfo>;
+
+  /**
+   * Other external services.
+   */
+  other?: Record<string, ServiceAccess>;
+}
+
+/**
+ * Access information for an external service.
+ * Describes availability without exposing credentials.
+ */
+interface ServiceAccess {
+  /** Whether access is currently available/authenticated */
+  available: boolean;
+
+  /**
+   * Access level or tier.
+   * Examples: "free", "pro", "enterprise", "read-only", "full"
+   */
+  tier?: string;
+
+  /**
+   * Specific capabilities or scopes available.
+   * For APIs with granular permissions.
+   */
+  scopes?: string[];
+
+  /**
+   * Rate limits that apply to this service.
+   */
+  rateLimit?: {
+    requestsPerMinute?: number;
+    requestsPerDay?: number;
+    tokensPerMinute?: number;
+  };
+
+  /**
+   * Specific models or resources accessible (for AI providers).
+   * Examples: ["gpt-4", "gpt-3.5-turbo"] or ["meta-llama/Llama-2-70b"]
+   */
+  models?: string[];
+
+  /**
+   * Regions/endpoints this access is valid for.
+   */
+  regions?: string[];
+
+  /**
+   * When access expires (if known).
+   */
+  expiresAt?: number;
+
+  /**
+   * Additional metadata about this service access.
+   */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * MCP server information.
+ * Describes an MCP server available to this agent.
+ */
+interface MCPServerInfo {
+  /** Server name/identifier */
+  name: string;
+
+  /** Whether the server is currently connected/available */
+  available: boolean;
+
+  /** Transport type (stdio, http, sse) */
+  transport?: string;
+
+  /** Server URL (for HTTP-based transports) */
+  url?: string;
+
+  /** Tools provided by this MCP server */
+  tools?: string[];
+
+  /** Resources provided by this MCP server */
+  resources?: string[];
+
+  /** Prompts provided by this MCP server */
+  prompts?: string[];
+
+  /** Server version */
+  version?: string;
+}
+```
+
+#### Services Examples
+
+```typescript
+// Agent with HuggingFace and OpenAI access
+const services: ServicesInfo = {
+  aiProviders: {
+    'huggingface': {
+      available: true,
+      tier: 'pro',
+      models: ['meta-llama/Llama-2-70b-chat-hf', 'mistralai/Mixtral-8x7B-v0.1'],
+      rateLimit: { requestsPerMinute: 60 }
+    },
+    'openai': {
+      available: true,
+      tier: 'enterprise',
+      scopes: ['chat', 'embeddings', 'images'],
+      models: ['gpt-4', 'gpt-4-turbo', 'text-embedding-3-large']
+    },
+    'anthropic': {
+      available: false  // No access
+    }
+  },
+  databases: {
+    'pinecone': {
+      available: true,
+      tier: 'starter',
+      metadata: { indexes: ['product-embeddings', 'doc-search'] }
+    }
+  },
+  mcp: {
+    'filesystem': {
+      name: 'filesystem',
+      available: true,
+      transport: 'stdio',
+      tools: ['read_file', 'write_file', 'list_directory']
+    },
+    'github': {
+      name: 'github-mcp',
+      available: true,
+      transport: 'stdio',
+      tools: ['create_issue', 'create_pr', 'search_code'],
+      resources: ['repo://owner/repo']
+    }
+  }
+};
 ```
 
 ## Integration with MAP
@@ -962,7 +1215,121 @@ async function handleIncomingTask(message: Message) {
 }
 ```
 
-#### 6. Security-Aware Workload Placement
+#### 6. Service-Aware Task Routing
+
+An agent routes ML inference to a peer with the appropriate API access.
+
+```typescript
+// Route inference request to agent with HuggingFace access
+async function routeInferenceTask(task: InferenceTask) {
+  const peers = await client.agentsList({ filter: { states: ['active'] } });
+
+  // Find peer with HuggingFace access and the specific model
+  const hfPeer = peers.agents.find(peer => {
+    const hfAccess = peer.environment?.services?.aiProviders?.['huggingface'];
+    return (
+      hfAccess?.available &&
+      hfAccess.models?.includes(task.model)
+    );
+  });
+
+  if (hfPeer) {
+    return client.send({
+      to: { agent: hfPeer.id },
+      payload: { type: 'inference', task }
+    });
+  }
+
+  // Fall back to OpenAI if no HuggingFace access
+  const openaiPeer = peers.agents.find(peer =>
+    peer.environment?.services?.aiProviders?.['openai']?.available
+  );
+
+  if (openaiPeer) {
+    return client.send({
+      to: { agent: openaiPeer.id },
+      payload: { type: 'inference', task, fallbackModel: 'gpt-4' }
+    });
+  }
+
+  throw new Error('No agent with ML API access available');
+}
+```
+
+#### 7. Project Integration Discovery
+
+An agent discovers what project tools are available in the workspace.
+
+```typescript
+// Check if we can create issues in the project's task tracker
+async function createTaskIfTrackerAvailable(taskDescription: string) {
+  const myEnv = myAgent.environment;
+  const integrations = myEnv?.filesystem?.workspace?.integrations;
+
+  // Check for available task trackers
+  const taskTrackers = integrations?.taskTrackers ?? {};
+  const availableTracker = Object.entries(taskTrackers)
+    .find(([_, info]) => info.available);
+
+  if (availableTracker) {
+    const [trackerName, trackerInfo] = availableTracker;
+
+    switch (trackerInfo.type) {
+      case 'github-issues':
+        // Use GitHub MCP or API
+        await createGitHubIssue(taskDescription);
+        break;
+      case 'linear':
+        // Use Linear API
+        await createLinearIssue(taskDescription, trackerInfo.url);
+        break;
+      case 'beads':
+        // Use local beads CLI or file-based approach
+        await createBeadsTask(taskDescription, trackerInfo.configPath);
+        break;
+      default:
+        console.log(`Unknown tracker type: ${trackerInfo.type}`);
+    }
+  } else {
+    // No task tracker - log to file or report back
+    console.log('No task tracker available, logging to file');
+    await appendToFile('tasks.md', `- [ ] ${taskDescription}\n`);
+  }
+}
+```
+
+#### 8. MCP Server Capability Discovery
+
+An agent checks what MCP servers are available to extend its capabilities.
+
+```typescript
+// Find an agent that can perform a specific MCP tool operation
+async function findAgentWithMCPTool(toolName: string): Promise<Agent | undefined> {
+  const agents = await client.agentsList({ filter: { states: ['active'] } });
+
+  return agents.agents.find(agent => {
+    const mcpServers = agent.environment?.services?.mcp ?? {};
+    return Object.values(mcpServers).some(server =>
+      server.available && server.tools?.includes(toolName)
+    );
+  });
+}
+
+// Example: Find an agent that can create GitHub PRs via MCP
+const prAgent = await findAgentWithMCPTool('create_pr');
+if (prAgent) {
+  await client.send({
+    to: { agent: prAgent.id },
+    payload: {
+      type: 'mcp_tool_call',
+      tool: 'create_pr',
+      args: { title: 'Fix bug', body: 'Description...' }
+    }
+  });
+}
+```
+
+#### 9. Security-Aware Workload Placement
 
 An agent can assess whether it's appropriate to handle sensitive data.
 
