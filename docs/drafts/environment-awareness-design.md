@@ -774,6 +774,699 @@ async function routeExternalRequest(request: ExternalAPIRequest) {
 }
 ```
 
+## Use Cases
+
+This section details how different participants in a multi-agent system would use environment information.
+
+---
+
+### Use Cases: What Would an Agent Use This Information For?
+
+#### 1. Self-Awareness and Capability Advertisement
+
+An agent needs to understand its own environment to accurately advertise what it can do.
+
+```typescript
+// Agent self-registers with detected environment
+const myEnvironment = await detectEnvironment();
+
+await client.agentsRegister({
+  name: 'code-executor',
+  role: 'executor',
+  environment: myEnvironment,
+  capabilities: {
+    // Capabilities derived from environment
+    protocols: myEnvironment.tools?.installed?.['python'] ? ['python-exec'] : [],
+  }
+});
+```
+
+**Scenarios:**
+- "I have Python 3.11 installed, so I can execute Python scripts"
+- "I'm in a container with no network, so I can only do offline tasks"
+- "I have 32GB RAM and a GPU, so I can handle ML inference"
+- "My filesystem is ephemeral, so I shouldn't be assigned tasks requiring persistent storage"
+
+#### 2. Peer Discovery and Task Delegation
+
+An agent can query other agents' environments to decide who to delegate work to.
+
+```typescript
+// Agent looking for a peer to handle a GPU task
+async function delegateGPUTask(task: MLTask) {
+  const peers = await client.agentsList({ filter: { states: ['active'] } });
+
+  // Find peer with GPU and sufficient memory
+  const gpuPeer = peers.agents.find(peer => {
+    const env = peer.environment;
+    return (
+      env?.host?.gpu?.count &&
+      env.host.gpu.count > 0 &&
+      env.host.gpu.memoryBytes &&
+      env.host.gpu.memoryBytes >= task.requiredVRAM
+    );
+  });
+
+  if (gpuPeer) {
+    await client.send({
+      to: { agent: gpuPeer.id },
+      payload: { type: 'ml_inference', task }
+    });
+  } else {
+    // Fall back to CPU inference or queue for later
+  }
+}
+```
+
+#### 3. Path Translation for Shared Filesystems
+
+When agents share a filesystem but have different mount points, they need to translate paths.
+
+```typescript
+// Agent A wants to tell Agent B about a file
+async function shareFileReference(targetAgentId: string, localPath: string) {
+  const myEnv = await client.agentsGet({ agentId: myAgentId });
+  const targetEnv = await client.agentsGet({ agentId: targetAgentId });
+
+  // Find which mount contains this path
+  const myMounts = myEnv.agent.environment?.filesystem?.mounts ?? {};
+  const targetMounts = targetEnv.agent.environment?.filesystem?.mounts ?? {};
+
+  for (const [mountName, myMount] of Object.entries(myMounts)) {
+    if (localPath.startsWith(myMount.path) && targetMounts[mountName]) {
+      // Translate path: replace my mount path with theirs
+      const relativePath = localPath.slice(myMount.path.length);
+      const targetPath = targetMounts[mountName].path + relativePath;
+
+      await client.send({
+        to: { agent: targetAgentId },
+        payload: {
+          type: 'file_ready',
+          path: targetPath,  // Path as seen by target agent
+          originalPath: localPath  // For debugging
+        }
+      });
+      return;
+    }
+  }
+
+  // No shared mount - need to transfer file contents instead
+  await transferFileViaMessage(targetAgentId, localPath);
+}
+```
+
+#### 4. Network-Aware Service Access
+
+An agent decides how to access external services based on its network environment.
+
+```typescript
+async function fetchExternalData(url: string) {
+  const myEnv = (await client.agentsGet({ agentId: myAgentId })).agent.environment;
+
+  switch (myEnv?.network?.connectivity) {
+    case 'full':
+      // Direct access
+      return fetch(url);
+
+    case 'restricted':
+      // Check if this URL is allowed
+      const allowed = myEnv.network.allowedOutbound?.some(rule =>
+        matchesRule(url, rule)
+      );
+      if (allowed) return fetch(url);
+      // Fall through to delegate
+
+    case 'internal':
+    case 'isolated':
+      // Delegate to an agent with network access
+      const networkAgent = await findAgentWithNetworkAccess();
+      if (networkAgent) {
+        const response = await client.send({
+          to: { agent: networkAgent.id },
+          payload: { type: 'http_fetch', url },
+          meta: { expectsResponse: true }
+        });
+        return response;
+      }
+      throw new Error('No network access available');
+  }
+}
+```
+
+#### 5. Resource-Aware Task Acceptance
+
+An agent can decide whether to accept a task based on its resource constraints.
+
+```typescript
+// Agent's message handler
+async function handleIncomingTask(message: Message) {
+  const task = message.payload as Task;
+  const myEnv = myAgent.environment;
+
+  // Check if we have enough resources
+  if (task.estimatedMemoryMB && myEnv?.resources?.memoryLimitBytes) {
+    const availableMB = myEnv.resources.memoryLimitBytes / (1024 * 1024);
+    if (task.estimatedMemoryMB > availableMB * 0.8) {
+      // Reject - would exceed safe memory threshold
+      await client.send({
+        to: { agent: message.from },
+        payload: {
+          type: 'task_rejected',
+          reason: 'insufficient_memory',
+          required: task.estimatedMemoryMB,
+          available: availableMB
+        }
+      });
+      return;
+    }
+  }
+
+  // Check execution time limits (serverless)
+  if (task.estimatedDurationSec && myEnv?.resources?.maxExecutionSeconds) {
+    if (task.estimatedDurationSec > myEnv.resources.maxExecutionSeconds) {
+      await client.send({
+        to: { agent: message.from },
+        payload: {
+          type: 'task_rejected',
+          reason: 'would_exceed_timeout',
+          required: task.estimatedDurationSec,
+          limit: myEnv.resources.maxExecutionSeconds
+        }
+      });
+      return;
+    }
+  }
+
+  // Accept and process
+  await processTask(task);
+}
+```
+
+#### 6. Security-Aware Workload Placement
+
+An agent can assess whether it's appropriate to handle sensitive data.
+
+```typescript
+async function handleSensitiveTask(task: SensitiveDataTask) {
+  const myEnv = myAgent.environment;
+
+  // Check isolation level
+  if (myEnv?.security?.isolation === 'none' || myEnv?.security?.isolation === 'process') {
+    // Not isolated enough for sensitive data
+    const secureAgent = await findAgentWithIsolation(['container', 'vm', 'hardware']);
+    if (secureAgent) {
+      return delegateTo(secureAgent, task);
+    }
+    throw new Error('No sufficiently isolated agent available');
+  }
+
+  // Check data residency requirements
+  if (task.dataResidencyRequired && myEnv?.security?.dataResidency !== task.dataResidencyRequired) {
+    throw new Error(`Data residency mismatch: need ${task.dataResidencyRequired}, have ${myEnv?.security?.dataResidency}`);
+  }
+
+  // Check compliance
+  if (task.requiredCompliance) {
+    const myCompliance = new Set(myEnv?.security?.compliance ?? []);
+    const missing = task.requiredCompliance.filter(c => !myCompliance.has(c));
+    if (missing.length > 0) {
+      throw new Error(`Missing compliance: ${missing.join(', ')}`);
+    }
+  }
+
+  // Safe to process
+  await processSensitiveTask(task);
+}
+```
+
+---
+
+### Use Cases: What Would a Client Application Use This Information For?
+
+#### 1. Intelligent Task Routing Dashboard
+
+A client application (UI/orchestrator) can make informed decisions about where to send tasks.
+
+```typescript
+// Client-side orchestrator
+class TaskOrchestrator {
+  async routeTask(task: Task): Promise<AgentId> {
+    const agents = await this.client.agentsList({ filter: { states: ['active'] } });
+
+    // Score each agent based on task requirements vs environment
+    const scored = agents.agents.map(agent => ({
+      agent,
+      score: this.scoreAgentForTask(agent, task)
+    }));
+
+    // Sort by score descending
+    scored.sort((a, b) => b.score - a.score);
+
+    if (scored[0].score <= 0) {
+      throw new Error('No suitable agent found for task');
+    }
+
+    return scored[0].agent.id;
+  }
+
+  private scoreAgentForTask(agent: Agent, task: Task): number {
+    let score = 0;
+    const env = agent.environment;
+    if (!env) return 0;  // No environment info = can't assess
+
+    // Tool requirements
+    if (task.requiredTools) {
+      const installedTools = new Set(Object.keys(env.tools?.installed ?? {}));
+      const hasAll = task.requiredTools.every(t => installedTools.has(t));
+      if (!hasAll) return -1;  // Disqualified
+      score += 10;
+    }
+
+    // Prefer agents with more resources
+    if (env.host?.memoryBytes) {
+      score += Math.log2(env.host.memoryBytes / (1024 * 1024 * 1024));  // +1 per GB
+    }
+
+    // Prefer cheaper compute
+    const costScores = { 'free': 10, 'low': 8, 'medium': 5, 'high': 2, 'premium': 0 };
+    score += costScores[env.resources?.costProfile ?? 'medium'];
+
+    // Prefer same region (lower latency)
+    if (task.preferredRegion && env.cloud?.region === task.preferredRegion) {
+      score += 5;
+    }
+
+    // Penalize ephemeral for long-running tasks
+    if (task.longRunning && env.filesystem?.ephemeral) {
+      score -= 5;
+    }
+
+    return score;
+  }
+}
+```
+
+#### 2. Environment Comparison View
+
+A UI showing differences between agents for debugging coordination issues.
+
+```typescript
+// Client fetches comparison data for display
+async function getEnvironmentComparison(agentIds: AgentId[]) {
+  const agents = await Promise.all(
+    agentIds.map(id => client.agentsGet({ agentId: id }))
+  );
+
+  const comparison = {
+    agents: agentIds,
+    filesystemCompatibility: checkFilesystemCompatibility(agents),
+    networkCompatibility: checkNetworkCompatibility(agents),
+    toolsInCommon: findCommonTools(agents),
+    toolsDifferent: findDifferentTools(agents),
+  };
+
+  return comparison;
+}
+
+function checkFilesystemCompatibility(agents: Agent[]): FilesystemCompatibility {
+  const allMounts = agents.map(a => a.environment?.filesystem?.mounts ?? {});
+
+  // Find shared mount names
+  const mountNames = new Set(allMounts.flatMap(m => Object.keys(m)));
+  const sharedMounts: SharedMountInfo[] = [];
+
+  for (const name of mountNames) {
+    const agentsWithMount = agents.filter(a =>
+      a.environment?.filesystem?.mounts?.[name]
+    );
+
+    if (agentsWithMount.length > 1) {
+      sharedMounts.push({
+        name,
+        agents: agentsWithMount.map(a => ({
+          agentId: a.id,
+          path: a.environment!.filesystem!.mounts![name].path
+        }))
+      });
+    }
+  }
+
+  return {
+    hasSharedFilesystem: sharedMounts.length > 0,
+    sharedMounts,
+    requiresFileTransfer: sharedMounts.length === 0
+  };
+}
+```
+
+#### 3. Cost-Optimized Batch Scheduling
+
+A client schedules a batch of tasks across agents to minimize cost.
+
+```typescript
+async function scheduleBatch(tasks: Task[]): Promise<Schedule> {
+  const agents = await client.agentsList({ filter: { states: ['active'] } });
+
+  // Group agents by cost profile
+  const byCoste = new Map<string, Agent[]>();
+  for (const agent of agents.agents) {
+    const cost = agent.environment?.resources?.costProfile ?? 'medium';
+    if (!byCost.has(cost)) byCost.set(cost, []);
+    byCost.get(cost)!.push(agent);
+  }
+
+  const schedule: Schedule = { assignments: [] };
+
+  // Assign tasks to cheapest capable agents first
+  for (const task of tasks) {
+    for (const costLevel of ['free', 'low', 'medium', 'high', 'premium']) {
+      const candidates = byCost.get(costLevel) ?? [];
+      const capable = candidates.find(a => canHandle(a, task));
+
+      if (capable) {
+        schedule.assignments.push({ task, agent: capable.id, cost: costLevel });
+        break;
+      }
+    }
+  }
+
+  return schedule;
+}
+```
+
+#### 4. Health and Capacity Monitoring
+
+A client monitors agent fleet health and capacity.
+
+```typescript
+class FleetMonitor {
+  async getFleetStatus(): Promise<FleetStatus> {
+    const agents = await this.client.agentsList();
+
+    const status: FleetStatus = {
+      total: agents.agents.length,
+      byRegion: {},
+      byIsolationLevel: {},
+      totalCapacity: { cpuCores: 0, memoryGB: 0, gpuCount: 0 },
+      networkCapabilities: { full: 0, restricted: 0, internal: 0, isolated: 0 }
+    };
+
+    for (const agent of agents.agents) {
+      const env = agent.environment;
+      if (!env) continue;
+
+      // By region
+      const region = env.cloud?.region ?? 'local';
+      status.byRegion[region] = (status.byRegion[region] ?? 0) + 1;
+
+      // By isolation
+      const isolation = env.security?.isolation ?? 'unknown';
+      status.byIsolationLevel[isolation] = (status.byIsolationLevel[isolation] ?? 0) + 1;
+
+      // Aggregate capacity
+      if (env.host?.cpuCount) status.totalCapacity.cpuCores += env.host.cpuCount;
+      if (env.host?.memoryBytes) status.totalCapacity.memoryGB += env.host.memoryBytes / (1024**3);
+      if (env.host?.gpu?.count) status.totalCapacity.gpuCount += env.host.gpu.count;
+
+      // Network capabilities
+      const connectivity = env.network?.connectivity ?? 'isolated';
+      status.networkCapabilities[connectivity]++;
+    }
+
+    return status;
+  }
+}
+```
+
+#### 5. Debugging Failed Interactions
+
+A client investigates why an agent-to-agent interaction failed.
+
+```typescript
+async function debugInteraction(fromAgentId: AgentId, toAgentId: AgentId, error: string) {
+  const [fromAgent, toAgent] = await Promise.all([
+    client.agentsGet({ agentId: fromAgentId }),
+    client.agentsGet({ agentId: toAgentId })
+  ]);
+
+  const fromEnv = fromAgent.agent.environment;
+  const toEnv = toAgent.agent.environment;
+
+  const diagnosis: Diagnosis = { issues: [] };
+
+  // Check network compatibility
+  if (fromEnv?.network?.connectivity === 'isolated' || toEnv?.network?.connectivity === 'isolated') {
+    diagnosis.issues.push({
+      type: 'network',
+      message: 'One or both agents have no network access',
+      from: fromEnv?.network?.connectivity,
+      to: toEnv?.network?.connectivity
+    });
+  }
+
+  // Check if they're on different clouds/regions (latency issues)
+  if (fromEnv?.cloud?.region && toEnv?.cloud?.region &&
+      fromEnv.cloud.region !== toEnv.cloud.region) {
+    diagnosis.issues.push({
+      type: 'latency',
+      message: `Cross-region communication: ${fromEnv.cloud.region} → ${toEnv.cloud.region}`,
+      suggestion: 'Consider using agents in the same region for latency-sensitive operations'
+    });
+  }
+
+  // Check filesystem assumptions
+  if (error.includes('file not found') || error.includes('ENOENT')) {
+    const sharedFs = checkFilesystemCompatibility([fromAgent.agent, toAgent.agent]);
+    if (!sharedFs.hasSharedFilesystem) {
+      diagnosis.issues.push({
+        type: 'filesystem',
+        message: 'Agents do not share a filesystem - file paths are not transferable',
+        suggestion: 'Use file transfer via messages instead of path references'
+      });
+    }
+  }
+
+  return diagnosis;
+}
+```
+
+---
+
+### How Would This Information Be Made Visible to Agents?
+
+#### Visibility Pattern 1: Query on Demand
+
+Agents query other agents' environments when needed.
+
+```typescript
+// Agent queries a specific peer's environment
+const peer = await client.agentsGet({ agentId: 'peer-agent-1' });
+const peerEnv = peer.agent.environment;
+
+// Agent lists all agents and filters by environment
+const gpuAgents = await client.agentsList({
+  filter: { states: ['active'] }
+});
+const withGPU = gpuAgents.agents.filter(a => a.environment?.host?.gpu?.count);
+```
+
+**Pros:** Simple, no extra state
+**Cons:** Requires knowing which agents to query, multiple round trips
+
+#### Visibility Pattern 2: Environment-Filtered Subscriptions
+
+Agents subscribe to events from agents matching environment criteria.
+
+```typescript
+// Subscribe to events from agents in the same region
+const myRegion = myAgent.environment?.cloud?.region;
+
+await client.subscribe({
+  filter: {
+    eventTypes: ['agent_registered', 'agent_state_changed'],
+    environmentMatch: {
+      'cloud.region': myRegion ? [myRegion] : undefined,
+      'network.connectivity': ['full', 'restricted']  // Only network-capable agents
+    }
+  }
+});
+```
+
+**Pros:** Real-time updates, efficient filtering server-side
+**Cons:** More complex subscription logic
+
+#### Visibility Pattern 3: Environment Change Events
+
+Agents receive notifications when relevant environments change.
+
+```typescript
+// Subscribe to environment changes
+await client.subscribe({
+  filter: {
+    eventTypes: ['agent_environment_changed']
+  }
+});
+
+// Handle environment changes
+client.onEvent((event) => {
+  if (event.type === 'agent_environment_changed') {
+    const data = event.data as AgentEnvironmentChangedEventData;
+
+    // React to changes that affect us
+    if (data.changedFields.includes('network.connectivity')) {
+      // A peer's network status changed - update our routing decisions
+      updateRoutingTable(data.agentId, data.currentEnvironment);
+    }
+
+    if (data.changedFields.includes('filesystem.mounts')) {
+      // Shared filesystem changed - invalidate cached paths
+      invalidatePathCache(data.agentId);
+    }
+  }
+});
+```
+
+#### Visibility Pattern 4: Environment Summary in Scope
+
+Scopes can maintain aggregated environment information for their members.
+
+```typescript
+// When joining a scope, environment is summarized
+interface ScopeEnvironmentSummary {
+  /** Aggregated capabilities across all members */
+  aggregateCapabilities: {
+    hasGPU: boolean;
+    hasNetworkAccess: boolean;
+    totalMemoryBytes: number;
+    regions: string[];
+    tools: string[];  // Union of all installed tools
+  };
+
+  /** Members grouped by environment characteristic */
+  membersByRegion: Record<string, AgentId[]>;
+  membersByConnectivity: Record<NetworkConnectivity, AgentId[]>;
+
+  /** Shared resources */
+  sharedMounts: {
+    name: string;
+    members: AgentId[];
+  }[];
+}
+
+// Agent can query scope-level environment summary
+const scopeInfo = await client.scopesGet({ scopeId: 'my-scope' });
+const envSummary = scopeInfo.scope.metadata?.environmentSummary as ScopeEnvironmentSummary;
+
+// Quickly find who has GPU in this scope
+const gpuPeers = envSummary.membersByCapability?.['gpu'] ?? [];
+```
+
+#### Visibility Pattern 5: Environment Diff on Agent Spawn
+
+When spawning a child agent, parent receives environment comparison.
+
+```typescript
+// Parent spawns child in different environment
+const spawnResult = await client.agentsSpawn({
+  name: 'worker',
+  role: 'processor',
+  metadata: {
+    requestedEnvironment: {
+      // Hints for where to spawn
+      preferGPU: true,
+      minMemoryGB: 16
+    }
+  }
+});
+
+// Response includes environment diff
+interface SpawnResponseWithEnvironment extends AgentsSpawnResponseResult {
+  agent: Agent;  // Includes environment
+  environmentDiff?: {
+    /** Differences from parent's environment */
+    filesystem: {
+      sharedMounts: string[];  // Mounts both have
+      parentOnly: string[];    // Parent has, child doesn't
+      childOnly: string[];     // Child has, parent doesn't
+    };
+    network: {
+      canCommunicateDirectly: boolean;
+      latencyEstimateMs?: number;
+    };
+  };
+}
+```
+
+#### Visibility Pattern 6: Agent Card / Well-Known Environment
+
+Inspired by A2A's AgentCard, agents can expose a standardized environment summary.
+
+```typescript
+// Method: map/agents/environment
+interface AgentEnvironmentRequestParams {
+  agentId: AgentId;
+  /** Which categories to include (empty = all visible) */
+  include?: string[];
+}
+
+interface AgentEnvironmentResponseResult {
+  agentId: AgentId;
+  environment: AgentEnvironment;
+  /** What's hidden due to visibility rules */
+  redacted?: string[];
+  /** When this info was last updated */
+  updatedAt: Timestamp;
+}
+
+// Usage
+const envInfo = await client.agentEnvironment({
+  agentId: 'target-agent',
+  include: ['os', 'tools', 'network']  // Only what I need
+});
+```
+
+---
+
+### Visibility Control
+
+Environment information respects the existing MAP visibility and permission model.
+
+```typescript
+interface AgentEnvironmentVisibility {
+  /**
+   * Which environment categories are visible to different audiences.
+   * Categories not listed are hidden from that audience.
+   */
+  visibility: {
+    /** Visible to any agent that can see this agent */
+    public?: EnvironmentCategory[];
+
+    /** Visible only to parent/children */
+    hierarchy?: EnvironmentCategory[];
+
+    /** Visible only to same-scope members */
+    scoped?: EnvironmentCategory[];
+
+    /** Visible only to system/admin */
+    system?: EnvironmentCategory[];
+  };
+}
+
+type EnvironmentCategory =
+  | 'host' | 'os' | 'process' | 'container' | 'cloud'
+  | 'k8s' | 'filesystem' | 'network' | 'tools' | 'resources' | 'security';
+
+// Example: An agent that exposes basic info publicly but restricts sensitive details
+const myVisibility: AgentEnvironmentVisibility = {
+  visibility: {
+    public: ['os', 'tools'],  // Anyone can see OS and tools
+    hierarchy: ['filesystem', 'network'],  // Parent/children see filesystem
+    scoped: ['host', 'resources'],  // Scope members see capacity
+    system: ['security', 'cloud', 'k8s']  // Only admin sees security/cloud details
+  }
+};
+```
+
 ## Extension Points
 
 ### Vendor Extensions
