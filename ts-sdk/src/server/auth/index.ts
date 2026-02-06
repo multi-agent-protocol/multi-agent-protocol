@@ -77,10 +77,11 @@ export type {
   MTLSAuthenticatorOptions,
 } from './authenticators';
 
-// Providers (extended authenticators with capability mapping)
+// Providers (extended authenticators with capability mapping + federation)
 export {
   AgentIAMProvider,
   AgentIAMCapabilityMapper,
+  AgentIAMFederationGateway,
 } from './providers';
 
 export type {
@@ -89,4 +90,5 @@ export type {
   TokenServiceLike,
   AgentIAMCapabilityMapperOptions,
   MappableToken,
+  AgentIAMFederationGatewayOptions,
 } from './providers';

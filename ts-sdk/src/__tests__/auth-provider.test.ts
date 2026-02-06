@@ -874,8 +874,8 @@ describe("AgentIAMProvider", () => {
     });
   });
 
-  describe("federation stubs", () => {
-    it("handleFederatedToken should return not allowed", async () => {
+  describe("federation without gateway", () => {
+    it("handleFederatedToken should return not configured when no gateway", async () => {
       const result = await provider.handleFederatedToken(
         "remote-system",
         "token",
@@ -883,10 +883,10 @@ describe("AgentIAMProvider", () => {
       );
 
       expect(result.allowed).toBe(false);
-      expect(result.reason).toContain("not yet implemented");
+      expect(result.reason).toContain("not configured");
     });
 
-    it("prepareFederatedToken should return not allowed", async () => {
+    it("prepareFederatedToken should return not configured when no gateway", async () => {
       const result = await provider.prepareFederatedToken(
         { id: "agent-001" },
         {},
@@ -895,7 +895,7 @@ describe("AgentIAMProvider", () => {
 
       expect(result.allowed).toBe(false);
       expect(result.token).toBe("");
-      expect(result.reason).toContain("not yet implemented");
+      expect(result.reason).toContain("not configured");
     });
   });
 });

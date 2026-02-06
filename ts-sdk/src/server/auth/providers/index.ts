@@ -19,3 +19,7 @@ export type {
   AgentIAMCapabilityMapperOptions,
   MappableToken,
 } from './agent-iam-mapper';
+
+// Agent IAM Federation Gateway
+export { AgentIAMFederationGateway } from './agent-iam-federation';
+export type { AgentIAMFederationGatewayOptions } from './agent-iam-federation';

@@ -35,6 +35,7 @@ import {
   type AgentIAMCapabilityMapperOptions,
   type MappableToken,
 } from './agent-iam-mapper';
+import type { AgentIAMFederationGateway } from './agent-iam-federation';
 
 // =============================================================================
 // Minimal interfaces consumed by the provider.
@@ -103,6 +104,8 @@ export interface AgentIAMProviderOptions {
   tenantId?: string;
   /** Options forwarded to the capability mapper. */
   mapperOptions?: AgentIAMCapabilityMapperOptions;
+  /** Federation gateway for cross-system token verification and preparation. */
+  federationGateway?: AgentIAMFederationGateway;
 }
 
 // =============================================================================
@@ -117,12 +120,14 @@ export class AgentIAMProvider implements AuthProvider {
   readonly #mapper: AgentIAMCapabilityMapper;
   readonly #systemId?: string;
   readonly #tenantId?: string;
+  readonly #federationGateway?: AgentIAMFederationGateway;
 
   constructor(options: AgentIAMProviderOptions) {
     this.#tokenService = options.tokenService;
     this.#systemId = options.systemId;
     this.#tenantId = options.tenantId;
     this.#mapper = new AgentIAMCapabilityMapper(options.mapperOptions);
+    this.#federationGateway = options.federationGateway;
   }
 
   // ---------------------------------------------------------------------------
@@ -239,20 +244,24 @@ export class AgentIAMProvider implements AuthProvider {
   }
 
   async handleFederatedToken(
-    _sourceSystemId: string,
-    _token: unknown,
-    _context: FederationContext
+    sourceSystemId: string,
+    token: unknown,
+    context: FederationContext
   ): Promise<FederationResult> {
-    // Stub — federation gateway fills this in (Phase 4)
-    return { allowed: false, reason: 'Federation not yet implemented' };
+    if (!this.#federationGateway) {
+      return { allowed: false, reason: 'Federation gateway not configured' };
+    }
+    return this.#federationGateway.handleFederatedToken(sourceSystemId, token, context);
   }
 
   async prepareFederatedToken(
-    _principal: AuthPrincipal,
-    _providerData: unknown,
-    _targetSystemId: string
+    principal: AuthPrincipal,
+    providerData: unknown,
+    targetSystemId: string
   ): Promise<{ token: string; allowed: boolean; reason?: string }> {
-    // Stub — federation gateway fills this in (Phase 4)
-    return { token: '', allowed: false, reason: 'Federation not yet implemented' };
+    if (!this.#federationGateway) {
+      return { token: '', allowed: false, reason: 'Federation gateway not configured' };
+    }
+    return this.#federationGateway.prepareFederatedToken(principal, providerData, targetSystemId);
   }
 }
