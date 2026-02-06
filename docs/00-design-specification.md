@@ -155,6 +155,16 @@ interface MAPParticipantCapabilities {
   // Scope management
   canCreateScopes: boolean;
   canManageScopes: boolean;
+
+  // Mail (conversations/turns) - extension
+  mail?: {
+    enabled?: boolean;              // Server supports mail (response only)
+    canCreate?: boolean;            // Can create conversations
+    canJoin?: boolean;              // Can join conversations
+    canInvite?: boolean;            // Can invite participants
+    canViewHistory?: boolean;       // Can view conversation history
+    canCreateThreads?: boolean;     // Can create threads
+  };
 }
 ```
 
@@ -318,6 +328,14 @@ interface MAPMessage {
     isResult?: boolean;
     priority?: "urgent" | "high" | "normal" | "low";
     delivery?: "fire-and-forget" | "acknowledged" | "guaranteed";
+
+    // Mail turn tracking (optional extension)
+    mail?: {
+      conversationId: string;       // Record as turn in this conversation
+      threadId?: string;            // Optionally assign to thread
+      inReplyTo?: string;           // Turn ID this is replying to
+      visibility?: TurnVisibility;  // Who can see this turn
+    };
   };
 }
 ```
@@ -421,7 +439,24 @@ type MAPAddress =
 // FEDERATION
 "map/federation/connect"    // Connect to peer MAP system
 "map/federation/route"      // Route message to peer system
+
+// MAIL (Conversations, Turns, Threads)
+"mail/create"           // Create a conversation
+"mail/get"              // Get conversation details with optional includes
+"mail/list"             // List conversations with filtering
+"mail/close"            // Close a conversation
+"mail/join"             // Join a conversation with optional catch-up
+"mail/leave"            // Leave a conversation
+"mail/invite"           // Invite a participant to a conversation
+"mail/turn"             // Record a turn in a conversation
+"mail/turns/list"       // List turns with filtering and pagination
+"mail/thread/create"    // Create a thread within a conversation
+"mail/thread/list"      // List threads in a conversation
+"mail/summary"          // Get or generate a conversation summary
+"mail/replay"           // Replay conversation turns from a point
 ```
+
+> See [10-mail-protocol.md](10-mail-protocol.md) for the full Mail Protocol specification.
 
 ---
 
@@ -450,6 +485,7 @@ type MAPAddress =
 - [06-visibility-permissions.md](06-visibility-permissions.md): Visibility & Permission Model
 - [07-federation.md](07-federation.md): Federation & System-to-System Communication
 - [08-macro-agent-migration.md](08-macro-agent-migration.md): macro-agent Migration Example
+- [10-mail-protocol.md](10-mail-protocol.md): Mail Protocol (Conversations, Turns, Threads)
 
 ---
 
