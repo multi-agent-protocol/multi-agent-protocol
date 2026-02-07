@@ -317,10 +317,10 @@ describe('ClientConnection', () => {
       await client.connect();
 
       const subscription = await client.subscribe({
-        agents: ['agent-1', 'agent-2'],
+        fromAgents: ['agent-1', 'agent-2'],
       });
 
-      expect(subscription.filter?.agents).toEqual(['agent-1', 'agent-2']);
+      expect(subscription.filter?.fromAgents).toEqual(['agent-1', 'agent-2']);
     });
 
     it('can unsubscribe', async () => {

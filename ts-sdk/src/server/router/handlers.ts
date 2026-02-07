@@ -12,12 +12,32 @@ import type {
   HandlerContext,
   HandlerRegistry,
 } from "../types";
-import type { AuthManager } from "../auth";
-import type { AuthCredentials } from "../../types";
+import type { AuthManager, AuthManagerImpl } from "../auth";
+import type { AuthCredentials, AuthResult } from "../../types";
+import type { ServerSession } from "../types";
 
 /**
  * Options for creating connection handlers.
  */
+/**
+ * Mail capability configuration for the server.
+ * When provided, mail capabilities are included in the connect response.
+ */
+export interface MailCapabilityConfig {
+  /** Whether mail is enabled on this server */
+  enabled: boolean;
+  /** Can create new conversations (default: true) */
+  canCreate?: boolean;
+  /** Can join existing conversations (default: true) */
+  canJoin?: boolean;
+  /** Can invite participants (default: true) */
+  canInvite?: boolean;
+  /** Can view conversation history (default: true) */
+  canViewHistory?: boolean;
+  /** Can create threads within conversations (default: true) */
+  canCreateThreads?: boolean;
+}
+
 export interface ConnectionHandlerOptions {
   sessions: SessionManager;
   agents?: AgentRegistry;
@@ -29,6 +49,10 @@ export interface ConnectionHandlerOptions {
   serverVersion?: string;
   /** Authentication manager (optional) */
   authManager?: AuthManager;
+  /** Mail capability configuration (optional). When provided and enabled, mail capabilities are advertised. */
+  mailCapabilities?: MailCapabilityConfig;
+  /** Credential brokering configuration (optional). When provided and enabled, credential capabilities are advertised. */
+  credentialCapabilities?: import("../credentials").CredentialCapabilityConfig;
 }
 
 /**
@@ -43,25 +67,38 @@ interface ConnectParams {
   reclaimAgents?: string[];
   /**
    * Authentication credentials.
-   * Supports both new format (credential) and legacy format (token).
    */
-  auth?: AuthCredentials | { method: string; token?: string };
+  auth?: AuthCredentials;
 }
 
 /**
- * Normalize auth params to AuthCredentials format.
- * Supports legacy { token } format for backward compatibility.
+ * After successful auth, store provider data on session and return capability mapping.
+ * Returns the capability overlay if the auth method is backed by an AuthProvider.
  */
-function normalizeAuthParams(
-  auth: AuthCredentials | { method: string; token?: string }
-): AuthCredentials {
-  if ('credential' in auth) {
-    return auth;
-  }
-  // Legacy format with 'token' field
-  return {
-    method: auth.method as AuthCredentials['method'],
-    credential: auth.token,
+function storeProviderData(
+  authManager: AuthManager,
+  session: ServerSession,
+  method: string,
+  authResult: AuthResult,
+): void {
+  if (
+    !authResult.success ||
+    !authResult.principal ||
+    authResult.providerData === undefined
+  )
+    return;
+
+  const manager = authManager as AuthManagerImpl;
+  if (typeof manager.getProvider !== "function") return;
+
+  const provider = manager.getProvider(method);
+  if (!provider) return;
+
+  // Store provider data on session
+  if (!session.providers) session.providers = {};
+  session.providers[provider.providerId] = {
+    principal: authResult.principal,
+    providerData: authResult.providerData,
   };
 }
 
@@ -74,9 +111,19 @@ function normalizeAuthParams(
  * - `map/session/info` - Get current session information
  */
 export function createConnectionHandlers(
-  options: ConnectionHandlerOptions
+  options: ConnectionHandlerOptions,
 ): HandlerRegistry {
-  const { sessions, agents, subscriptions, scopes, serverName, serverVersion, authManager } = options;
+  const {
+    sessions,
+    agents,
+    subscriptions,
+    scopes,
+    serverName,
+    serverVersion,
+    authManager,
+    mailCapabilities,
+  } = options;
+  const credentialCapabilities = options.credentialCapabilities;
 
   return {
     "map/connect": async (params: unknown, ctx: HandlerContext) => {
@@ -86,22 +133,30 @@ export function createConnectionHandlers(
       if (authManager) {
         // Check if auth should be bypassed for this transport
         const shouldBypass = authManager.shouldBypass({
-          transportType: ctx.session.metadata?.transportType as string | undefined,
+          transportType: ctx.session.metadata?.transportType as
+            | string
+            | undefined,
         });
 
         if (!shouldBypass) {
           if (auth) {
-            // Normalize auth params (support legacy 'token' field)
-            const normalizedAuth = normalizeAuthParams(auth);
-
             // Authenticate with provided credentials
-            const authResult = await authManager.authenticate(normalizedAuth, {
-              transportType: ctx.session.metadata?.transportType as string | undefined,
+            const authResult = await authManager.authenticate(auth, {
+              transportType: ctx.session.metadata?.transportType as
+                | string
+                | undefined,
             });
 
             if (authResult.success && authResult.principal) {
               // Store principal on session
               ctx.session.principal = authResult.principal;
+              // Store provider data if auth backed by a provider
+              storeProviderData(
+                authManager,
+                ctx.session,
+                auth.method,
+                authResult,
+              );
             } else if (authManager.config.required) {
               // Auth failed and is required - return auth required response
               return {
@@ -155,15 +210,62 @@ export function createConnectionHandlers(
         reclaimedAgents = [...ctx.session.agentIds];
       }
 
+      // Build capabilities
+      const capabilities: Record<string, unknown> = {
+        roles: [ctx.session.role],
+        features: [],
+      };
+
+      // Intersect provider-mapped capabilities into the top-level capabilities.
+      // Provider capabilities are resolved server-side and not leaked as separate fields.
+      if (authManager && auth && ctx.session.providers) {
+        const manager = authManager as AuthManagerImpl;
+        if (typeof manager.getCapabilityMapping === "function") {
+          const mapping = manager.getCapabilityMapping(
+            auth.method,
+            ctx.session.principal!,
+            Object.values(ctx.session.providers)[0]?.providerData,
+          );
+          if (mapping?.participantCapabilities) {
+            Object.assign(capabilities, mapping.participantCapabilities);
+          }
+          // Store defaultAgentPermissions in session metadata for internal use
+          // (e.g. agent registration/spawn) but don't send on the wire
+          if (mapping?.defaultAgentPermissions) {
+            ctx.session.metadata.defaultAgentPermissions =
+              mapping.defaultAgentPermissions;
+          }
+        }
+      }
+
+      // Include mail capabilities if configured and enabled
+      if (mailCapabilities?.enabled) {
+        capabilities.mail = {
+          enabled: true,
+          canCreate: mailCapabilities.canCreate ?? true,
+          canJoin: mailCapabilities.canJoin ?? true,
+          canInvite: mailCapabilities.canInvite ?? true,
+          canViewHistory: mailCapabilities.canViewHistory ?? true,
+          canCreateThreads: mailCapabilities.canCreateThreads ?? true,
+        };
+      }
+
+      // Include credential brokering capabilities if configured and enabled
+      if (credentialCapabilities?.enabled) {
+        capabilities.credentials = {
+          enabled: true,
+          canGet: credentialCapabilities.canGet ?? true,
+          canList: credentialCapabilities.canList ?? true,
+          canStatus: credentialCapabilities.canStatus ?? true,
+        };
+      }
+
       // Return protocol-compliant connect response
       return {
         protocolVersion: "2024-12",
         sessionId: ctx.session.id,
         participantId: ctx.session.id, // Use session ID as participant ID
-        capabilities: {
-          roles: [ctx.session.role],
-          features: [],
-        },
+        capabilities,
         systemInfo: {
           name: serverName ?? "MAP Server",
           version: serverVersion ?? "1.0.0",
@@ -176,8 +278,7 @@ export function createConnectionHandlers(
     },
 
     "map/authenticate": async (params: unknown, ctx: HandlerContext) => {
-      const rawCredentials = params as AuthCredentials | { method: string; token?: string };
-      const credentials = normalizeAuthParams(rawCredentials);
+      const credentials = params as AuthCredentials;
 
       if (!authManager) {
         return {
@@ -189,12 +290,21 @@ export function createConnectionHandlers(
       }
 
       const authResult = await authManager.authenticate(credentials, {
-        transportType: ctx.session.metadata?.transportType as string | undefined,
+        transportType: ctx.session.metadata?.transportType as
+          | string
+          | undefined,
       });
 
       if (authResult.success && authResult.principal) {
         // Store principal on session
         ctx.session.principal = authResult.principal;
+        // Store provider data if auth backed by a provider
+        storeProviderData(
+          authManager,
+          ctx.session,
+          credentials.method,
+          authResult,
+        );
 
         return {
           success: true,
@@ -211,8 +321,7 @@ export function createConnectionHandlers(
     },
 
     "map/auth/refresh": async (params: unknown, ctx: HandlerContext) => {
-      const rawCredentials = params as AuthCredentials | { method: string; token?: string };
-      const credentials = normalizeAuthParams(rawCredentials);
+      const credentials = params as AuthCredentials;
 
       if (!authManager) {
         return {
@@ -223,12 +332,21 @@ export function createConnectionHandlers(
 
       // Validate the new credentials
       const authResult = await authManager.authenticate(credentials, {
-        transportType: ctx.session.metadata?.transportType as string | undefined,
+        transportType: ctx.session.metadata?.transportType as
+          | string
+          | undefined,
       });
 
       if (authResult.success && authResult.principal) {
         // Update principal on session
         ctx.session.principal = authResult.principal;
+        // Update provider data if auth backed by a provider
+        storeProviderData(
+          authManager,
+          ctx.session,
+          credentials.method,
+          authResult,
+        );
 
         return {
           success: true,
@@ -300,7 +418,9 @@ export function createConnectionHandlers(
 /**
  * Combine all handler factories into a single registry.
  */
-export function combineHandlers(...registries: HandlerRegistry[]): HandlerRegistry {
+export function combineHandlers(
+  ...registries: HandlerRegistry[]
+): HandlerRegistry {
   const combined: HandlerRegistry = {};
 
   for (const registry of registries) {

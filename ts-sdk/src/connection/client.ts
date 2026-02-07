@@ -25,6 +25,7 @@ import {
   STEERING_METHODS,
   SESSION_METHODS,
   AUTH_METHODS,
+  MAIL_METHODS,
   NOTIFICATION_METHODS,
   PROTOCOL_VERSION,
   type ParticipantCapabilities,
@@ -70,6 +71,34 @@ import {
   type AuthenticateRequestParams,
   type AuthenticateResponseResult,
   type AuthPrincipal,
+  type ConversationId,
+  type ThreadId,
+  type MailCreateRequestParams,
+  type MailCreateResponseResult,
+  type MailGetRequestParams,
+  type MailGetResponseResult,
+  type MailListRequestParams,
+  type MailListResponseResult,
+  type MailCloseRequestParams,
+  type MailCloseResponseResult,
+  type MailJoinRequestParams,
+  type MailJoinResponseResult,
+  type MailLeaveRequestParams,
+  type MailLeaveResponseResult,
+  type MailInviteRequestParams,
+  type MailInviteResponseResult,
+  type MailTurnRequestParams,
+  type MailTurnResponseResult,
+  type MailTurnsListRequestParams,
+  type MailTurnsListResponseResult,
+  type MailThreadCreateRequestParams,
+  type MailThreadCreateResponseResult,
+  type MailThreadListRequestParams,
+  type MailThreadListResponseResult,
+  type MailSummaryRequestParams,
+  type MailSummaryResponseResult,
+  type MailReplayRequestParams,
+  type MailReplayResponseResult,
 } from '../types';
 
 /**
@@ -202,6 +231,30 @@ export interface MeshConnectOptions {
  * - Subscribing to events
  * - Sending messages to agents
  * - (With permissions) Steering agents
+ *
+ * ## Response Shape Patterns
+ *
+ * Methods follow consistent response shape conventions:
+ *
+ * **Create Operations** return the full entity that was created:
+ * - `registerAgent()` → `{ agent: Agent }`
+ * - `createScope()` → `{ scope: Scope }`
+ * - `subscribe()` → `Subscription` (full subscription object)
+ *
+ * **Query Operations** return the requested data:
+ * - `listAgents()` → `{ agents: Agent[] }`
+ * - `getAgent()` → `{ agent: Agent, children?: Agent[] }`
+ * - `getScope()` → `Scope`
+ * - `listScopes()` → `{ scopes: Scope[] }`
+ *
+ * **Action Operations** return confirmation with reference ID:
+ * - `send()` → `{ messageId: string }`
+ * - `inject()` → `{ accepted: boolean }`
+ *
+ * **Lifecycle Operations** return status:
+ * - `connect()` → `ConnectResponseResult` (session info, capabilities, auth status)
+ * - `disconnect()` → `string | undefined` (resume token)
+ * - `authenticate()` → `{ success: boolean, principal?: AuthPrincipal }`
  */
 export class ClientConnection {
   #connection: BaseConnection;
@@ -216,9 +269,12 @@ export class ClientConnection {
   #connected = false;
   #lastConnectOptions?: {
     sessionId?: SessionId;
-    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
+    resumeToken?: string;
+    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; credential?: string };
   };
   #isReconnecting = false;
+  #lastResumeToken?: string;
+  #onTokenExpiring?: (expiresAt: number) => Promise<{ method: string; credential: string } | void>;
 
   constructor(stream: Stream, options: ClientConnectionOptions = {}) {
     this.#connection = new BaseConnection(stream, options);
@@ -391,12 +447,21 @@ export class ClientConnection {
 
   /**
    * Connect to the MAP system
+   *
+   * @param options - Connection options
+   * @param options.sessionId - Specific session ID to use
+   * @param options.resumeToken - Token to resume a previously disconnected session
+   * @param options.auth - Authentication credentials
+   * @param options.onTokenExpiring - Callback invoked before token expires for proactive refresh
    */
   async connect(options?: {
     sessionId?: SessionId;
     /** Token to resume a previously disconnected session */
     resumeToken?: string;
-    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
+    /** Authentication credentials */
+    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; credential?: string };
+    /** Callback invoked when token is about to expire. Return new credentials to refresh. */
+    onTokenExpiring?: (expiresAt: number) => Promise<{ method: string; credential: string } | void>;
   }): Promise<ConnectResponseResult> {
     const params: ConnectRequestParams = {
       protocolVersion: PROTOCOL_VERSION,
@@ -417,6 +482,17 @@ export class ClientConnection {
     this.#serverCapabilities = result.capabilities;
     this.#connected = true;
 
+    // Store resume token if provided in response
+    if (result.resumeToken) {
+      this.#lastResumeToken = result.resumeToken;
+    }
+
+    // Store token expiring callback
+    if (options?.onTokenExpiring) {
+      this.#onTokenExpiring = options.onTokenExpiring;
+      this.#setupTokenExpiryMonitoring(result);
+    }
+
     // Transition to connected state
     this.#connection._transitionTo('connected');
 
@@ -424,6 +500,84 @@ export class ClientConnection {
     this.#lastConnectOptions = options;
 
     return result;
+  }
+
+  /**
+   * Get the resume token for this session.
+   * Can be used to reconnect and restore session state after disconnection.
+   *
+   * @returns The resume token, or undefined if not available
+   */
+  getResumeToken(): string | undefined {
+    return this.#lastResumeToken;
+  }
+
+  /**
+   * Reconnect to the server, optionally using a resume token to restore session.
+   *
+   * @param resumeToken - Token to resume previous session. If not provided, uses the last known token.
+   * @returns Connect response result
+   *
+   * @example
+   * ```typescript
+   * // Save token before disconnect
+   * const token = await client.disconnect();
+   *
+   * // Later, reconnect with the token
+   * const result = await client.reconnect(token);
+   * console.log('Reconnected:', result.reconnected);
+   * ```
+   */
+  async reconnect(resumeToken?: string): Promise<ConnectResponseResult> {
+    const tokenToUse = resumeToken ?? this.#lastResumeToken;
+
+    return this.connect({
+      ...this.#lastConnectOptions,
+      resumeToken: tokenToUse,
+    });
+  }
+
+  /**
+   * Set up monitoring for token expiration
+   */
+  #setupTokenExpiryMonitoring(connectResult: ConnectResponseResult): void {
+    const principal = connectResult.principal;
+    if (!principal?.expiresAt || !this.#onTokenExpiring) {
+      return;
+    }
+
+    const expiresAt = principal.expiresAt;
+    const now = Date.now();
+
+    // Trigger callback 60 seconds before expiration
+    const warningTime = expiresAt - 60000;
+    const delay = warningTime - now;
+
+    if (delay > 0) {
+      setTimeout(async () => {
+        if (!this.#connected || !this.#onTokenExpiring) return;
+
+        try {
+          const newCredentials = await this.#onTokenExpiring(expiresAt);
+          if (newCredentials) {
+            const refreshResult = await this.refreshAuth({
+              method: newCredentials.method as 'bearer' | 'api-key' | 'mtls' | 'none',
+              credential: newCredentials.credential,
+            });
+
+            // If refresh succeeded and we got a new expiry, set up monitoring again
+            if (refreshResult.success && refreshResult.principal?.expiresAt) {
+              this.#setupTokenExpiryMonitoring({
+                ...connectResult,
+                principal: refreshResult.principal
+              } as ConnectResponseResult);
+            }
+          }
+        } catch {
+          // Token refresh failed - let the connection handle expiration naturally
+        }
+      }, delay);
+    }
   }
 
   /**
@@ -442,7 +596,7 @@ export class ClientConnection {
    * if (connectResult.authRequired) {
    *   const authResult = await client.authenticate({
    *     method: 'api-key',
-   *     token: process.env.API_KEY,
+   *     credential: process.env.API_KEY,
    *   });
    *
    *   if (authResult.success) {
@@ -453,11 +607,11 @@ export class ClientConnection {
    */
   async authenticate(auth: {
     method: 'bearer' | 'api-key' | 'mtls' | 'none';
-    token?: string;
+    credential?: string;
   }): Promise<AuthenticateResponseResult> {
     const params: AuthenticateRequestParams = {
       method: auth.method,
-      credential: auth.token,
+      credential: auth.credential,
     };
 
     const result = await this.#connection.sendRequest<
@@ -483,7 +637,7 @@ export class ClientConnection {
    */
   async refreshAuth(auth: {
     method: "bearer" | "api-key" | "mtls" | "none";
-    token?: string;
+    credential?: string;
   }): Promise<{
     success: boolean;
     principal?: AuthPrincipal;
@@ -491,7 +645,7 @@ export class ClientConnection {
   }> {
     const params: AuthenticateRequestParams = {
       method: auth.method,
-      credential: auth.token,
+      credential: auth.credential,
     };
 
     return this.#connection.sendRequest(AUTH_METHODS.AUTH_REFRESH, params);
@@ -512,6 +666,11 @@ export class ClientConnection {
         reason ? { reason } : undefined
       );
       resumeToken = result.resumeToken;
+
+      // Store resume token for potential reconnection
+      if (resumeToken) {
+        this.#lastResumeToken = resumeToken;
+      }
     } finally {
       // Close all ACP streams
       for (const stream of this.#acpStreams.values()) {
@@ -1047,6 +1206,236 @@ export class ClientConnection {
    */
   async resumeAgent(agentId: AgentId): Promise<{ resumed: boolean; agent?: Agent }> {
     return this.#connection.sendRequest(STATE_METHODS.AGENTS_RESUME, { agentId });
+  }
+
+  // ===========================================================================
+  // Mail
+  // ===========================================================================
+
+  /**
+   * Create a new mail conversation.
+   *
+   * @param params - Conversation creation parameters
+   * @returns Created conversation and participant info
+   */
+  async createConversation(
+    params?: Omit<MailCreateRequestParams, '_meta'>
+  ): Promise<MailCreateResponseResult> {
+    return this.#connection.sendRequest<MailCreateRequestParams, MailCreateResponseResult>(
+      MAIL_METHODS.MAIL_CREATE,
+      params ?? {}
+    );
+  }
+
+  /**
+   * Get a conversation by ID with optional includes.
+   *
+   * @param conversationId - ID of the conversation to retrieve
+   * @param include - Optional fields to include (participants, threads, recentTurns, stats)
+   * @returns Conversation details with requested includes
+   */
+  async getConversation(
+    conversationId: ConversationId,
+    include?: MailGetRequestParams['include']
+  ): Promise<MailGetResponseResult> {
+    return this.#connection.sendRequest<MailGetRequestParams, MailGetResponseResult>(
+      MAIL_METHODS.MAIL_GET,
+      { conversationId, include }
+    );
+  }
+
+  /**
+   * List conversations with optional filters.
+   *
+   * @param params - Optional filter, limit, and cursor parameters
+   * @returns Paginated list of conversations
+   */
+  async listConversations(
+    params?: Omit<MailListRequestParams, '_meta'>
+  ): Promise<MailListResponseResult> {
+    return this.#connection.sendRequest<MailListRequestParams, MailListResponseResult>(
+      MAIL_METHODS.MAIL_LIST,
+      params ?? {}
+    );
+  }
+
+  /**
+   * Close a conversation.
+   *
+   * @param conversationId - ID of the conversation to close
+   * @param reason - Optional reason for closing
+   * @returns The closed conversation
+   */
+  async closeConversation(
+    conversationId: ConversationId,
+    reason?: string
+  ): Promise<MailCloseResponseResult> {
+    return this.#connection.sendRequest<MailCloseRequestParams, MailCloseResponseResult>(
+      MAIL_METHODS.MAIL_CLOSE,
+      { conversationId, reason }
+    );
+  }
+
+  /**
+   * Join an existing conversation.
+   *
+   * @param params - Join parameters including conversationId and optional catch-up config
+   * @returns Conversation, participant, and optional history
+   */
+  async joinConversation(
+    params: Omit<MailJoinRequestParams, '_meta'>
+  ): Promise<MailJoinResponseResult> {
+    return this.#connection.sendRequest<MailJoinRequestParams, MailJoinResponseResult>(
+      MAIL_METHODS.MAIL_JOIN,
+      params
+    );
+  }
+
+  /**
+   * Leave a conversation.
+   *
+   * @param conversationId - ID of the conversation to leave
+   * @param reason - Optional reason for leaving
+   * @returns Leave confirmation with timestamp
+   */
+  async leaveConversation(
+    conversationId: ConversationId,
+    reason?: string
+  ): Promise<MailLeaveResponseResult> {
+    return this.#connection.sendRequest<MailLeaveRequestParams, MailLeaveResponseResult>(
+      MAIL_METHODS.MAIL_LEAVE,
+      { conversationId, reason }
+    );
+  }
+
+  /**
+   * Invite a participant to a conversation.
+   *
+   * @param params - Invite parameters including conversationId and participant info
+   * @returns Invite result
+   */
+  async inviteToConversation(
+    params: Omit<MailInviteRequestParams, '_meta'>
+  ): Promise<MailInviteResponseResult> {
+    return this.#connection.sendRequest<MailInviteRequestParams, MailInviteResponseResult>(
+      MAIL_METHODS.MAIL_INVITE,
+      params
+    );
+  }
+
+  /**
+   * Record a turn (message) in a conversation.
+   *
+   * @param params - Turn parameters including conversationId, contentType, and content
+   * @returns The created turn
+   */
+  async recordTurn(
+    params: Omit<MailTurnRequestParams, '_meta'>
+  ): Promise<MailTurnResponseResult> {
+    return this.#connection.sendRequest<MailTurnRequestParams, MailTurnResponseResult>(
+      MAIL_METHODS.MAIL_TURN,
+      params
+    );
+  }
+
+  /**
+   * List turns in a conversation with optional filters.
+   *
+   * @param params - List parameters including conversationId and optional filters
+   * @returns Paginated list of turns
+   */
+  async listTurns(
+    params: Omit<MailTurnsListRequestParams, '_meta'>
+  ): Promise<MailTurnsListResponseResult> {
+    return this.#connection.sendRequest<MailTurnsListRequestParams, MailTurnsListResponseResult>(
+      MAIL_METHODS.MAIL_TURNS_LIST,
+      params
+    );
+  }
+
+  /**
+   * Create a thread in a conversation.
+   *
+   * @param params - Thread creation parameters including conversationId and rootTurnId
+   * @returns The created thread
+   */
+  async createThread(
+    params: Omit<MailThreadCreateRequestParams, '_meta'>
+  ): Promise<MailThreadCreateResponseResult> {
+    return this.#connection.sendRequest<MailThreadCreateRequestParams, MailThreadCreateResponseResult>(
+      MAIL_METHODS.MAIL_THREAD_CREATE,
+      params
+    );
+  }
+
+  /**
+   * List threads in a conversation.
+   *
+   * @param params - List parameters including conversationId
+   * @returns Paginated list of threads
+   */
+  async listThreads(
+    params: Omit<MailThreadListRequestParams, '_meta'>
+  ): Promise<MailThreadListResponseResult> {
+    return this.#connection.sendRequest<MailThreadListRequestParams, MailThreadListResponseResult>(
+      MAIL_METHODS.MAIL_THREAD_LIST,
+      params
+    );
+  }
+
+  /**
+   * Get a summary of a conversation.
+   *
+   * @param params - Summary parameters including conversationId and optional scope/includes
+   * @returns Generated summary with optional key points, decisions, and questions
+   */
+  async getConversationSummary(
+    params: Omit<MailSummaryRequestParams, '_meta'>
+  ): Promise<MailSummaryResponseResult> {
+    return this.#connection.sendRequest<MailSummaryRequestParams, MailSummaryResponseResult>(
+      MAIL_METHODS.MAIL_SUMMARY,
+      params
+    );
+  }
+
+  /**
+   * Replay turns from a conversation, optionally from a specific point.
+   *
+   * @param params - Replay parameters including conversationId and optional starting point
+   * @returns Replayed turns with pagination info
+   */
+  async replayConversation(
+    params: Omit<MailReplayRequestParams, '_meta'>
+  ): Promise<MailReplayResponseResult> {
+    return this.#connection.sendRequest<MailReplayRequestParams, MailReplayResponseResult>(
+      MAIL_METHODS.MAIL_REPLAY,
+      params
+    );
+  }
+
+  /**
+   * Send a message to an address with mail context attached.
+   *
+   * Wraps the standard `send()` method, automatically attaching `meta.mail`
+   * with the specified conversationId so the message is recorded as a turn
+   * in the conversation.
+   *
+   * @param to - Target address
+   * @param payload - Message payload
+   * @param conversationId - Conversation to associate with
+   * @param options - Optional threadId and additional message meta
+   * @returns Send result
+   */
+  async sendWithMail(
+    to: Address,
+    payload: unknown,
+    conversationId: ConversationId,
+    options?: { threadId?: ThreadId; meta?: MessageMeta }
+  ): Promise<SendResponseResult> {
+    return this.send(to, payload, {
+      ...options?.meta,
+      mail: { conversationId, threadId: options?.threadId },
+    });
   }
 
   // ===========================================================================

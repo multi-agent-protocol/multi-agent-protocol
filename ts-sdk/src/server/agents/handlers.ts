@@ -9,13 +9,34 @@ import type {
   HandlerContext,
   HandlerRegistry,
   ServerAgentState,
+  SessionManager,
 } from "../types";
+import type { AuthManager } from "../auth";
+import type { AuthManagerImpl } from "../auth/manager";
+import { MAPRequestError } from "../../errors";
+import {
+  AgentNotFoundError,
+  InvalidStateTransitionError,
+  InvalidAgentStateError,
+} from "./registry";
 
 /**
  * Options for creating agent handlers.
  */
 export interface AgentHandlerOptions {
   agents: AgentRegistry;
+  /**
+   * SessionManager for tracking agent-session associations.
+   * When provided, uses atomic SessionManager methods instead of direct session mutation.
+   * This prevents race conditions and ensures proper cleanup on failure.
+   */
+  sessions?: SessionManager;
+  /**
+   * AuthManager for spawn credential delegation.
+   * When provided and backed by an AuthProvider, delegated credentials
+   * are returned in the spawn response for child agent setup.
+   */
+  authManager?: AuthManager;
 }
 
 /**
@@ -81,6 +102,24 @@ interface UpdateParams {
 }
 
 /**
+ * Parameters for spawning a child agent.
+ */
+interface SpawnParams {
+  /** Parent agent ID (must belong to the calling session) */
+  parent: string;
+  /** Name for the child agent */
+  name?: string;
+  /** Role for the child agent */
+  role?: string;
+  /** Metadata for the child agent */
+  metadata?: Record<string, unknown>;
+  /** Scopes the child should request (for credential delegation) */
+  requestedScopes?: string[];
+  /** TTL for delegated credentials in minutes */
+  ttlMinutes?: number;
+}
+
+/**
  * Create handlers for agent-related methods.
  *
  * Methods:
@@ -91,9 +130,10 @@ interface UpdateParams {
  * - `map/agents/update` - Update agent state and/or metadata (protocol method)
  * - `map/agents/update/state` - Update agent state (legacy)
  * - `map/agents/update/metadata` - Update agent metadata (legacy)
+ * - `map/agents/spawn` - Spawn a child agent with delegated credentials
  */
 export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegistry {
-  const { agents } = options;
+  const { agents, sessions, authManager } = options;
 
   return {
     "map/agents/register": async (params: unknown, ctx: HandlerContext) => {
@@ -107,8 +147,13 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         capabilities,
       });
 
-      // Track agent in session
-      ctx.session.agentIds.push(registeredAgent.id);
+      // Track agent in session - use SessionManager if available for atomic updates
+      if (sessions) {
+        sessions.addAgent(ctx.session.id, registeredAgent.id);
+      } else {
+        // Legacy fallback: direct mutation (not recommended)
+        ctx.session.agentIds.push(registeredAgent.id);
+      }
 
       // Return protocol-compliant response with agent wrapped
       return {
@@ -132,10 +177,15 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         throw new Error(`Agent not found: ${agentId}`);
       }
 
-      // Remove from session tracking
-      const index = ctx.session.agentIds.indexOf(agentId);
-      if (index !== -1) {
-        ctx.session.agentIds.splice(index, 1);
+      // Remove from session tracking - use SessionManager if available
+      if (sessions) {
+        sessions.removeAgent(ctx.session.id, agentId);
+      } else {
+        // Legacy fallback: direct mutation (not recommended)
+        const index = ctx.session.agentIds.indexOf(agentId);
+        if (index !== -1) {
+          ctx.session.agentIds.splice(index, 1);
+        }
       }
 
       return { success: true };
@@ -215,12 +265,98 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
 
     "map/agents/update/state": async (params: unknown) => {
       const { agentId, state } = params as UpdateStateParams;
-      return agents.updateState(agentId, state);
+      try {
+        return agents.updateState(agentId, state);
+      } catch (error) {
+        if (error instanceof AgentNotFoundError) {
+          throw MAPRequestError.agentNotFound(agentId);
+        }
+        if (error instanceof InvalidStateTransitionError) {
+          throw MAPRequestError.stateInvalid(state, "transition");
+        }
+        if (error instanceof InvalidAgentStateError) {
+          throw MAPRequestError.stateInvalid(state, "update");
+        }
+        throw error;
+      }
     },
 
     "map/agents/update/metadata": async (params: unknown) => {
       const { agentId, metadata } = params as UpdateMetadataParams;
-      return agents.updateMetadata(agentId, metadata);
+      try {
+        return agents.updateMetadata(agentId, metadata);
+      } catch (error) {
+        if (error instanceof AgentNotFoundError) {
+          throw MAPRequestError.agentNotFound(agentId);
+        }
+        throw error;
+      }
+    },
+
+    "map/agents/spawn": async (params: unknown, ctx: HandlerContext) => {
+      const { parent, name, role, metadata, requestedScopes, ttlMinutes } = params as SpawnParams;
+
+      // Validate parent agent exists and belongs to calling session
+      const parentAgent = agents.get(parent);
+      if (!parentAgent) {
+        throw new Error(`Parent agent not found: ${parent}`);
+      }
+      if (parentAgent.sessionId !== ctx.session.id) {
+        throw new Error(`Parent agent ${parent} does not belong to this session`);
+      }
+
+      // Register the child agent
+      const childAgent = agents.register({
+        name: name ?? `${parentAgent.name}-child`,
+        role,
+        metadata: {
+          ...metadata,
+          parentId: parent,
+        },
+        sessionId: ctx.session.id,
+      });
+
+      // Track child in session
+      if (sessions) {
+        sessions.addAgent(ctx.session.id, childAgent.id);
+      } else {
+        ctx.session.agentIds.push(childAgent.id);
+      }
+
+      // Delegate credentials if authManager supports it
+      let delegatedCredentials: Record<string, unknown> | undefined;
+      if (authManager && ctx.session.providers) {
+        const manager = authManager as AuthManagerImpl;
+        if (typeof manager.delegateForSpawn === 'function') {
+          const result = await manager.delegateForSpawn(ctx.session, {
+            childAgentId: childAgent.id,
+            requestedScopes,
+            ttlMinutes,
+          });
+          if (result) {
+            delegatedCredentials = {
+              method: result.method,
+              credentials: result.credentials,
+              ...(result.env && { env: result.env }),
+            };
+          }
+        }
+      }
+
+      const response: Record<string, unknown> = {
+        agent: {
+          id: childAgent.id,
+          name: childAgent.name,
+          role: childAgent.role,
+          state: childAgent.state,
+          metadata: childAgent.metadata,
+          visibility: "public",
+        },
+      };
+      if (delegatedCredentials) {
+        response.delegatedCredentials = delegatedCredentials;
+      }
+      return response;
     },
   };
 }

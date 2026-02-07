@@ -87,7 +87,7 @@ describe("Server Auth Integration", () => {
 
       const client = new ClientConnection(clientStream, { name: "TestClient" });
       const result = await client.connect({
-        auth: { method: "api-key", token: "valid-key-1" },
+        auth: { method: "api-key", credential: "valid-key-1" },
       });
 
       expect(result.sessionId).toBeDefined();
@@ -117,7 +117,7 @@ describe("Server Auth Integration", () => {
 
       const client = new ClientConnection(clientStream, { name: "TestClient" });
       const result = await client.connect({
-        auth: { method: "api-key", token: "invalid-key" },
+        auth: { method: "api-key", credential: "invalid-key" },
       });
 
       // Should get authRequired with error
@@ -133,7 +133,7 @@ describe("Server Auth Integration", () => {
 
       const client = new ClientConnection(clientStream, { name: "TestClient" });
       const result = await client.connect({
-        auth: { method: "api-key", token: "valid-key-1" },
+        auth: { method: "api-key", credential: "valid-key-1" },
       });
 
       expect(result.principal?.id).toBe("user-1");
@@ -173,7 +173,7 @@ describe("Server Auth Integration", () => {
 
       const client = new ClientConnection(clientStream, { name: "TestClient" });
       const result = await client.connect({
-        auth: { method: "api-key", token: "api-key-1" },
+        auth: { method: "api-key", credential: "api-key-1" },
       });
 
       expect(result.principal?.id).toBe("api-user");
@@ -237,7 +237,7 @@ describe("Server Auth Integration", () => {
 
       const agent = new AgentConnection(clientStream, { name: "TestAgent" });
       const { connection: result } = await agent.connect({
-        auth: { method: "api-key", token: "agent-key-1" },
+        auth: { method: "api-key", credential: "agent-key-1" },
       });
 
       expect(result.sessionId).toBeDefined();
@@ -253,7 +253,7 @@ describe("Server Auth Integration", () => {
 
       const agent = new AgentConnection(clientStream, { name: "TestAgent" });
       const { connection: connectResult, agent: agentInfo } = await agent.connect({
-        auth: { method: "api-key", token: "agent-key-1" },
+        auth: { method: "api-key", credential: "agent-key-1" },
       });
 
       expect(connectResult.sessionId).toBeDefined();
@@ -385,7 +385,7 @@ describe("Server Auth Integration", () => {
 
       // Initial auth
       const connectResult = await client.connect({
-        auth: { method: "api-key", token: "old-key" },
+        auth: { method: "api-key", credential: "old-key" },
       });
 
       expect(connectResult.principal?.id).toBe("user-1");
@@ -393,7 +393,7 @@ describe("Server Auth Integration", () => {
       // Refresh with new key
       const refreshResult = await client.refreshAuth({
         method: "api-key",
-        token: "new-key",
+        credential: "new-key",
       });
 
       expect(refreshResult.success).toBe(true);
@@ -411,13 +411,13 @@ describe("Server Auth Integration", () => {
 
       // Initial auth
       await client.connect({
-        auth: { method: "api-key", token: "old-key" },
+        auth: { method: "api-key", credential: "old-key" },
       });
 
       // Try to refresh with invalid key
       const refreshResult = await client.refreshAuth({
         method: "api-key",
-        token: "invalid-key",
+        credential: "invalid-key",
       });
 
       expect(refreshResult.success).toBe(false);

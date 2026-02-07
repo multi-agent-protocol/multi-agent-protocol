@@ -208,7 +208,15 @@ export class SessionManagerImpl implements SessionManager {
    * Resume a disconnected session.
    */
   resume(resumeToken: string): ResumeResult {
-    const session = this.store.getByResumeToken(resumeToken);
+    // Use atomic claim if available to prevent race conditions
+    // where multiple clients could resume the same session
+    let session: ServerSession | undefined;
+    if (this.store.claimResumeToken) {
+      session = this.store.claimResumeToken(resumeToken);
+    } else {
+      // Fallback for stores without atomic claim (not recommended)
+      session = this.store.getByResumeToken(resumeToken);
+    }
 
     if (!session) {
       return { success: false, reason: "not_found" };
@@ -219,7 +227,8 @@ export class SessionManagerImpl implements SessionManager {
     }
 
     if (session.status === "connected") {
-      // Already connected, just return it
+      // Already connected - this shouldn't happen with atomic claim,
+      // but handle it gracefully for backward compatibility
       return { success: true, session };
     }
 
@@ -250,7 +259,7 @@ export class SessionManagerImpl implements SessionManager {
       status: "connected",
       lastActivity: now,
       disconnectedAt: undefined,
-      resumeToken: undefined,
+      resumeToken: undefined, // Already cleared by claimResumeToken, but be explicit
     };
 
     this.store.save(resumedSession);

@@ -307,7 +307,7 @@ describe('Zod schema validators', () => {
       const filter = {
         eventTypes: ['agent.registered', 'agent.state-changed'],
         scopes: ['scope-1'],
-        agents: ['agent-1', 'agent-2'],
+        fromAgents: ['agent-1', 'agent-2'],
         includeChildren: true,
       };
 

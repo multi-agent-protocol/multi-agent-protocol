@@ -271,7 +271,7 @@ export const SubscriptionFilterSchema = z
   .object({
     eventTypes: z.array(EventTypeSchema).optional(),
     scopes: z.array(ScopeIdSchema).optional(),
-    agents: z.array(AgentIdSchema).optional(),
+    fromAgents: z.array(AgentIdSchema).optional(),
     includeChildren: z.boolean().optional(),
     _meta: MetaSchema,
   })

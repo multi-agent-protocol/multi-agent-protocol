@@ -354,4 +354,96 @@ describe("EventBusImpl", () => {
       expect(customStore.size).toBe(1);
     });
   });
+
+  describe("onSubscriberError callback", () => {
+    it("should call custom error callback when subscriber throws", () => {
+      const errorCallback = vi.fn();
+      const customBus = new EventBusImpl({ onSubscriberError: errorCallback });
+
+      const error = new Error("subscriber failure");
+      customBus.on("test.event", () => {
+        throw error;
+      });
+
+      customBus.emit({ type: "test.event", data: { foo: "bar" } });
+
+      expect(errorCallback).toHaveBeenCalledTimes(1);
+      expect(errorCallback).toHaveBeenCalledWith(
+        error,
+        expect.objectContaining({ type: "test.event", data: { foo: "bar" } }),
+        expect.any(Number) // subscriber index
+      );
+    });
+
+    it("should convert non-Error throws to Error objects", () => {
+      const errorCallback = vi.fn();
+      const customBus = new EventBusImpl({ onSubscriberError: errorCallback });
+
+      customBus.on("test.event", () => {
+        throw "string error"; // eslint-disable-line @typescript-eslint/only-throw-error
+      });
+
+      customBus.emit({ type: "test.event", data: {} });
+
+      expect(errorCallback).toHaveBeenCalledTimes(1);
+      expect(errorCallback.mock.calls[0][0]).toBeInstanceOf(Error);
+      expect(errorCallback.mock.calls[0][0].message).toBe("string error");
+    });
+
+    it("should call error callback for each failing subscriber", () => {
+      const errorCallback = vi.fn();
+      const customBus = new EventBusImpl({ onSubscriberError: errorCallback });
+
+      customBus.on("test.event", () => {
+        throw new Error("first error");
+      });
+      customBus.on("test.event", () => {
+        throw new Error("second error");
+      });
+      customBus.on("test.event", () => {
+        // This one succeeds
+      });
+
+      customBus.emit({ type: "test.event", data: {} });
+
+      expect(errorCallback).toHaveBeenCalledTimes(2);
+      expect(errorCallback.mock.calls[0][0].message).toBe("first error");
+      expect(errorCallback.mock.calls[1][0].message).toBe("second error");
+    });
+
+    it("should use default console.error when no callback provided", () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const defaultBus = new EventBusImpl();
+
+      defaultBus.on("test.event", () => {
+        throw new Error("uncaught error");
+      });
+
+      defaultBus.emit({ type: "test.event", data: {} });
+
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("EventBus subscriber"),
+        expect.any(Error)
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should isolate subscriber errors - other subscribers still called", () => {
+      const errorCallback = vi.fn();
+      const successHandler = vi.fn();
+      const customBus = new EventBusImpl({ onSubscriberError: errorCallback });
+
+      customBus.on("test.event", () => {
+        throw new Error("error");
+      });
+      customBus.on("test.event", successHandler);
+
+      customBus.emit({ type: "test.event", data: {} });
+
+      expect(errorCallback).toHaveBeenCalledTimes(1);
+      expect(successHandler).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -26,6 +26,15 @@ import type {
   MessageQueueStore,
 } from "./types";
 import type { ParticipantCapabilities } from "../types";
+import type {
+  ConversationManager,
+  TurnManager,
+  ThreadManager,
+  ConversationStore,
+  TurnStore,
+  ThreadStore,
+  ParticipantStore,
+} from "./types";
 import { EventBusImpl } from "./events";
 import { AgentRegistryImpl, createAgentHandlers } from "./agents";
 import { SessionManagerImpl } from "./sessions";
@@ -33,10 +42,19 @@ import { ScopeManagerImpl, createScopeHandlers } from "./scopes";
 import { SubscriptionManagerImpl, createSubscriptionHandlers } from "./subscriptions";
 import { MessageRouterImpl, createMessageHandlers } from "./messages";
 import {
+  ConversationManagerImpl,
+  TurnManagerImpl,
+  ThreadManagerImpl,
+  InMemoryTurnStore,
+  createMailHandlers,
+} from "./mail";
+import {
   RouterConnectionImpl,
   combineHandlers,
   createConnectionHandlers,
 } from "./router";
+import type { MailCapabilityConfig } from "./router/handlers";
+import { createCredentialHandlers } from "./credentials";
 import { AuthManagerImpl, authMiddleware } from "./auth";
 import type { AuthManager } from "./auth";
 
@@ -143,6 +161,44 @@ export interface MAPServerOptions {
       notifyBeforeMs?: number;
     };
   };
+
+  // === Mail Config ===
+  /** Mail feature configuration. Omit or set enabled=false to disable mail. */
+  mail?: {
+    /** Enable the mail feature (default: false) */
+    enabled?: boolean;
+    /** Mail capability overrides for connect handshake */
+    capabilities?: Omit<MailCapabilityConfig, "enabled">;
+    /** Custom stores for mail data */
+    stores?: {
+      conversations?: ConversationStore;
+      turns?: TurnStore;
+      threads?: ThreadStore;
+      participants?: ParticipantStore;
+    };
+    /** Replace ConversationManager entirely */
+    conversations?: ConversationManager;
+    /** Replace TurnManager entirely */
+    turns?: TurnManager;
+    /** Replace ThreadManager entirely */
+    threads?: ThreadManager;
+  };
+
+  // === Credential Brokering Config ===
+  /**
+   * Credential brokering configuration. Omit or set enabled=false to disable.
+   * When enabled, `broker` must be provided.
+   */
+  credentials?: {
+    /** Enable credential brokering (default: false) */
+    enabled?: boolean;
+    /** Broker instance (e.g. agent-iam Broker). Required when enabled=true. */
+    broker?: import('./credentials').BrokerLike;
+    /** Credential capability overrides for connect handshake */
+    capabilities?: Omit<import('./credentials').CredentialCapabilityConfig, 'enabled'>;
+    /** If set, only these providers are visible */
+    allowedProviders?: string[];
+  };
 }
 
 /**
@@ -217,6 +273,10 @@ export class MAPServer {
   readonly handlers: HandlerRegistry;
   /** Authentication manager (if auth is configured) */
   readonly auth: AuthManager | null;
+  /** Mail managers (null if mail is disabled) */
+  readonly conversations: ConversationManager | null;
+  readonly turns: TurnManager | null;
+  readonly threads: ThreadManager | null;
 
   // === Private State ===
   readonly #options: MAPServerOptions;
@@ -276,6 +336,43 @@ export class MAPServer {
         queueStore: options.stores?.messages,
       });
 
+    // Create mail managers if enabled
+    if (options.mail?.enabled) {
+      const turnStore = options.mail.stores?.turns ?? new InMemoryTurnStore();
+      this.conversations =
+        options.mail.conversations ??
+        new ConversationManagerImpl({
+          eventBus: this.eventBus,
+          store: options.mail.stores?.conversations,
+          participantStore: options.mail.stores?.participants,
+        });
+      this.turns =
+        options.mail.turns ??
+        new TurnManagerImpl({
+          eventBus: this.eventBus,
+          store: turnStore,
+          conversations: this.conversations,
+        });
+      this.threads =
+        options.mail.threads ??
+        new ThreadManagerImpl({
+          eventBus: this.eventBus,
+          store: options.mail.stores?.threads,
+          turnStore,
+        });
+    } else {
+      this.conversations = null;
+      this.turns = null;
+      this.threads = null;
+    }
+
+    // Validate credential brokering config
+    if (options.credentials?.enabled && !options.credentials.broker) {
+      throw new Error(
+        'MAPServer: credentials.broker is required when credentials.enabled is true',
+      );
+    }
+
     // Set up authentication if configured
     if (options.auth?.authenticators?.length) {
       this.auth = new AuthManagerImpl({
@@ -305,17 +402,50 @@ export class MAPServer {
       combineHandlers(
         createConnectionHandlers({
           sessions: this.sessions,
+          agents: this.agents,
+          subscriptions: this.subscriptions,
+          scopes: this.scopes,
           serverName: options.name ?? "MAPServer",
           serverVersion: options.version ?? "1.0.0",
           authManager: this.auth ?? undefined,
+          mailCapabilities: options.mail?.enabled
+            ? { enabled: true, ...options.mail.capabilities }
+            : undefined,
+          credentialCapabilities: options.credentials?.enabled
+            ? { enabled: true, ...options.credentials.capabilities }
+            : undefined,
         }),
-        createAgentHandlers({ agents: this.agents }),
+        createAgentHandlers({ agents: this.agents, sessions: this.sessions }),
         createScopeHandlers({ scopes: this.scopes }),
-        createMessageHandlers({ messages: this.messages, scopes: this.scopes }),
+        createMessageHandlers({
+          messages: this.messages,
+          scopes: this.scopes,
+          agents: this.agents,
+          turns: this.turns ?? undefined,
+        }),
         createSubscriptionHandlers({
           subscriptions: this.subscriptions,
           eventBus: this.eventBus,
+          sessions: this.sessions,
         }),
+        ...(this.conversations && this.turns && this.threads
+          ? [
+              createMailHandlers({
+                conversations: this.conversations,
+                turns: this.turns,
+                threads: this.threads,
+              }),
+            ]
+          : []),
+        ...(options.credentials?.enabled
+          ? [
+              createCredentialHandlers({
+                broker: options.credentials.broker!,
+                eventBus: this.eventBus,
+                allowedProviders: options.credentials.allowedProviders,
+              }),
+            ]
+          : []),
         options.additionalHandlers ?? {}
       );
 

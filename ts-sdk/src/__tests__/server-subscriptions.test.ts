@@ -358,10 +358,58 @@ describe("SubscriptionManagerImpl", () => {
       expect(manager.match(event)).toContain(subscription.id);
     });
 
+    it("should normalize underscore to dot notation in filter", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["agent_registered"] }, // underscore notation
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "agent.registered", // dot notation
+        timestamp: Date.now(),
+        data: {},
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should normalize underscore to dot notation in event type", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["agent.registered"] }, // dot notation
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "agent_registered", // underscore notation
+        timestamp: Date.now(),
+        data: {},
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should normalize prefix matches with underscore notation", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { eventTypes: ["agent_*"] }, // underscore notation with prefix
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "agent.registered", // dot notation
+        timestamp: Date.now(),
+        data: {},
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
     it("should match by agent", () => {
       const subscription = manager.create({
         sessionId: "session-1",
-        filter: { agents: ["agent-1"] },
+        filter: { fromAgents: ["agent-1"] },
       });
 
       const event: MAPEvent = {
@@ -378,7 +426,7 @@ describe("SubscriptionManagerImpl", () => {
     it("should not match if agent not in filter", () => {
       const subscription = manager.create({
         sessionId: "session-1",
-        filter: { agents: ["agent-1"] },
+        filter: { fromAgents: ["agent-1"] },
       });
 
       const event: MAPEvent = {
@@ -718,7 +766,7 @@ describe("SubscriptionManagerImpl", () => {
           sessionId: "session-1",
           filter: {
             eventTypes: ["type.a"],
-            agents: ["agent-1"],
+            fromAgents: ["agent-1"],
             match: "any",
           },
         });
@@ -748,7 +796,7 @@ describe("SubscriptionManagerImpl", () => {
           sessionId: "session-1",
           filter: {
             eventTypes: ["type.a"],
-            agents: ["agent-1"],
+            fromAgents: ["agent-1"],
             match: "any",
           },
         });
@@ -770,7 +818,7 @@ describe("SubscriptionManagerImpl", () => {
           sessionId: "session-1",
           filter: {
             eventTypes: ["type.a"],
-            agents: ["agent-1"],
+            fromAgents: ["agent-1"],
             match: "all", // Explicit, but also default
           },
         });
@@ -801,7 +849,7 @@ describe("SubscriptionManagerImpl", () => {
           sessionId: "session-1",
           filter: {
             eventTypes: ["type.a"],
-            agents: ["agent-1"],
+            fromAgents: ["agent-1"],
             // No match mode specified - defaults to "all"
           },
         });
@@ -860,8 +908,8 @@ describe("SubscriptionManagerImpl", () => {
           sessionId: "session-1",
           filter: {
             $or: [
-              { eventTypes: ["type.a"], agents: ["agent-1"] },
-              { eventTypes: ["type.b"], agents: ["agent-2"] },
+              { eventTypes: ["type.a"], fromAgents: ["agent-1"] },
+              { eventTypes: ["type.b"], fromAgents: ["agent-2"] },
             ],
           },
         });
@@ -905,7 +953,7 @@ describe("SubscriptionManagerImpl", () => {
           filter: {
             $and: [
               { eventTypes: ["type.a"] },
-              { agents: ["agent-1"] },
+              { fromAgents: ["agent-1"] },
             ],
           },
         });
@@ -951,7 +999,7 @@ describe("SubscriptionManagerImpl", () => {
               {
                 $and: [
                   { eventTypes: ["type.a"] },
-                  { agents: ["agent-1"] },
+                  { fromAgents: ["agent-1"] },
                 ],
               },
               { eventTypes: ["type.urgent"] },
@@ -1278,6 +1326,385 @@ describe("SubscriptionManagerImpl", () => {
         data: { messageType: "response" },
       };
       expect(manager.match(event3)).not.toContain(subscription.id);
+    });
+  });
+
+  describe("mail filter", () => {
+    it("should match mail events by conversationId", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { conversationId: "conv-123" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-123",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "text" },
+        },
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should not match mail events with different conversationId", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { conversationId: "conv-123" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-999",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "text" },
+        },
+      };
+
+      expect(manager.match(event)).not.toContain(subscription.id);
+    });
+
+    it("should not match non-mail events", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { conversationId: "conv-123" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "agent.registered",
+        timestamp: Date.now(),
+        data: { conversationId: "conv-123" },
+      };
+
+      expect(manager.match(event)).not.toContain(subscription.id);
+    });
+
+    it("should match mail events by threadId from turn.threadId", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { threadId: "thread-1" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "text", threadId: "thread-1" },
+        },
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should match mail events by threadId from thread.id", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { threadId: "thread-1" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.thread.created",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          thread: { id: "thread-1", subject: "Test" },
+        },
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should not match when threadId doesn't match", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { threadId: "thread-1" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "text", threadId: "thread-2" },
+        },
+      };
+
+      expect(manager.match(event)).not.toContain(subscription.id);
+    });
+
+    it("should match by participantId from participant.id (join event)", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { participantId: "agent-1" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.participant.joined",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          participant: { id: "agent-1", role: "agent" },
+        },
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should match by participantId from data.participantId (leave event)", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { participantId: "agent-1" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.participant.left",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          participantId: "agent-1",
+          reason: "done",
+        },
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should match by participantId from data.createdBy (created event)", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { participantId: "agent-1" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.created",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          type: "direct",
+          createdBy: "agent-1",
+        },
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should match by participantId from turn.participant", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { participantId: "agent-1" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "text" },
+        },
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should match by contentType from turn.contentType", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { contentType: "code" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "code" },
+        },
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should not match when contentType doesn't match", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { contentType: "code" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "text" },
+        },
+      };
+
+      expect(manager.match(event)).not.toContain(subscription.id);
+    });
+
+    it("should match with multiple mail filter criteria (AND logic)", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: {
+          mail: {
+            conversationId: "conv-1",
+            participantId: "agent-1",
+            contentType: "text",
+          },
+        },
+      });
+
+      // All criteria match
+      const event1: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "text" },
+        },
+      };
+      expect(manager.match(event1)).toContain(subscription.id);
+
+      // Wrong participant
+      const event2: MAPEvent = {
+        id: "event-2",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          turn: { id: "turn-2", participant: "agent-2", contentType: "text" },
+        },
+      };
+      expect(manager.match(event2)).not.toContain(subscription.id);
+    });
+
+    it("should combine mail filter with eventTypes (AND logic by default)", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: {
+          eventTypes: ["mail.turn.added"],
+          mail: { conversationId: "conv-1" },
+        },
+      });
+
+      // Both match
+      const event1: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "text" },
+        },
+      };
+      expect(manager.match(event1)).toContain(subscription.id);
+
+      // Mail filter matches but wrong event type
+      const event2: MAPEvent = {
+        id: "event-2",
+        type: "mail.created",
+        timestamp: Date.now(),
+        data: { conversationId: "conv-1", type: "direct", createdBy: "agent-1" },
+      };
+      expect(manager.match(event2)).not.toContain(subscription.id);
+    });
+
+    it("should support mail filter with 'any' match mode", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: {
+          eventTypes: ["agent.registered"],
+          mail: { conversationId: "conv-1" },
+          match: "any",
+        },
+      });
+
+      // Only mail filter matches (not event type)
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "text" },
+        },
+      };
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should match mail.closed events by conversationId", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { conversationId: "conv-1" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.closed",
+        timestamp: Date.now(),
+        data: { conversationId: "conv-1", closedBy: "agent-1" },
+      };
+
+      expect(manager.match(event)).toContain(subscription.id);
+    });
+
+    it("should match mail events without event data as non-match", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: { conversationId: "conv-1" } },
+      });
+
+      const event: MAPEvent = {
+        id: "event-1",
+        type: "mail.created",
+        timestamp: Date.now(),
+        data: undefined as unknown,
+      };
+
+      expect(manager.match(event)).not.toContain(subscription.id);
+    });
+
+    it("should match with empty mail filter (matches all mail events)", () => {
+      const subscription = manager.create({
+        sessionId: "session-1",
+        filter: { mail: {} },
+      });
+
+      const mailEvent: MAPEvent = {
+        id: "event-1",
+        type: "mail.turn.added",
+        timestamp: Date.now(),
+        data: {
+          conversationId: "conv-1",
+          turn: { id: "turn-1", participant: "agent-1", contentType: "text" },
+        },
+      };
+      expect(manager.match(mailEvent)).toContain(subscription.id);
+
+      // Non-mail events should not match
+      const otherEvent: MAPEvent = {
+        id: "event-2",
+        type: "agent.registered",
+        timestamp: Date.now(),
+        data: { agentId: "agent-1" },
+      };
+      expect(manager.match(otherEvent)).not.toContain(subscription.id);
     });
   });
 });

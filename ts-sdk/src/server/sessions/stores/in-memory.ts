@@ -92,6 +92,32 @@ export class InMemorySessionStore implements SessionStore {
   }
 
   /**
+   * Atomically claim and invalidate a resume token.
+   * Returns the session if the token was valid and claimed, undefined if the token
+   * was already claimed or doesn't exist. This prevents race conditions.
+   */
+  claimResumeToken(token: string): ServerSession | undefined {
+    const sessionId = this.resumeTokenIndex.get(token);
+    if (!sessionId) {
+      return undefined;
+    }
+
+    // Atomically remove the token from the index BEFORE returning the session
+    // This ensures no other caller can claim the same token
+    this.resumeTokenIndex.delete(token);
+
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return undefined;
+    }
+
+    // Also clear the token from the session object
+    session.resumeToken = undefined;
+
+    return { ...session };
+  }
+
+  /**
    * Get the number of stored sessions.
    */
   get size(): number {
