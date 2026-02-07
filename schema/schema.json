@@ -426,11 +426,34 @@
         "visibility": { "$ref": "#/$defs/AgentVisibility" },
         "lifecycle": { "$ref": "#/$defs/AgentLifecycle" },
         "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+        "environment": { "$ref": "#/$defs/AgentEnvironment" },
         "metadata": { "type": "object" },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
       "required": ["id", "state"],
       "additionalProperties": false
+    },
+
+    "AgentEnvironment": {
+      "type": "object",
+      "description": "Compute environment information for an agent. Category names are normative; field conventions within categories are documented separately.",
+      "properties": {
+        "schemaVersion": { "type": "string", "description": "Schema version (e.g., '1.0')" },
+        "profiles": { "type": "array", "items": { "type": "string" }, "description": "Self-declared profile compliance" },
+        "host": { "type": "object", "additionalProperties": true, "description": "Host/machine info (arch, cpu, memory, gpu)" },
+        "os": { "type": "object", "additionalProperties": true, "description": "Operating system info (type, version)" },
+        "process": { "type": "object", "additionalProperties": true, "description": "Process/runtime info (pid, cwd, runtime)" },
+        "container": { "type": "object", "additionalProperties": true, "description": "Container info if containerized" },
+        "cloud": { "type": "object", "additionalProperties": true, "description": "Cloud provider info (provider, region)" },
+        "k8s": { "type": "object", "additionalProperties": true, "description": "Kubernetes info if in k8s" },
+        "filesystem": { "type": "object", "additionalProperties": true, "description": "Filesystem/workspace info (cwd, mounts, workspace)" },
+        "network": { "type": "object", "additionalProperties": true, "description": "Network info (connectivity, addresses)" },
+        "tools": { "type": "object", "additionalProperties": true, "description": "Available tools and runtimes" },
+        "resources": { "type": "object", "additionalProperties": true, "description": "Resource limits and constraints" },
+        "security": { "type": "object", "additionalProperties": true, "description": "Security/isolation context" },
+        "services": { "type": "object", "additionalProperties": true, "description": "External services and APIs (aiProviders, mcp)" }
+      },
+      "additionalProperties": true
     },
 
     "Address": {
@@ -705,6 +728,7 @@
       "enum": [
         "agent_registered",
         "agent_state_changed",
+        "agent_environment_changed",
         "agent_unregistered",
         "message_sent",
         "message_delivered",
@@ -781,6 +805,11 @@
         "mail": {
           "$ref": "#/$defs/MailSubscriptionFilter",
           "description": "Mail-specific filter for conversation events"
+        },
+        "environmentMatch": {
+          "type": "object",
+          "description": "Filter by agent environment attributes (e.g., 'os.type', 'cloud.region', 'network.connectivity')",
+          "additionalProperties": true
         },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
@@ -861,6 +890,10 @@
             "name": { "type": "string" },
             "version": { "type": "string" }
           }
+        },
+        "serverEnvironment": {
+          "$ref": "#/$defs/AgentEnvironment",
+          "description": "Server's compute environment (if relevant)"
         },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
@@ -1230,6 +1263,7 @@
             },
             "visibility": { "$ref": "#/$defs/AgentVisibility" },
             "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+            "environment": { "$ref": "#/$defs/AgentEnvironment" },
             "metadata": { "type": "object" },
             "_meta": { "$ref": "#/$defs/Meta" }
           }
@@ -1269,6 +1303,7 @@
             },
             "visibility": { "$ref": "#/$defs/AgentVisibility" },
             "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+            "environment": { "$ref": "#/$defs/AgentEnvironment" },
             "initialMessage": { "$ref": "#/$defs/Message" },
             "metadata": { "type": "object" },
             "requestedScopes": {
