@@ -385,11 +385,394 @@
         "visibility": { "$ref": "#/$defs/AgentVisibility" },
         "lifecycle": { "$ref": "#/$defs/AgentLifecycle" },
         "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+        "environment": { "$ref": "#/$defs/AgentEnvironment" },
         "metadata": { "type": "object" },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
       "required": ["id", "state"],
       "additionalProperties": false
+    },
+
+    "AgentEnvironment": {
+      "type": "object",
+      "description": "Compute environment information for an agent. Describes the runtime context where the agent executes.",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "description": "Schema version for evolution (e.g., '1.0')"
+        },
+        "profiles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Self-declared profile compliance (e.g., ['cloud-native', 'ml-ready'])"
+        },
+        "host": { "$ref": "#/$defs/HostInfo" },
+        "os": { "$ref": "#/$defs/OSInfo" },
+        "process": { "$ref": "#/$defs/ProcessInfo" },
+        "container": { "$ref": "#/$defs/ContainerInfo" },
+        "cloud": { "$ref": "#/$defs/CloudInfo" },
+        "k8s": { "$ref": "#/$defs/KubernetesInfo" },
+        "filesystem": { "$ref": "#/$defs/FilesystemInfo" },
+        "network": { "$ref": "#/$defs/NetworkInfo" },
+        "tools": { "$ref": "#/$defs/ToolsInfo" },
+        "resources": { "$ref": "#/$defs/ResourceInfo" },
+        "security": { "$ref": "#/$defs/SecurityInfo" },
+        "services": { "$ref": "#/$defs/ServicesInfo" },
+        "extensions": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Vendor/custom extensions (x-* prefix recommended)"
+        }
+      },
+      "required": ["schemaVersion"],
+      "additionalProperties": true
+    },
+    "HostInfo": {
+      "type": "object",
+      "description": "Information about the host machine. Conventions follow OpenTelemetry semantic conventions for host.*.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique host identifier" },
+        "name": { "type": "string", "description": "Hostname" },
+        "type": { "type": "string", "description": "Host type (e.g., 'physical', 'vm', 'container-host')" },
+        "arch": { "type": "string", "description": "CPU architecture (e.g., 'amd64', 'arm64', 'x86_64')" },
+        "cpuCount": { "type": "integer", "description": "Number of CPUs/cores available" },
+        "cpuModel": { "type": "string", "description": "CPU model name" },
+        "memoryBytes": { "type": "integer", "description": "Total memory in bytes" },
+        "gpu": {
+          "type": "object",
+          "description": "GPU information (if available)",
+          "properties": {
+            "count": { "type": "integer" },
+            "models": { "type": "array", "items": { "type": "string" } },
+            "memoryBytes": { "type": "integer" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "OSInfo": {
+      "type": "object",
+      "description": "Operating system information. Conventions follow OpenTelemetry semantic conventions for os.*.",
+      "properties": {
+        "type": { "type": "string", "description": "OS type (e.g., 'linux', 'darwin', 'windows')" },
+        "name": { "type": "string", "description": "OS name (e.g., 'Ubuntu', 'macOS', 'Windows 11')" },
+        "version": { "type": "string", "description": "OS version" },
+        "description": { "type": "string", "description": "Full OS description" },
+        "kernelVersion": { "type": "string", "description": "Kernel version" }
+      },
+      "additionalProperties": true
+    },
+    "ProcessInfo": {
+      "type": "object",
+      "description": "Process and runtime environment information.",
+      "properties": {
+        "pid": { "type": "integer", "description": "Process ID" },
+        "ppid": { "type": "integer", "description": "Parent process ID" },
+        "owner": { "type": "string", "description": "Process owner username" },
+        "runtimeName": { "type": "string", "description": "Primary runtime name (e.g., 'nodejs', 'python', 'go')" },
+        "runtimeVersion": { "type": "string", "description": "Runtime version" },
+        "command": { "type": "string", "description": "Command used to start the process" },
+        "cwd": { "type": "string", "description": "Current working directory" },
+        "envVars": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Environment variables (filtered for safety)"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ContainerInfo": {
+      "type": "object",
+      "description": "Container runtime information. Present when the agent runs inside a container.",
+      "properties": {
+        "id": { "type": "string", "description": "Container ID" },
+        "name": { "type": "string", "description": "Container name" },
+        "imageName": { "type": "string", "description": "Container image name" },
+        "imageTag": { "type": "string", "description": "Container image tag" },
+        "imageId": { "type": "string", "description": "Container image ID/digest" },
+        "runtime": { "type": "string", "description": "Container runtime (e.g., 'docker', 'containerd', 'podman')" },
+        "runtimeVersion": { "type": "string", "description": "Runtime version" },
+        "privileged": { "type": "boolean", "description": "Whether the container is privileged" },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Linux capabilities granted to the container"
+        }
+      },
+      "additionalProperties": true
+    },
+    "CloudInfo": {
+      "type": "object",
+      "description": "Cloud provider information. Conventions follow OpenTelemetry semantic conventions for cloud.*.",
+      "properties": {
+        "provider": { "type": "string", "description": "Cloud provider (e.g., 'aws', 'gcp', 'azure')" },
+        "platform": { "type": "string", "description": "Cloud platform (e.g., 'aws_ec2', 'aws_lambda')" },
+        "accountId": { "type": "string", "description": "Cloud account ID" },
+        "region": { "type": "string", "description": "Geographic region (e.g., 'us-east-1')" },
+        "availabilityZone": { "type": "string", "description": "Availability zone" },
+        "resourceId": { "type": "string", "description": "Instance/resource ID" },
+        "instanceType": { "type": "string", "description": "Instance type (e.g., 'm5.large')" }
+      },
+      "additionalProperties": true
+    },
+    "KubernetesInfo": {
+      "type": "object",
+      "description": "Kubernetes environment information. Present when the agent runs in a Kubernetes cluster.",
+      "properties": {
+        "clusterName": { "type": "string", "description": "Cluster name" },
+        "clusterUid": { "type": "string", "description": "Cluster UID" },
+        "namespace": { "type": "string", "description": "Namespace" },
+        "podName": { "type": "string", "description": "Pod name" },
+        "podUid": { "type": "string", "description": "Pod UID" },
+        "containerName": { "type": "string", "description": "Container name within the pod" },
+        "nodeName": { "type": "string", "description": "Node name" },
+        "workloadName": { "type": "string", "description": "Deployment/ReplicaSet/StatefulSet name" },
+        "workloadType": { "type": "string", "description": "Workload type (e.g., 'deployment', 'statefulset')" },
+        "labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Pod labels (filtered subset)"
+        },
+        "serviceAccount": { "type": "string", "description": "Service account name" }
+      },
+      "additionalProperties": true
+    },
+    "FilesystemInfo": {
+      "type": "object",
+      "description": "Filesystem and workspace information. Critical for coordinating file-based operations between agents.",
+      "properties": {
+        "cwd": { "type": "string", "description": "Current working directory (absolute path)" },
+        "homeDir": { "type": "string", "description": "Home directory" },
+        "tempDir": { "type": "string", "description": "Temp directory" },
+        "mounts": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/MountInfo" },
+          "description": "Mount points relevant to the agent's work"
+        },
+        "workspace": { "$ref": "#/$defs/WorkspaceInfo" },
+        "readOnly": { "type": "boolean", "description": "Whether the filesystem is read-only" },
+        "ephemeral": { "type": "boolean", "description": "Whether the filesystem is ephemeral (lost on restart)" },
+        "availableBytes": { "type": "integer", "description": "Available disk space in bytes" }
+      },
+      "additionalProperties": true
+    },
+    "MountInfo": {
+      "type": "object",
+      "description": "Mount point information.",
+      "properties": {
+        "path": { "type": "string", "description": "Absolute path on this agent's filesystem" },
+        "type": { "type": "string", "description": "Mount type (e.g., 'local', 'nfs', 's3', 'bind')" },
+        "readOnly": { "type": "boolean", "description": "Whether the mount is read-only" },
+        "shared": { "type": "boolean", "description": "Whether the mount is shared with other agents" },
+        "sharedWith": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "IDs of agents that share this mount"
+        }
+      },
+      "required": ["path"],
+      "additionalProperties": true
+    },
+    "WorkspaceInfo": {
+      "type": "object",
+      "description": "Workspace/project information.",
+      "properties": {
+        "root": { "type": "string", "description": "Workspace root path" },
+        "name": { "type": "string", "description": "Workspace/project name" },
+        "vcs": { "type": "string", "description": "Version control system (e.g., 'git', 'svn')" },
+        "branch": { "type": "string", "description": "Current branch (for git)" },
+        "revision": { "type": "string", "description": "Current commit/revision" },
+        "dirty": { "type": "boolean", "description": "Whether there are uncommitted changes" },
+        "remoteUrl": { "type": "string", "description": "Remote repository URL" },
+        "integrations": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/IntegrationInfo" },
+          "description": "Project integrations and tooling"
+        }
+      },
+      "additionalProperties": true
+    },
+    "IntegrationInfo": {
+      "type": "object",
+      "description": "Integration info for project tooling.",
+      "properties": {
+        "available": { "type": "boolean", "description": "Whether the integration is currently accessible" },
+        "type": { "type": "string", "description": "Integration type/provider (e.g., 'linear', 'jira', 'beads')" },
+        "url": { "type": "string", "description": "URL or path to access this integration" },
+        "configPath": { "type": "string", "description": "Local config file path (if file-based)" }
+      },
+      "additionalProperties": true
+    },
+    "NetworkInfo": {
+      "type": "object",
+      "description": "Network environment information. Describes connectivity and network topology.",
+      "properties": {
+        "connectivity": {
+          "type": "string",
+          "description": "Network connectivity level (e.g., 'full', 'restricted', 'internal', 'isolated')"
+        },
+        "hostname": { "type": "string", "description": "Hostname as seen on the network" },
+        "addresses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ip": { "type": "string" },
+              "type": { "type": "string", "description": "'ipv4' or 'ipv6'" },
+              "public": { "type": "boolean" }
+            },
+            "required": ["ip"],
+            "additionalProperties": true
+          },
+          "description": "Primary IP addresses"
+        },
+        "dnsServers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "DNS servers"
+        },
+        "httpProxy": { "type": "string", "description": "HTTP/HTTPS proxy URL (if configured)" },
+        "noProxy": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Domains/hosts that bypass the proxy"
+        },
+        "meshNetworks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "VPN/mesh network membership"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ToolsInfo": {
+      "type": "object",
+      "description": "Available tools, SDKs, and runtimes.",
+      "properties": {
+        "installed": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Installed tools/executables. Key is tool name, value can be version string or object."
+        },
+        "shell": { "type": "string", "description": "Shell available (e.g., 'bash', 'zsh', 'powershell')" },
+        "packageManagers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Package managers available"
+        },
+        "runtimes": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Language runtimes available. Maps language to version(s)."
+        },
+        "canInstall": { "type": "boolean", "description": "Whether the agent can install new tools" }
+      },
+      "additionalProperties": true
+    },
+    "ResourceInfo": {
+      "type": "object",
+      "description": "Resource limits and constraints.",
+      "properties": {
+        "cpuLimit": { "type": "string", "description": "CPU limit (in cores or millicores, e.g., '2', '500m')" },
+        "memoryLimitBytes": { "type": "integer", "description": "Memory limit in bytes" },
+        "diskQuotaBytes": { "type": "integer", "description": "Disk quota in bytes" },
+        "processLimit": { "type": "integer", "description": "Process/thread limit" },
+        "fileDescriptorLimit": { "type": "integer", "description": "Open file descriptor limit" },
+        "networkBandwidthBytes": { "type": "integer", "description": "Network bandwidth limit in bytes/sec" },
+        "maxExecutionSeconds": { "type": "integer", "description": "Maximum execution time in seconds (for serverless)" },
+        "shared": { "type": "boolean", "description": "Whether resources are shared with other workloads" },
+        "costProfile": { "type": "string", "description": "Cost profile (e.g., 'free', 'low', 'medium', 'high', 'premium')" }
+      },
+      "additionalProperties": true
+    },
+    "SecurityInfo": {
+      "type": "object",
+      "description": "Security and isolation context.",
+      "properties": {
+        "isolation": { "type": "string", "description": "Isolation level (e.g., 'none', 'process', 'container', 'vm', 'hardware')" },
+        "privileged": { "type": "boolean", "description": "Whether running as root/admin" },
+        "userId": { "type": "string", "description": "User ID running the agent" },
+        "securityLabels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Security context labels (SELinux, AppArmor)"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Linux capabilities available"
+        },
+        "sandbox": { "type": "string", "description": "Sandboxing technology (e.g., 'seccomp', 'landlock', 'gvisor')" },
+        "hasSecrets": { "type": "boolean", "description": "Whether secrets/credentials are available" },
+        "compliance": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Compliance/certification context"
+        },
+        "dataResidency": { "type": "string", "description": "Data residency region" }
+      },
+      "additionalProperties": true
+    },
+    "ServicesInfo": {
+      "type": "object",
+      "description": "External services and APIs the agent has access to.",
+      "properties": {
+        "aiProviders": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/ServiceAccess" },
+          "description": "AI/ML model providers (e.g., huggingface, openai, anthropic)"
+        },
+        "mcp": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/MCPServerInfo" },
+          "description": "MCP servers available to this agent"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ServiceAccess": {
+      "type": "object",
+      "description": "Access information for an external service.",
+      "properties": {
+        "available": { "type": "boolean", "description": "Whether access is currently available/authenticated" },
+        "tier": { "type": "string", "description": "Access level or tier" },
+        "scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Specific capabilities or scopes available"
+        },
+        "rateLimit": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Rate limits"
+        },
+        "models": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Specific models or resources accessible (for AI providers)"
+        }
+      },
+      "additionalProperties": true
+    },
+    "MCPServerInfo": {
+      "type": "object",
+      "description": "MCP server information.",
+      "properties": {
+        "available": { "type": "boolean", "description": "Whether the server is currently available" },
+        "transport": { "type": "string", "description": "Transport type" },
+        "tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tools provided by this MCP server"
+        },
+        "resources": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Resources provided by this MCP server"
+        }
+      },
+      "additionalProperties": true
     },
 
     "Address": {
@@ -660,6 +1043,7 @@
       "enum": [
         "agent_registered",
         "agent_state_changed",
+        "agent_environment_changed",
         "agent_unregistered",
         "message_sent",
         "message_delivered",
@@ -724,6 +1108,11 @@
           "type": "array",
           "items": { "$ref": "#/$defs/MessagePriority" },
           "description": "Only events with these priorities"
+        },
+        "environmentMatch": {
+          "type": "object",
+          "description": "Filter by agent environment attributes (e.g., 'os.type', 'cloud.region', 'network.connectivity')",
+          "additionalProperties": true
         },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
@@ -801,6 +1190,10 @@
             "name": { "type": "string" },
             "version": { "type": "string" }
           }
+        },
+        "serverEnvironment": {
+          "$ref": "#/$defs/AgentEnvironment",
+          "description": "Server's compute environment (if relevant)"
         },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
@@ -1170,6 +1563,7 @@
             },
             "visibility": { "$ref": "#/$defs/AgentVisibility" },
             "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+            "environment": { "$ref": "#/$defs/AgentEnvironment" },
             "metadata": { "type": "object" },
             "_meta": { "$ref": "#/$defs/Meta" }
           }
@@ -1209,6 +1603,7 @@
             },
             "visibility": { "$ref": "#/$defs/AgentVisibility" },
             "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+            "environment": { "$ref": "#/$defs/AgentEnvironment" },
             "initialMessage": { "$ref": "#/$defs/Message" },
             "metadata": { "type": "object" },
             "_meta": { "$ref": "#/$defs/Meta" }
