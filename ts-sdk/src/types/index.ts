@@ -55,6 +55,72 @@ export type Timestamp = number;
 export type Meta = Record<string, unknown>;
 
 // =============================================================================
+// Agent Environment Types
+// =============================================================================
+
+/**
+ * Compute environment information for an agent.
+ * Category names are normative; field conventions within categories are documented separately.
+ *
+ * @example
+ * ```typescript
+ * const environment: AgentEnvironment = {
+ *   schemaVersion: '1.0',
+ *   os: { type: 'linux', version: '22.04' },
+ *   process: { cwd: '/home/user/project' },
+ *   network: { connectivity: 'full' },
+ *   tools: { installed: { python: '3.11', node: '20.0' } }
+ * };
+ * ```
+ */
+export interface AgentEnvironment {
+  /** Schema version for evolution (e.g., '1.0') */
+  schemaVersion?: string;
+
+  /** Self-declared profile compliance (e.g., ['cloud-native', 'ml-ready']) */
+  profiles?: string[];
+
+  /** Host/machine info (arch, cpu, memory, gpu) */
+  host?: Record<string, unknown>;
+
+  /** Operating system info (type, version) */
+  os?: Record<string, unknown>;
+
+  /** Process/runtime info (pid, cwd, runtime) */
+  process?: Record<string, unknown>;
+
+  /** Container info if containerized */
+  container?: Record<string, unknown>;
+
+  /** Cloud provider info (provider, region) */
+  cloud?: Record<string, unknown>;
+
+  /** Kubernetes info if in k8s */
+  k8s?: Record<string, unknown>;
+
+  /** Filesystem/workspace info (cwd, mounts, workspace) */
+  filesystem?: Record<string, unknown>;
+
+  /** Network info (connectivity, addresses) */
+  network?: Record<string, unknown>;
+
+  /** Available tools and runtimes */
+  tools?: Record<string, unknown>;
+
+  /** Resource limits and constraints */
+  resources?: Record<string, unknown>;
+
+  /** Security/isolation context */
+  security?: Record<string, unknown>;
+
+  /** External services and APIs (aiProviders, mcp) */
+  services?: Record<string, unknown>;
+
+  /** Allow additional categories */
+  [key: string]: unknown;
+}
+
+// =============================================================================
 // Participant Types
 // =============================================================================
 
@@ -255,6 +321,10 @@ export interface Agent {
 
   lifecycle?: AgentLifecycle;
   capabilities?: ParticipantCapabilities;
+
+  /** Compute environment where this agent runs */
+  environment?: AgentEnvironment;
+
   metadata?: Record<string, unknown>;
   _meta?: Meta;
 }
@@ -612,6 +682,7 @@ export const EVENT_TYPES = {
   AGENT_REGISTERED: 'agent_registered',
   AGENT_UNREGISTERED: 'agent_unregistered',
   AGENT_STATE_CHANGED: 'agent_state_changed',
+  AGENT_ENVIRONMENT_CHANGED: 'agent_environment_changed',
   AGENT_ORPHANED: 'agent_orphaned',
 
   // Participant lifecycle events
@@ -786,6 +857,21 @@ export interface SubscriptionFilter {
    * Checks event.data.metadata for matching values.
    */
   metadataMatch?: Record<string, unknown>;
+
+  /**
+   * Filter by agent environment attributes.
+   * Matches events from agents whose environment contains matching values.
+   * Uses dot notation for nested fields (e.g., 'os.type', 'cloud.region').
+   *
+   * @example
+   * ```typescript
+   * environmentMatch: {
+   *   'os.type': 'linux',
+   *   'cloud.provider': 'aws'
+   * }
+   * ```
+   */
+  environmentMatch?: Record<string, unknown>;
 
   _meta?: Meta;
 }
@@ -1272,6 +1358,8 @@ export interface AgentsRegisterRequestParams {
   scopes?: ScopeId[];
   visibility?: AgentVisibility;
   capabilities?: ParticipantCapabilities;
+  /** Compute environment where this agent runs */
+  environment?: AgentEnvironment;
   metadata?: Record<string, unknown>;
   /** Permission overrides merged on top of role-based defaults */
   permissionOverrides?: Partial<AgentPermissions>;
@@ -1307,6 +1395,8 @@ export interface AgentsUnregisterResponseResult {
 export interface AgentsUpdateRequestParams {
   agentId: AgentId;
   state?: AgentState;
+  /** Update agent's compute environment */
+  environment?: AgentEnvironment;
   metadata?: Record<string, unknown>;
   /**
    * Permission overrides to apply to the agent.
@@ -1335,6 +1425,8 @@ export interface AgentsSpawnRequestParams {
   scopes?: ScopeId[];
   visibility?: AgentVisibility;
   capabilities?: ParticipantCapabilities;
+  /** Compute environment where this agent runs */
+  environment?: AgentEnvironment;
   initialMessage?: Message;
   metadata?: Record<string, unknown>;
   _meta?: Meta;
