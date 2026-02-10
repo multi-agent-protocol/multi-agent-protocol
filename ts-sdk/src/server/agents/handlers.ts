@@ -121,6 +121,8 @@ interface SpawnParams {
   role?: string;
   /** Metadata for the child agent */
   metadata?: Record<string, unknown>;
+  /** Structured capability descriptor for rich agent discovery */
+  capabilityDescriptor?: import('../../types').MAPAgentCapabilityDescriptor;
   /** Scopes the child should request (for credential delegation) */
   requestedScopes?: string[];
   /** TTL for delegated credentials in minutes */
@@ -315,7 +317,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
     },
 
     "map/agents/spawn": async (params: unknown, ctx: HandlerContext) => {
-      const { parent, name, role, metadata, requestedScopes, ttlMinutes } = params as SpawnParams;
+      const { parent, name, role, metadata, capabilityDescriptor, requestedScopes, ttlMinutes } = params as SpawnParams;
 
       // Validate parent agent exists and belongs to calling session
       const parentAgent = agents.get(parent);
@@ -335,6 +337,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           parentId: parent,
         },
         sessionId: ctx.session.id,
+        capabilityDescriptor,
       });
 
       // Track child in session

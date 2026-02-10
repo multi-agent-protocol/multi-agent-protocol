@@ -1927,7 +1927,8 @@
               "items": { "type": "string" },
               "description": "Supported auth methods"
             },
-            "challenge": { "type": "string", "description": "Challenge nonce for proof-based auth methods" }
+            "challenge": { "type": "string", "description": "Challenge nonce for proof-based auth methods" },
+            "required": { "type": "boolean", "description": "Whether authentication is required to proceed" }
           },
           "required": ["methods", "challenge"]
         },

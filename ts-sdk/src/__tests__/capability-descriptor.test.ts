@@ -39,35 +39,29 @@ function createMockContext(): HandlerContext {
 }
 
 const DOC_PROCESSOR_DESCRIPTOR: MAPAgentCapabilityDescriptor = {
-  version: 1,
+  version: "1.0.0",
   description: "Processes documents: text extraction and summarization",
   capabilities: [
     {
       id: "doc:extract-text",
-      name: "Text Extraction",
       description: "Extracts text from PDF and DOCX files",
     },
     {
       id: "doc:summarize",
-      name: "Document Summarization",
       description: "Generates concise summaries",
-      interface: {
-        contentType: "application/json",
-        schema: {
-          type: "object",
-          properties: {
-            text: { type: "string" },
-            maxLength: { type: "integer" },
-          },
+      interfaces: [
+        {
+          contentType: "application/json",
+          schema: "https://example.com/schemas/summarize-input.json",
         },
-      },
+      ],
     },
   ],
   accepts: [
     { contentType: "application/pdf" },
     { contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
   ],
-  produces: [
+  provides: [
     { contentType: "text/plain" },
     { contentType: "application/json" },
   ],
@@ -75,17 +69,15 @@ const DOC_PROCESSOR_DESCRIPTOR: MAPAgentCapabilityDescriptor = {
 };
 
 const IMAGE_PROCESSOR_DESCRIPTOR: MAPAgentCapabilityDescriptor = {
-  version: 1,
+  version: "1.0.0",
   description: "Processes images: OCR and classification",
   capabilities: [
     {
       id: "image:ocr",
-      name: "OCR",
       description: "Extracts text from images",
     },
     {
       id: "image:classify",
-      name: "Image Classification",
       description: "Classifies image content",
     },
   ],

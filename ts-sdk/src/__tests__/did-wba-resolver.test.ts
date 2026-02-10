@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { DIDWBAResolver, parseDIDWBA, didToUrl } from "../federation/did-wba/resolver";
+import { DIDWBAResolver, parseDIDWBA, didToUrl, isSafeDomain } from "../federation/did-wba/resolver";
 import type { DIDDocument } from "../types";
 
 // ============================================================================
@@ -36,6 +36,40 @@ describe("parseDIDWBA", () => {
 
   it("should throw for empty string", () => {
     expect(() => parseDIDWBA("")).toThrow("must start with");
+  });
+
+  it("should reject localhost (SSRF protection)", () => {
+    expect(() => parseDIDWBA("did:wba:localhost:agent")).toThrow("not allowed");
+  });
+
+  it("should reject private IP 127.x (SSRF protection)", () => {
+    expect(() => parseDIDWBA("did:wba:127.0.0.1:agent")).toThrow("not allowed");
+  });
+
+  it("should reject private IP 10.x (SSRF protection)", () => {
+    expect(() => parseDIDWBA("did:wba:10.0.0.5:agent")).toThrow("not allowed");
+  });
+
+  it("should reject private IP 192.168.x (SSRF protection)", () => {
+    expect(() => parseDIDWBA("did:wba:192.168.1.1:agent")).toThrow("not allowed");
+  });
+
+  it("should reject AWS metadata endpoint (SSRF protection)", () => {
+    expect(() => parseDIDWBA("did:wba:169.254.169.254:latest:meta-data")).toThrow("not allowed");
+  });
+
+  it("should reject path traversal", () => {
+    expect(() => parseDIDWBA("did:wba:example.com:..:..:etc")).toThrow("path traversal");
+  });
+
+  it("should reject empty path segments", () => {
+    expect(() => parseDIDWBA("did:wba:example.com::agent")).toThrow("empty path segment");
+  });
+
+  it("should handle percent-encoded port numbers", () => {
+    const result = parseDIDWBA("did:wba:example.com%3A8080:agent");
+    expect(result.domain).toBe("example.com:8080");
+    expect(result.path).toBe("agent");
   });
 });
 

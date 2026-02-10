@@ -139,18 +139,20 @@ export interface AgentEnvironment {
  * Optional — agents without descriptors still work via role/metadata.
  */
 export interface MAPAgentCapabilityDescriptor {
-  /** Schema version */
-  version: 1;
+  /** Globally unique capability descriptor ID (e.g., "urn:map:cap:code-review") */
+  id?: string;
+  /** Semantic version of the capability descriptor */
+  version?: string;
+  /** Human-readable name */
+  name?: string;
   /** Human-readable summary of what this agent does */
-  description: string;
+  description?: string;
   /** Capability categories this agent supports */
-  capabilities: MAPCapabilityDeclaration[];
+  capabilities?: MAPCapabilityDeclaration[];
   /** Input types this agent can accept */
   accepts?: MAPInterfaceSpec[];
-  /** Output types this agent can produce */
-  produces?: MAPInterfaceSpec[];
-  /** Link to full documentation (external URL) */
-  documentationUrl?: string;
+  /** Output types this agent can provide */
+  provides?: MAPInterfaceSpec[];
   /** Semantic tags for discovery (searchable) */
   tags?: string[];
 }
@@ -161,14 +163,12 @@ export interface MAPAgentCapabilityDescriptor {
 export interface MAPCapabilityDeclaration {
   /** Machine-readable capability identifier (namespaced, e.g., "doc:summarize") */
   id: string;
-  /** Human-readable capability name */
-  name: string;
+  /** Capability version */
+  version?: string;
   /** What this capability does */
-  description: string;
-  /** Link to detailed interface spec (URL) */
-  interfaceRef?: string;
-  /** Inline interface specification (alternative to interfaceRef) */
-  interface?: MAPInterfaceSpec;
+  description?: string;
+  /** Interfaces for this specific capability */
+  interfaces?: MAPInterfaceSpec[];
 }
 
 /**
@@ -177,12 +177,10 @@ export interface MAPCapabilityDeclaration {
 export interface MAPInterfaceSpec {
   /** Content type (e.g., "application/json", "text/plain") */
   contentType: string;
-  /** JSON Schema for the expected payload structure */
-  schema?: Record<string, unknown>;
-  /** Link to external schema definition */
-  schemaRef?: string;
-  /** Example payload */
-  example?: unknown;
+  /** JSON Schema URI for the expected payload structure */
+  schema?: string;
+  /** Description of this interface */
+  description?: string;
 }
 
 // =============================================================================
@@ -1271,10 +1269,13 @@ export interface FederationAuth {
  */
 export interface DIDWBACredentials {
   method: "did:wba";
-  /** The DID of the connecting system/agent (e.g., "did:wba:agents.example.com:gateway") */
-  did: string;
-  /** Cryptographic proof of DID ownership */
-  proof: DIDWBAProof;
+  /** DID and proof nested in metadata (matches wire format) */
+  metadata: {
+    /** The DID of the connecting system/agent (e.g., "did:wba:agents.example.com:gateway") */
+    did: string;
+    /** Cryptographic proof of DID ownership */
+    proof: DIDWBAProof;
+  };
 }
 
 /**
@@ -1296,7 +1297,7 @@ export interface DIDWBAProof {
  * Resolved from `did:wba:<domain>:<path>` → `https://<domain>/<path>/did.json`
  */
 export interface DIDDocument {
-  "@context": string[];
+  "@context"?: string | string[];
   id: string;
   verificationMethod?: DIDVerificationMethod[];
   authentication?: string[];
@@ -1319,7 +1320,7 @@ export interface DIDVerificationMethod {
 export interface DIDService {
   id: string;
   type: string;
-  serviceEndpoint: string;
+  serviceEndpoint: string | Record<string, unknown>;
   /** MAP protocol version (for MAPFederationEndpoint services) */
   mapProtocolVersion?: number;
   /** MAP capabilities advertised by this endpoint */
@@ -2308,8 +2309,8 @@ export interface FederationConnectRequestParams {
   };
   /** System info about the connecting peer */
   systemInfo?: { name: string; version: string; endpoint: string };
-  /** MAP protocol version */
-  protocolVersion?: string;
+  /** MAP protocol version (default: 1) */
+  protocolVersion?: number;
   /** What this peer exposes to the other side */
   exposure?: Record<string, unknown>;
   _meta?: Meta;
