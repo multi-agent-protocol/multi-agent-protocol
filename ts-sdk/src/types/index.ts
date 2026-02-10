@@ -130,6 +130,60 @@ export interface AgentEnvironment {
 }
 
 // =============================================================================
+// Agent Capability Descriptor Types
+// =============================================================================
+
+/**
+ * Structured capability descriptor for an agent.
+ * Published at registration time via the `capabilityDescriptor` field on Agent.
+ * Optional — agents without descriptors still work via role/metadata.
+ */
+export interface MAPAgentCapabilityDescriptor {
+  /** Globally unique capability descriptor ID (e.g., "urn:map:cap:code-review") */
+  id?: string;
+  /** Semantic version of the capability descriptor */
+  version?: string;
+  /** Human-readable name */
+  name?: string;
+  /** Human-readable summary of what this agent does */
+  description?: string;
+  /** Capability categories this agent supports */
+  capabilities?: MAPCapabilityDeclaration[];
+  /** Input types this agent can accept */
+  accepts?: MAPInterfaceSpec[];
+  /** Output types this agent can provide */
+  provides?: MAPInterfaceSpec[];
+  /** Semantic tags for discovery (searchable) */
+  tags?: string[];
+}
+
+/**
+ * A single capability declaration within an agent's descriptor.
+ */
+export interface MAPCapabilityDeclaration {
+  /** Machine-readable capability identifier (namespaced, e.g., "doc:summarize") */
+  id: string;
+  /** Capability version */
+  version?: string;
+  /** What this capability does */
+  description?: string;
+  /** Interfaces for this specific capability */
+  interfaces?: MAPInterfaceSpec[];
+}
+
+/**
+ * Interface specification for capability inputs/outputs.
+ */
+export interface MAPInterfaceSpec {
+  /** Content type (e.g., "application/json", "text/plain") */
+  contentType: string;
+  /** JSON Schema URI for the expected payload structure */
+  schema?: string;
+  /** Description of this interface */
+  description?: string;
+}
+
+// =============================================================================
 // Participant Types
 // =============================================================================
 
@@ -352,6 +406,9 @@ export interface Agent {
 
   /** Compute environment where this agent runs */
   environment?: AgentEnvironment;
+
+  /** Structured capability descriptor for rich agent discovery */
+  capabilityDescriptor?: MAPAgentCapabilityDescriptor;
 
   metadata?: Record<string, unknown>;
   _meta?: Meta;
@@ -1105,7 +1162,7 @@ export interface SessionInfo {
 // =============================================================================
 
 /** Standard authentication methods defined by the protocol */
-export type StandardAuthMethod = "bearer" | "api-key" | "mtls" | "none";
+export type StandardAuthMethod = "bearer" | "api-key" | "mtls" | "none" | "did:wba";
 
 /** Authentication method - standard or custom (x- prefixed) */
 export type AuthMethod = StandardAuthMethod | `x-${string}`;
@@ -1188,12 +1245,92 @@ export interface AuthResult {
 }
 
 /**
+ * Supported federation authentication methods.
+ */
+export type FederationAuthMethod = "bearer" | "api-key" | "mtls" | "none" | "did:wba" | "oauth2" | `x-${string}`;
+
+/**
  * Authentication for federated connections.
  */
 export interface FederationAuth {
-  method: "bearer" | "api-key" | "mtls";
+  method: FederationAuthMethod;
   credentials?: string;
+  /** Method-specific additional data (e.g., DID proof, OAuth2 config) */
+  metadata?: Record<string, unknown>;
 }
+
+// =============================================================================
+// DID:WBA (Web-Based Agent) Types
+// =============================================================================
+
+/**
+ * DID:WBA authentication credentials for federation.
+ * Used for domain-anchored decentralized identity.
+ */
+export interface DIDWBACredentials {
+  method: "did:wba";
+  /** DID and proof nested in metadata (matches wire format) */
+  metadata: {
+    /** The DID of the connecting system/agent (e.g., "did:wba:agents.example.com:gateway") */
+    did: string;
+    /** Cryptographic proof of DID ownership */
+    proof: DIDWBAProof;
+  };
+}
+
+/**
+ * Cryptographic proof for DID:WBA authentication.
+ */
+export interface DIDWBAProof {
+  /** Proof type (e.g., "JsonWebSignature2020", "Ed25519Signature2020") */
+  type: string;
+  /** ISO 8601 timestamp of proof creation */
+  created: string;
+  /** Server-provided nonce (prevents replay) */
+  challenge: string;
+  /** JWS signature over (challenge + did + created) */
+  jws: string;
+}
+
+/**
+ * DID Document structure for MAP federation.
+ * Resolved from `did:wba:<domain>:<path>` → `https://<domain>/<path>/did.json`
+ */
+export interface DIDDocument {
+  "@context"?: string | string[];
+  id: string;
+  verificationMethod?: DIDVerificationMethod[];
+  authentication?: string[];
+  service?: DIDService[];
+}
+
+/**
+ * A verification method within a DID Document.
+ */
+export interface DIDVerificationMethod {
+  id: string;
+  type: string;
+  controller: string;
+  publicKeyJwk?: Record<string, unknown>;
+}
+
+/**
+ * A service endpoint within a DID Document.
+ */
+export interface DIDService {
+  id: string;
+  type: string;
+  serviceEndpoint: string | Record<string, unknown>;
+  /** MAP protocol version (for MAPFederationEndpoint services) */
+  mapProtocolVersion?: number;
+  /** MAP capabilities advertised by this endpoint */
+  mapCapabilities?: Record<string, boolean>;
+}
+
+/**
+ * Union type for all supported federation auth credentials.
+ */
+export type MAPFederationAuth = FederationAuth | DIDWBACredentials;
 
 // =============================================================================
 // Connect Types
@@ -1337,6 +1474,12 @@ export interface AgentsListFilter {
   parent?: AgentId;
   hasChildren?: boolean;
   ownerId?: ParticipantId;
+  /** Filter by structured capability ID (e.g., "doc:summarize") */
+  capabilityId?: string;
+  /** Filter by semantic tags from capability descriptor */
+  tags?: string[];
+  /** Filter by accepted content type */
+  accepts?: string;
 }
 
 export interface AgentsListRequestParams {
@@ -1399,6 +1542,8 @@ export interface AgentsRegisterRequestParams {
   capabilities?: ParticipantCapabilities;
   /** Compute environment where this agent runs */
   environment?: AgentEnvironment;
+  /** Structured capability descriptor for rich agent discovery */
+  capabilityDescriptor?: MAPAgentCapabilityDescriptor;
   metadata?: Record<string, unknown>;
   /** Permission overrides merged on top of role-based defaults */
   permissionOverrides?: Partial<AgentPermissions>;
@@ -1466,6 +1611,8 @@ export interface AgentsSpawnRequestParams {
   capabilities?: ParticipantCapabilities;
   /** Compute environment where this agent runs */
   environment?: AgentEnvironment;
+  /** Structured capability descriptor for rich agent discovery */
+  capabilityDescriptor?: MAPAgentCapabilityDescriptor;
   initialMessage?: Message;
   metadata?: Record<string, unknown>;
   _meta?: Meta;
@@ -2153,6 +2300,19 @@ export interface FederationConnectRequestParams {
   systemId: string;
   endpoint: string;
   auth?: FederationAuth;
+  /** Pre-fetched server auth context (e.g., from .well-known discovery) */
+  authContext?: {
+    /** How the client learned the server's auth requirements */
+    source: "well-known" | "cached" | "configured";
+    /** Server's nonce/challenge (if pre-fetched, e.g., for did:wba) */
+    challenge?: string;
+  };
+  /** System info about the connecting peer */
+  systemInfo?: { name: string; version: string; endpoint: string };
+  /** MAP protocol version (default: 1) */
+  protocolVersion?: number;
+  /** What this peer exposes to the other side */
+  exposure?: Record<string, unknown>;
   _meta?: Meta;
 }
 
@@ -2167,6 +2327,17 @@ export interface FederationConnectResponseResult {
     name?: string;
     version?: string;
     capabilities?: ParticipantCapabilities;
+  };
+  /** Federation session ID (when single-request auth succeeds) */
+  sessionId?: string;
+  /** Authenticated principal (when single-request auth succeeds) */
+  principal?: AuthPrincipal;
+  /** Auth negotiation fallback (when auth not provided or failed recoverably) */
+  authRequired?: {
+    methods: string[];
+    /** Server-generated challenge nonce (e.g., for did:wba) */
+    challenge?: string;
+    required: boolean;
   };
   _meta?: Meta;
 }
@@ -3099,6 +3270,10 @@ export const FEDERATION_ERROR_CODES = {
   FEDERATION_LOOP_DETECTED: 5010,
   /** Message exceeded maximum hop count */
   FEDERATION_MAX_HOPS_EXCEEDED: 5011,
+  /** DID document resolution failed (network error, invalid document, etc.) */
+  FEDERATION_DID_RESOLUTION_FAILED: 5004,
+  /** DID proof verification failed (bad signature, expired, wrong challenge, etc.) */
+  FEDERATION_DID_PROOF_INVALID: 5005,
 } as const;
 
 /** Mail error codes - prefixed to avoid collision with PERMISSION_DENIED */

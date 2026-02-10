@@ -206,17 +206,93 @@ Sensitive computation isolated in secure system, federated for I/O.
 
 ---
 
+## Single-Request Federation Auth
+
+Federation connection can be completed in a single round-trip by including auth credentials in the initial `map/federation/connect` request. When the server can validate the credentials immediately, it returns a fully authenticated response — reducing setup from 2 RTT to 1 RTT.
+
+### Flow: Single-Request Auth (Optimized)
+
+```
+System A                                      System B
+   │                                              │
+   │──── map/federation/connect ─────────────────►│
+   │     { systemId, endpoint, auth: { ... } }    │
+   │                                              │ ← Validates auth inline
+   │◄─── response ────────────────────────────────│
+   │     { connected: true, sessionId, principal } │
+   │                                              │
+```
+
+### Flow: Auth Negotiation Fallback
+
+If no credentials are provided, or validation fails recoverably, the server returns auth requirements:
+
+```
+System A                                      System B
+   │                                              │
+   │──── map/federation/connect ─────────────────►│
+   │     { systemId, endpoint }                   │
+   │                                              │
+   │◄─── response ────────────────────────────────│
+   │     { connected: false,                      │
+   │       authRequired: { methods, challenge } } │
+   │                                              │
+   │──── map/federation/connect ─────────────────►│
+   │     { systemId, endpoint, auth: { ... },     │
+   │       authContext: { challenge } }            │
+   │                                              │
+   │◄─── response ────────────────────────────────│
+   │     { connected: true, sessionId, principal } │
+   │                                              │
+```
+
+---
+
 ## Security Considerations
 
 ### Authentication
 
 ```typescript
+type FederationAuthMethod =
+  | "bearer" | "api-key" | "mtls" | "none"
+  | "did:wba" | "oauth2" | `x-${string}`;
+
 type MAPFederationAuth =
-  | { method: "mutual-tls"; certificate: string }
-  | { method: "bearer"; token: string }
-  | { method: "api-key"; key: string }
-  | { method: "oauth2"; config: OAuth2Config };
+  | { method: FederationAuthMethod; credentials?: string; metadata?: Record<string, unknown> }
+  | DIDWBACredentials;
+
+interface DIDWBACredentials {
+  method: "did:wba";
+  metadata: { did: string; proof: DIDWBAProof };
+}
 ```
+
+#### `did:wba` — Decentralized Identity for Federation
+
+The `did:wba` method enables domain-anchored decentralized identity for federation. An identity like `did:wba:agents.example.com:gateway` resolves to a DID document at `https://agents.example.com/gateway/did.json` containing public keys and MAP service endpoints.
+
+**Authentication flow:**
+1. Connecting system provides its DID and a cryptographic proof (ECDSA P-256 over challenge nonce)
+2. Receiving system resolves the DID document via HTTPS
+3. Receiving system verifies the proof against the public key in the DID document
+4. On success, the connecting system is authenticated as the DID principal
+
+```json
+{
+  "method": "did:wba",
+  "metadata": {
+    "did": "did:wba:agents.example.com:gateway",
+    "proof": {
+      "type": "JsonWebSignature2020",
+      "created": "2026-02-10T12:00:00.000Z",
+      "challenge": "map_chal_01ABCDEFGHJ0123456789AB",
+      "jws": "eyJhbGciOi..."
+    }
+  }
+}
+```
+
+See `docs/09-authentication.md` for full details on all auth methods including `did:wba`, and `docs/11-anp-inspired-improvements.md` Proposal 1 for the design rationale.
 
 ### Message Signing
 
@@ -253,7 +329,7 @@ interface MAPFederationQueueConfig {
 ## Open Questions
 
 1. **Transitive federation**: If A↔B and B↔C, can A route to C via B?
-2. **Federation discovery**: Should there be a discovery mechanism for finding peers?
+2. ~~**Federation discovery**: Should there be a discovery mechanism for finding peers?~~ — Partially addressed by `did:wba` (DID document service endpoints) and proposed `.well-known` discovery (see `docs/11-anp-inspired-improvements.md` Proposal 2).
 3. **Consistency**: How to handle concurrent updates across federated systems?
 4. **Schema versioning**: What if peers have different protocol versions?
 5. **Audit requirements**: What federation activity must be logged?

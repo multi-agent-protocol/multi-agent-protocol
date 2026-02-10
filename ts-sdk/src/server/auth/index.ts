@@ -92,3 +92,7 @@ export type {
   MappableToken,
   AgentIAMFederationGatewayOptions,
 } from './providers';
+
+// DID:WBA Authenticator
+export { DIDWBAAuthenticator } from './did-wba-authenticator';
+export type { DIDWBAAuthenticatorOptions } from './did-wba-authenticator';

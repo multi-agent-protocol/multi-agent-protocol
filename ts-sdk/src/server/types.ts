@@ -162,6 +162,8 @@ export interface RegisteredAgent {
    * Example: ["translate:en", "translate:fr", "summarize"]
    */
   capabilities?: string[];
+  /** Structured capability descriptor for rich agent discovery */
+  capabilityDescriptor?: import('../types').MAPAgentCapabilityDescriptor;
 }
 
 /**
@@ -182,6 +184,12 @@ export interface AgentFilter {
    * Glob pattern: "translate:*" matches "translate:en", "translate:fr", etc.
    */
   capability?: string;
+  /** Filter by structured capability ID from capabilityDescriptor */
+  capabilityId?: string;
+  /** Filter by semantic tag from capabilityDescriptor */
+  tag?: string;
+  /** Filter by accepted content type from capabilityDescriptor */
+  accepts?: string;
 }
 
 /**
@@ -213,6 +221,8 @@ export interface AgentRegistry {
     role?: string;
     metadata?: Record<string, unknown>;
     sessionId: string;
+    capabilities?: string[];
+    capabilityDescriptor?: import('../types').MAPAgentCapabilityDescriptor;
   }): RegisteredAgent;
 
   /** Get agent by ID */
@@ -1079,6 +1089,10 @@ export interface PeerConnection {
   status: "connected" | "disconnected" | "connecting";
   connectedAt?: number;
   lastActivity?: number;
+  /** Authenticated principal (if auth was performed during connect) */
+  principal?: { id: string; issuer?: string; claims?: Record<string, unknown> };
+  /** Federation session ID */
+  sessionId?: string;
 }
 
 /**

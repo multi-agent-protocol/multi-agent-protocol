@@ -426,6 +426,7 @@
         "visibility": { "$ref": "#/$defs/AgentVisibility" },
         "lifecycle": { "$ref": "#/$defs/AgentLifecycle" },
         "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+        "capabilityDescriptor": { "$ref": "#/$defs/MAPAgentCapabilityDescriptor" },
         "environment": { "$ref": "#/$defs/AgentEnvironment" },
         "metadata": { "type": "object" },
         "_meta": { "$ref": "#/$defs/Meta" }
@@ -1053,7 +1054,20 @@
                   "items": { "$ref": "#/$defs/ScopeId" }
                 },
                 "parent": { "$ref": "#/$defs/AgentId" },
-                "hasChildren": { "type": "boolean" }
+                "hasChildren": { "type": "boolean" },
+                "capabilityId": {
+                  "type": "string",
+                  "description": "Filter by structured capability ID from capabilityDescriptor"
+                },
+                "tags": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Filter by semantic tags from capabilityDescriptor"
+                },
+                "accepts": {
+                  "type": "string",
+                  "description": "Filter by accepted content type from capabilityDescriptor (MIME type)"
+                }
               }
             },
             "limit": { "type": "integer", "minimum": 1 },
@@ -1263,6 +1277,7 @@
             },
             "visibility": { "$ref": "#/$defs/AgentVisibility" },
             "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+            "capabilityDescriptor": { "$ref": "#/$defs/MAPAgentCapabilityDescriptor" },
             "environment": { "$ref": "#/$defs/AgentEnvironment" },
             "metadata": { "type": "object" },
             "_meta": { "$ref": "#/$defs/Meta" }
@@ -1303,6 +1318,7 @@
             },
             "visibility": { "$ref": "#/$defs/AgentVisibility" },
             "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
+            "capabilityDescriptor": { "$ref": "#/$defs/MAPAgentCapabilityDescriptor" },
             "environment": { "$ref": "#/$defs/AgentEnvironment" },
             "initialMessage": { "$ref": "#/$defs/Message" },
             "metadata": { "type": "object" },
@@ -1825,7 +1841,7 @@
       "type": "object",
       "x-method": "map/federation/connect",
       "x-tier": "extension",
-      "description": "Connect to a peer MAP system",
+      "description": "Connect to a peer MAP system. Supports single-request auth: include auth inline to complete federation handshake in one round-trip.",
       "properties": {
         "jsonrpc": { "$ref": "#/$defs/JsonRpcVersion" },
         "id": { "$ref": "#/$defs/RequestId" },
@@ -1836,18 +1852,49 @@
             "systemId": { "type": "string" },
             "endpoint": { "type": "string", "format": "uri" },
             "auth": {
-              "type": "object",
-              "properties": {
-                "method": {
-                  "type": "string",
-                  "oneOf": [
-                    { "enum": ["bearer", "api-key", "mtls"] },
-                    { "type": "string", "pattern": "^x-" }
-                  ]
+              "oneOf": [
+                {
+                  "type": "object",
+                  "description": "Standard federation auth (bearer, api-key, mtls, etc.)",
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "oneOf": [
+                        { "enum": ["bearer", "api-key", "mtls", "none", "did:wba", "oauth2"] },
+                        { "type": "string", "pattern": "^x-" }
+                      ]
+                    },
+                    "credentials": { "type": "string" }
+                  },
+                  "required": ["method"]
                 },
-                "credentials": { "type": "string" }
-              },
-              "required": ["method"]
+                { "$ref": "#/$defs/DIDWBACredentials" }
+              ]
+            },
+            "authContext": {
+              "type": "object",
+              "description": "Additional auth context for single-request federation auth",
+              "properties": {
+                "challenge": { "type": "string", "description": "Challenge nonce for proof-based auth" }
+              }
+            },
+            "systemInfo": {
+              "type": "object",
+              "description": "Connecting system's self-description",
+              "properties": {
+                "name": { "type": "string" },
+                "version": { "type": "string" }
+              }
+            },
+            "protocolVersion": { "type": "integer", "description": "MAP protocol version (default: 1)" },
+            "exposure": {
+              "type": "object",
+              "description": "Which resources the connecting system exposes",
+              "properties": {
+                "agents": { "type": "boolean" },
+                "scopes": { "type": "boolean" },
+                "events": { "type": "boolean" }
+              }
             },
             "_meta": { "$ref": "#/$defs/Meta" }
           },
@@ -1858,9 +1905,33 @@
     },
     "FederationConnectResponse": {
       "type": "object",
-      "description": "Response to map/federation/connect",
+      "description": "Response to map/federation/connect. When single-request auth succeeds, includes sessionId and principal. When auth fails or is required, includes authRequired with supported methods and challenge.",
       "properties": {
         "connected": { "type": "boolean" },
+        "sessionId": { "type": "string", "description": "Session ID assigned on successful auth" },
+        "principal": {
+          "type": "object",
+          "description": "Authenticated principal (on successful auth)",
+          "properties": {
+            "id": { "type": "string" },
+            "issuer": { "type": "string" },
+            "claims": { "type": "object" }
+          }
+        },
+        "authRequired": {
+          "type": "object",
+          "description": "Auth negotiation data (when auth is required or failed)",
+          "properties": {
+            "methods": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Supported auth methods"
+            },
+            "challenge": { "type": "string", "description": "Challenge nonce for proof-based auth methods" },
+            "required": { "type": "boolean", "description": "Whether authentication is required to proceed" }
+          },
+          "required": ["methods", "challenge"]
+        },
         "systemInfo": {
           "type": "object",
           "properties": {
@@ -2726,6 +2797,145 @@
         "_meta": { "$ref": "#/$defs/Meta" }
       },
       "required": ["providers"]
+    },
+
+    "MAPAgentCapabilityDescriptor": {
+      "type": "object",
+      "description": "Structured capability descriptor for rich agent discovery",
+      "properties": {
+        "id": { "type": "string", "description": "Globally unique capability descriptor ID (e.g., 'urn:map:cap:code-review')" },
+        "version": { "type": "string", "description": "Semantic version of the capability descriptor" },
+        "name": { "type": "string", "description": "Human-readable name" },
+        "description": { "type": "string", "description": "Human-readable description" },
+        "capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MAPCapabilityDeclaration" },
+          "description": "Individual capabilities this agent provides"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Semantic tags for categorization (e.g., 'code', 'review', 'testing')"
+        },
+        "accepts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MAPInterfaceSpec" },
+          "description": "Input interfaces this agent accepts"
+        },
+        "provides": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MAPInterfaceSpec" },
+          "description": "Output interfaces this agent provides"
+        }
+      }
+    },
+    "MAPCapabilityDeclaration": {
+      "type": "object",
+      "description": "A single capability declared by an agent",
+      "properties": {
+        "id": { "type": "string", "description": "Capability identifier (e.g., 'code-review', 'translation')" },
+        "version": { "type": "string", "description": "Capability version" },
+        "description": { "type": "string" },
+        "interfaces": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MAPInterfaceSpec" },
+          "description": "Interfaces for this specific capability"
+        }
+      },
+      "required": ["id"]
+    },
+    "MAPInterfaceSpec": {
+      "type": "object",
+      "description": "Content type interface specification",
+      "properties": {
+        "contentType": { "type": "string", "description": "MIME type (e.g., 'application/json', 'text/plain')" },
+        "schema": { "type": "string", "description": "Optional JSON Schema URI for the content" },
+        "description": { "type": "string" }
+      },
+      "required": ["contentType"]
+    },
+
+    "DIDDocument": {
+      "type": "object",
+      "description": "W3C DID Document for did:wba method",
+      "properties": {
+        "@context": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "id": { "type": "string", "description": "The DID (e.g., 'did:wba:agents.example.com:gateway')" },
+        "verificationMethod": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DIDVerificationMethod" }
+        },
+        "authentication": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Key references for authentication (e.g., 'did:wba:...#key-1')"
+        },
+        "service": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DIDService" }
+        }
+      },
+      "required": ["id"]
+    },
+    "DIDVerificationMethod": {
+      "type": "object",
+      "description": "A verification method in a DID Document",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "description": "Key type (e.g., 'JsonWebKey2020')" },
+        "controller": { "type": "string" },
+        "publicKeyJwk": { "type": "object", "description": "Public key in JWK format" }
+      },
+      "required": ["id", "type", "controller"]
+    },
+    "DIDService": {
+      "type": "object",
+      "description": "A service endpoint in a DID Document",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "description": "Service type (e.g., 'MAPFederationEndpoint')" },
+        "serviceEndpoint": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "object" }
+          ]
+        },
+        "mapProtocolVersion": { "type": "integer" },
+        "mapCapabilities": { "type": "object" }
+      },
+      "required": ["id", "type", "serviceEndpoint"]
+    },
+    "DIDWBAProof": {
+      "type": "object",
+      "description": "Cryptographic proof for DID:WBA authentication",
+      "properties": {
+        "type": { "type": "string", "description": "Proof type (e.g., 'JsonWebSignature2020')" },
+        "created": { "type": "string", "format": "date-time", "description": "ISO 8601 timestamp" },
+        "challenge": { "type": "string", "description": "Server-provided challenge nonce" },
+        "jws": { "type": "string", "description": "JWS compact serialization of the proof signature" }
+      },
+      "required": ["type", "created", "challenge", "jws"]
+    },
+    "DIDWBACredentials": {
+      "type": "object",
+      "description": "Federation auth credentials using did:wba",
+      "properties": {
+        "method": { "const": "did:wba" },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "did": { "type": "string", "description": "The DID of the authenticating system" },
+            "proof": { "$ref": "#/$defs/DIDWBAProof" }
+          },
+          "required": ["did", "proof"]
+        }
+      },
+      "required": ["method", "metadata"]
     }
   }
 }
