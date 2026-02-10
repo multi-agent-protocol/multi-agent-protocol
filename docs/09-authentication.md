@@ -22,6 +22,7 @@ MAP defines the following standard authentication methods:
 | `bearer` | Bearer token (JWT or opaque) | OAuth2, IdP integration, M2M tokens |
 | `api-key` | Simple API key | Simple integrations, internal services |
 | `mtls` | Mutual TLS (transport layer) | High-security service-to-service |
+| `did:wba` | DID-based, domain-anchored | Cross-org federation, open discovery |
 
 ### Extension Methods
 
@@ -384,6 +385,54 @@ For trusted local connections.
 - Reject `none` based on transport type (e.g., require auth for WebSocket)
 - Assign a default principal for anonymous connections
 
+### DID:WBA (`did:wba`)
+
+Domain-anchored decentralized identity based on the W3C `did:wba` method. Identity is derived from domain ownership: a DID like `did:wba:agents.example.com:gateway` resolves to a DID document hosted at `https://agents.example.com/gateway/did.json`.
+
+**Credential format:** DID and cryptographic proof in metadata
+
+```typescript
+{
+  "method": "did:wba",
+  "metadata": {
+    "did": "did:wba:agents.example.com:gateway",
+    "proof": {
+      "type": "JsonWebSignature2020",
+      "created": "2026-02-10T12:00:00.000Z",
+      "challenge": "map_chal_01ABCDEFGHJ0123456789AB",
+      "jws": "base64url-encoded-ecdsa-signature"
+    }
+  }
+}
+```
+
+**DID Document:** The resolved DID document MUST contain:
+- `verificationMethod` with the public key used to verify the proof
+- `authentication` referencing the verification method
+- Optionally, a `service` entry of type `MAPFederationEndpoint` with the MAP WebSocket URL
+
+**Proof verification:**
+1. Server generates a challenge nonce (format: `map_chal_<ULID>`)
+2. Client signs `challenge.did.created` using ECDSA P-256 with its private key
+3. Server resolves DID → fetches DID document → extracts public key
+4. Server verifies the JWS signature against the public key and checks proof freshness
+
+**Security considerations:**
+- DID documents are fetched over HTTPS — domain ownership proves identity
+- Proof freshness is enforced via the `created` timestamp (default max age: 5 minutes)
+- Servers MAY maintain a trusted domains list to restrict accepted DIDs
+- DID document caching with configurable TTL prevents excessive lookups
+
+**When to use:**
+- Cross-organization federation where pre-shared credentials are impractical
+- Open discovery scenarios where peers find each other via DID documents
+- Systems that need globally unique, verifiable agent identities
+
+**SDK support:**
+- `DIDWBAAuthenticator` — server-side authenticator (see `ts-sdk/src/server/auth/did-wba-authenticator.ts`)
+- `generateDIDWBAProof()` / `verifyDIDWBAProof()` — proof utilities (see `ts-sdk/src/federation/did-wba/proof.ts`)
+- `DIDWBAResolver` — DID document resolution with caching (see `ts-sdk/src/federation/did-wba/resolver.ts`)
+
 ---
 
 ## Token Refresh
@@ -665,6 +714,25 @@ const server = new MAPServer({
       new JWTAuthenticator({ /* ... */ }),
       new APIKeyAuthenticator({ /* ... */ }),
       new MTLSAuthenticator({ /* ... */ })
+    ]
+  }
+});
+```
+
+### Example 5: Federation Server with DID:WBA
+
+```typescript
+import { DIDWBAAuthenticator } from '@anthropic/multi-agent-protocol/server/auth';
+
+const server = new MAPServer({
+  auth: {
+    required: true,
+    methods: ['did:wba', 'bearer'],
+    authenticators: [
+      new DIDWBAAuthenticator({
+        trustedDomains: ['*.example.com', 'partner.org'],
+      }),
+      new JWTAuthenticator({ /* ... */ })
     ]
   }
 });

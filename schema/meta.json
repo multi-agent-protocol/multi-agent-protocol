@@ -252,7 +252,7 @@
       "implementedBy": "system",
       "callableBy": ["system"],
       "capabilities": [],
-      "description": "Connect to a peer MAP system",
+      "description": "Connect to a peer MAP system. Supports single-request auth with inline credentials including did:wba.",
       "requestType": "FederationConnectRequest",
       "responseType": "FederationConnectResponse"
     },
@@ -461,7 +461,9 @@
       "5000": "Federation unavailable",
       "5001": "System not found",
       "5002": "Federation auth failed",
-      "5003": "Route rejected"
+      "5003": "Route rejected",
+      "5004": "DID resolution failed",
+      "5005": "DID proof invalid"
     },
     "mail": {
       "10000": "Conversation not found",

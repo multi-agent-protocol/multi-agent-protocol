@@ -18,7 +18,7 @@ These proposals are scoped to MAP's federation and cross-system layers. They do 
 
 ## Proposal 1: Decentralized Identity via `did:wba` for Federation
 
-### Status: 🟡 Important — Should resolve before v1.0
+### Status: ✅ Implemented — See `ts-sdk/src/federation/did-wba/` and `ts-sdk/src/server/auth/did-wba-authenticator.ts`
 
 ### Problem
 
@@ -354,7 +354,7 @@ This proposal resolves **Q6.2: Federation Discovery** from `docs/01-open-questio
 
 ## Proposal 3: Linked Capability Documents for Agent Discovery
 
-### Status: 🟡 Important — Should resolve before v1.0
+### Status: ✅ Implemented — See `ts-sdk/src/types/index.ts` (MAPAgentCapabilityDescriptor) and agent handler/store updates
 
 ### Problem
 
@@ -865,7 +865,7 @@ When using `did:wba` authentication (Proposal 1), aliases can be implemented as 
 
 ## Proposal 6: Single-Request Federation Authentication
 
-### Status: 🟡 Important — Should resolve before v1.0
+### Status: ✅ Implemented — See `ts-sdk/src/server/federation/handlers.ts` and `ts-sdk/src/federation/challenge.ts`
 
 ### Problem
 

@@ -2,13 +2,13 @@
 
 ## Proposals Covered
 
-| # | Proposal | Effort | Depends On |
-|---|----------|--------|------------|
-| **P6** | Single-Request Federation Auth | Low | — |
-| **P3** | Linked Capability Documents | Medium | — |
-| **P1** | `did:wba` Decentralized Identity | High | P6 |
+| # | Proposal | Effort | Depends On | Status |
+|---|----------|--------|------------|--------|
+| **P6** | Single-Request Federation Auth | Low | — | ✅ Implemented |
+| **P3** | Linked Capability Documents | Medium | — | ✅ Implemented |
+| **P1** | `did:wba` Decentralized Identity | High | P6 | ✅ Implemented |
 
-Implementation order: **P6 → P3 → P1** (P3 and P6 are independent; P1 builds on P6).
+Implementation order: **P6 → P3 → P1** (P3 and P6 are independent; P1 builds on P6). All three phases are complete.
 
 ### Backwards Compatibility
 
@@ -20,7 +20,7 @@ MAP is pre-release (v0.0.8). All changes are treated as non-breaking for semver 
 
 ---
 
-## Phase 1: Single-Request Federation Auth (P6)
+## Phase 1: Single-Request Federation Auth (P6) ✅
 
 ### Goal
 
@@ -163,7 +163,7 @@ Simple utility — generates cryptographically random nonce with embedded timest
 
 ---
 
-## Phase 2: Linked Capability Documents (P3)
+## Phase 2: Linked Capability Documents (P3) ✅
 
 ### Goal
 
@@ -355,7 +355,7 @@ Modify `register()` (~line 215):
 
 ---
 
-## Phase 3: `did:wba` Decentralized Identity (P1)
+## Phase 3: `did:wba` Decentralized Identity (P1) ✅
 
 ### Goal
 
