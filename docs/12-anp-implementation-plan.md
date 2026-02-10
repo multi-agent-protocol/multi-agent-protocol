@@ -10,6 +10,14 @@
 
 Implementation order: **P6 → P3 → P1** (P3 and P6 are independent; P1 builds on P6).
 
+### Backwards Compatibility
+
+MAP is pre-release (v0.0.8). All changes are treated as non-breaking for semver purposes. However, for consumer awareness:
+
+- **P6**: Fully additive — only optional fields added to existing interfaces.
+- **P3**: Fully additive — only optional fields added to `Agent`, `AgentsListFilter`, register/spawn params.
+- **P1**: Widens `FederationAuth.method` from `"bearer" | "api-key" | "mtls"` to `FederationAuthMethod` (includes `"did:wba"`, `"none"`, `"oauth2"`, `x-${string}`). Existing exhaustive switch statements on `method` will need a `default` case. Acceptable for pre-release.
+
 ---
 
 ## Phase 1: Single-Request Federation Auth (P6)

@@ -59,6 +59,27 @@ export class InMemoryAgentStore implements AgentStore {
         }
       }
 
+      // Filter by structured capability ID from capabilityDescriptor
+      if (filter?.capabilityId !== undefined) {
+        const match = agent.capabilityDescriptor?.capabilities?.some(
+          (cap) => cap.id === filter.capabilityId
+        );
+        if (!match) continue;
+      }
+
+      // Filter by semantic tag from capabilityDescriptor
+      if (filter?.tag !== undefined) {
+        if (!agent.capabilityDescriptor?.tags?.includes(filter.tag)) continue;
+      }
+
+      // Filter by accepted content type from capabilityDescriptor
+      if (filter?.accepts !== undefined) {
+        const match = agent.capabilityDescriptor?.accepts?.some(
+          (spec) => spec.contentType === filter.accepts
+        );
+        if (!match) continue;
+      }
+
       // Note: scopeId filter is handled by caller (requires ScopeManager)
       results.push({ ...agent });
     }

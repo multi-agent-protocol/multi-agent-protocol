@@ -11,6 +11,9 @@ import type {
   PeerConnection,
   ServerFederationEnvelope,
 } from "../types";
+import type { AuthManager } from "../auth/types";
+import type { FederationAuth } from "../../types";
+import { generateFederationChallenge } from "../../federation/challenge";
 
 /**
  * Options for creating federation handlers.
@@ -18,6 +21,8 @@ import type {
 export interface FederationHandlerOptions {
   /** The federation gateway */
   gateway: FederationGateway;
+  /** Auth manager for single-request federation authentication */
+  authManager?: AuthManager;
 }
 
 /**
@@ -66,19 +71,34 @@ export function createFederationHandlers(
     /**
      * Connect to a peer system.
      *
+     * Supports single-request authentication: if `auth` is provided in params,
+     * the server attempts immediate authentication in the same round trip.
+     * If auth is not provided or fails recoverably, returns `authRequired`
+     * for the client to retry with credentials.
+     *
      * @param params.systemId - ID of the peer system
      * @param params.endpoint - WebSocket or other endpoint URL
-     * @param params.credentials - Optional authentication credentials
-     * @returns The peer connection
+     * @param params.auth - Optional authentication credentials (single-request auth)
+     * @param params.credentials - Legacy authentication credentials
+     * @returns The peer connection with optional auth result
      */
     "map/federation/connect": async (
       params: {
         systemId: string;
         endpoint: string;
+        auth?: FederationAuth;
         credentials?: unknown;
+        authContext?: { source: string; challenge?: string };
+        systemInfo?: { name: string; version: string; endpoint: string };
+        protocolVersion?: string;
+        exposure?: Record<string, unknown>;
       },
       ctx: HandlerContext
-    ): Promise<PeerConnection> => {
+    ): Promise<PeerConnection & {
+      connected: boolean;
+      principal?: { id: string; issuer?: string; claims?: Record<string, unknown> };
+      authRequired?: { methods: string[]; challenge?: string; required: boolean };
+    }> => {
       validateGatewayRole(ctx);
 
       if (!params.systemId) {
@@ -88,12 +108,80 @@ export function createFederationHandlers(
         throw new FederationError("endpoint is required");
       }
 
+      const { authManager } = options;
+
+      // Single-request auth: if credentials provided, attempt immediate authentication
+      if (params.auth && authManager) {
+        const authResult = await authManager.authenticate(
+          {
+            method: params.auth.method as any,
+            credential: params.auth.credentials,
+            metadata: params.auth.metadata,
+          },
+          {
+            transportType: 'federation',
+            metadata: { systemId: params.systemId, endpoint: params.endpoint },
+          }
+        );
+
+        if (!authResult.success) {
+          // Recoverable failure — return authRequired so client can retry
+          return {
+            systemId: params.systemId,
+            endpoint: params.endpoint,
+            status: "disconnected",
+            connected: false,
+            authRequired: {
+              methods: authManager.supportedMethods,
+              challenge: generateFederationChallenge(),
+              required: true,
+            },
+          };
+        }
+
+        // Auth succeeded — connect with principal
+        try {
+          const peer = await gateway.connectPeer({
+            systemId: params.systemId,
+            endpoint: params.endpoint,
+            credentials: params.auth.credentials,
+          });
+          return {
+            ...peer,
+            connected: true,
+            principal: authResult.principal,
+            sessionId: `fed_${params.systemId}_${Date.now()}`,
+          };
+        } catch (error) {
+          throw new FederationError(
+            `Failed to connect to peer ${params.systemId}: ${(error as Error).message}`
+          );
+        }
+      }
+
+      // No auth provided — check if auth is required
+      if (authManager && authManager.config.required) {
+        return {
+          systemId: params.systemId,
+          endpoint: params.endpoint,
+          status: "disconnected",
+          connected: false,
+          authRequired: {
+            methods: authManager.supportedMethods,
+            challenge: generateFederationChallenge(),
+            required: true,
+          },
+        };
+      }
+
+      // No auth required — proceed with existing behavior (backwards-compatible)
       try {
-        return await gateway.connectPeer({
+        const peer = await gateway.connectPeer({
           systemId: params.systemId,
           endpoint: params.endpoint,
           credentials: params.credentials,
         });
+        return { ...peer, connected: true };
       } catch (error) {
         throw new FederationError(
           `Failed to connect to peer ${params.systemId}: ${(error as Error).message}`

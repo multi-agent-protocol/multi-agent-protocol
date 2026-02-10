@@ -32,6 +32,11 @@ export interface AuthContext {
   };
   /** Additional transport-specific metadata */
   metadata?: Record<string, unknown>;
+  /** DID information (for did:wba authentication) */
+  didInfo?: {
+    did: string;
+    domain: string;
+  };
 }
 
 /**

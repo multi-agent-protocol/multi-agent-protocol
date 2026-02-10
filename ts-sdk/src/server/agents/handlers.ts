@@ -48,6 +48,8 @@ interface RegisterParams {
   metadata?: Record<string, unknown>;
   /** Capabilities this agent provides (for capability-based discovery) */
   capabilities?: string[];
+  /** Structured capability descriptor for rich agent discovery */
+  capabilityDescriptor?: import('../../types').MAPAgentCapabilityDescriptor;
 }
 
 /**
@@ -74,6 +76,12 @@ interface ListParams {
   scopeId?: string;
   /** Filter by capability (supports glob patterns) */
   capability?: string;
+  /** Filter by structured capability ID from capabilityDescriptor */
+  capabilityId?: string;
+  /** Filter by semantic tags from capabilityDescriptor */
+  tags?: string[];
+  /** Filter by accepted content type from capabilityDescriptor */
+  accepts?: string;
 }
 
 /**
@@ -137,7 +145,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
 
   return {
     "map/agents/register": async (params: unknown, ctx: HandlerContext) => {
-      const { name, role, metadata, capabilities } = params as RegisterParams;
+      const { name, role, metadata, capabilities, capabilityDescriptor } = params as RegisterParams;
 
       const registeredAgent = agents.register({
         name,
@@ -145,6 +153,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         metadata,
         sessionId: ctx.session.id,
         capabilities,
+        capabilityDescriptor,
       });
 
       // Track agent in session - use SessionManager if available for atomic updates
@@ -164,6 +173,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           state: registeredAgent.state,
           metadata: registeredAgent.metadata,
           capabilities: registeredAgent.capabilities,
+          capabilityDescriptor: registeredAgent.capabilityDescriptor,
           visibility: "public",
         },
       };
@@ -192,8 +202,16 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
     },
 
     "map/agents/list": async (params: unknown) => {
-      const filter = params as ListParams;
-      const agentList = agents.list(filter);
+      const listParams = (params ?? {}) as ListParams;
+
+      // Map protocol filter params to server AgentFilter
+      // The server AgentFilter uses singular `tag` while protocol uses `tags` array
+      const filter: Record<string, unknown> = { ...listParams };
+      if (listParams.tags && listParams.tags.length > 0) {
+        filter.tag = listParams.tags[0]; // Server filter supports one tag at a time
+      }
+
+      const agentList = agents.list(filter as any);
 
       // Return protocol-compliant response
       return {
@@ -204,6 +222,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           state: a.state,
           metadata: a.metadata,
           capabilities: a.capabilities,
+          capabilityDescriptor: a.capabilityDescriptor,
           visibility: "public",
         })),
       };
@@ -226,6 +245,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           state: agent.state,
           metadata: agent.metadata,
           capabilities: agent.capabilities,
+          capabilityDescriptor: agent.capabilityDescriptor,
           visibility: "public",
         },
       };
@@ -258,6 +278,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           state: agent.state,
           metadata: agent.metadata,
           capabilities: agent.capabilities,
+          capabilityDescriptor: agent.capabilityDescriptor,
           visibility: "public",
         },
       };
@@ -350,6 +371,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           role: childAgent.role,
           state: childAgent.state,
           metadata: childAgent.metadata,
+          capabilityDescriptor: childAgent.capabilityDescriptor,
           visibility: "public",
         },
       };

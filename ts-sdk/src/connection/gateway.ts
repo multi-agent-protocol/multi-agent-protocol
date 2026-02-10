@@ -18,6 +18,7 @@ import {
   type ConnectRequestParams,
   type ConnectResponseResult,
   type DisconnectResponseResult,
+  type FederationAuth,
   type FederationConnectRequestParams,
   type FederationConnectResponseResult,
   type FederationRouteRequestParams,
@@ -130,7 +131,7 @@ export class GatewayConnection {
   #connected = false;
   #isReconnecting = false;
   #lastConnectOptions?: {
-    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
+    auth?: FederationAuth | { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
   };
 
   constructor(stream: Stream, options: GatewayConnectionOptions = {}) {
@@ -252,17 +253,26 @@ export class GatewayConnection {
   // ===========================================================================
 
   /**
-   * Connect to a remote MAP system
+   * Connect to a remote MAP system.
+   *
+   * Supports single-request authentication: if `auth` is provided,
+   * credentials are sent in the initial connect request for 1-RTT auth.
+   * If the server responds with `authRequired`, the client can retry
+   * with appropriate credentials.
    */
   async connectToSystem(
     systemId: string,
     endpoint: string,
-    auth?: { method: 'bearer' | 'api-key' | 'mtls'; credentials?: string }
+    options?: {
+      auth?: FederationAuth;
+      authContext?: { source: "well-known" | "cached" | "configured"; challenge?: string };
+    }
   ): Promise<FederationConnectResponseResult> {
     const params: FederationConnectRequestParams = {
       systemId,
       endpoint,
-      auth,
+      auth: options?.auth,
+      authContext: options?.authContext,
     };
 
     const result = await this.#connection.sendRequest<
@@ -270,6 +280,7 @@ export class GatewayConnection {
       FederationConnectResponseResult
     >(FEDERATION_METHODS.FEDERATION_CONNECT, params);
 
+    // Only track as connected if auth succeeded or wasn't required
     if (result.connected && result.systemInfo) {
       this.#connectedSystems.set(systemId, {
         name: result.systemInfo.name,

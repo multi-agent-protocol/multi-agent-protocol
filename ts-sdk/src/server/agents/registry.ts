@@ -219,6 +219,8 @@ export class AgentRegistryImpl implements AgentRegistry {
     sessionId: string;
     /** Capabilities this agent provides (for capability-based discovery) */
     capabilities?: string[];
+    /** Structured capability descriptor for rich agent discovery */
+    capabilityDescriptor?: import('../../types').MAPAgentCapabilityDescriptor;
   }): RegisteredAgent {
     const now = Date.now();
     const agent: RegisteredAgent = {
@@ -231,6 +233,7 @@ export class AgentRegistryImpl implements AgentRegistry {
       registeredAt: now,
       lastStateChange: now,
       capabilities: params.capabilities,
+      capabilityDescriptor: params.capabilityDescriptor,
     };
 
     this.store.save(agent);
