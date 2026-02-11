@@ -1209,6 +1209,37 @@ export class ClientConnection {
   }
 
   // ===========================================================================
+  // Extensions
+  // ===========================================================================
+
+  /**
+   * Call a server extension method directly via JSON-RPC.
+   *
+   * Extension methods (prefixed with `_macro/` or similar) are registered on the
+   * server's RPC handler and callable as standard JSON-RPC methods. This bypasses
+   * ACP-over-MAP messaging — use this for simple request/response operations that
+   * don't need ACP session semantics.
+   *
+   * @param method - The extension method name (e.g., "_macro/workspace/files/search")
+   * @param params - Parameters to pass to the extension method
+   * @returns The result from the extension method
+   *
+   * @example
+   * ```typescript
+   * const result = await client.callExtension('_macro/workspace/files/search', {
+   *   agentId: 'agent-1',
+   *   query: 'app.tsx',
+   * });
+   * ```
+   */
+  async callExtension<TParams = unknown, TResult = unknown>(
+    method: string,
+    params?: TParams,
+  ): Promise<TResult> {
+    return this.#connection.sendRequest<TParams, TResult>(method, params);
+  }
+
+  // ===========================================================================
   // Mail
   // ===========================================================================
 
