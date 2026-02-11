@@ -50,6 +50,7 @@ export type MethodCategory =
   | 'auth'
   | 'federation'
   | 'mail'
+  | 'workspace'
   | 'notification';
 
 /** Capability path like 'observation.canQuery' */
@@ -352,6 +353,26 @@ export const METHOD_REGISTRY: Record<string, MethodInfo> = {
     category: 'mail',
     capabilities: ['mail.canViewHistory'],
     description: 'Replay turns from a specific point',
+  },
+
+  // Workspace methods
+  'workspace/search': {
+    method: 'workspace/search',
+    category: 'workspace',
+    capabilities: ['workspace.canSearch'],
+    description: 'Search for files matching a query',
+  },
+  'workspace/list': {
+    method: 'workspace/list',
+    category: 'workspace',
+    capabilities: ['workspace.canList'],
+    description: 'List files in a directory',
+  },
+  'workspace/read': {
+    method: 'workspace/read',
+    category: 'workspace',
+    capabilities: ['workspace.canRead'],
+    description: 'Read file contents',
   },
 
   // Notification methods (client → server)

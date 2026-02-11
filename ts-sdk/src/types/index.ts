@@ -259,6 +259,17 @@ export interface ParticipantCapabilities {
     /** Can create threads within conversations */
     canCreateThreads?: boolean;
   };
+  /** Workspace file access capabilities */
+  workspace?: {
+    /** Whether workspace is enabled (server response only) */
+    enabled?: boolean;
+    /** Can search files by pattern */
+    canSearch?: boolean;
+    /** Can list files in a directory */
+    canList?: boolean;
+    /** Can read file contents */
+    canRead?: boolean;
+  };
   /** Streaming/backpressure capabilities */
   streaming?: StreamingCapabilities;
 
@@ -2946,6 +2957,77 @@ export interface MailReplayResponseResult {
 }
 
 // =============================================================================
+// Workspace Request/Response Types
+// =============================================================================
+
+// --- workspace/search ---
+
+export interface WorkspaceSearchRequestParams {
+  /** Agent whose workspace to search */
+  agentId: AgentId;
+  /** Search query (matched against filenames) */
+  query: string;
+  /** Subdirectory to search within (relative to workspace root) */
+  cwd?: string;
+  /** Max results to return (default 50) */
+  limit?: number;
+  _meta?: Meta;
+}
+
+export interface WorkspaceFileResult {
+  /** Relative path from workspace root */
+  path: string;
+  /** Whether this is a directory */
+  isDirectory: boolean;
+  /** File size in bytes (undefined for directories) */
+  size?: number;
+  /** MIME type guess based on extension */
+  mime?: string;
+}
+
+export interface WorkspaceSearchResponseResult {
+  files: WorkspaceFileResult[];
+  _meta?: Meta;
+}
+
+// --- workspace/list ---
+
+export interface WorkspaceListRequestParams {
+  /** Agent whose workspace to list */
+  agentId: AgentId;
+  /** Directory to list (relative to workspace root, default ".") */
+  directory?: string;
+  _meta?: Meta;
+}
+
+export interface WorkspaceListResponseResult {
+  files: WorkspaceFileResult[];
+  _meta?: Meta;
+}
+
+// --- workspace/read ---
+
+export interface WorkspaceReadRequestParams {
+  /** Agent whose workspace to read from */
+  agentId: AgentId;
+  /** File path relative to workspace root */
+  path: string;
+  /** Optional line range */
+  lineRange?: { start: number; end: number };
+  _meta?: Meta;
+}
+
+export interface WorkspaceReadResponseResult {
+  /** File text content */
+  text: string;
+  /** MIME type */
+  mime: string;
+  /** File size in bytes */
+  size: number;
+  _meta?: Meta;
+}
+
+// =============================================================================
 // Notification Types
 // =============================================================================
 
@@ -3173,6 +3255,13 @@ export const MAIL_METHODS = {
   MAIL_REPLAY: "mail/replay",
 } as const;
 
+/** Workspace methods */
+export const WORKSPACE_METHODS = {
+  WORKSPACE_SEARCH: "workspace/search",
+  WORKSPACE_LIST: "workspace/list",
+  WORKSPACE_READ: "workspace/read",
+} as const;
+
 /** Notification methods */
 export const NOTIFICATION_METHODS = {
   EVENT: "map/event",
@@ -3196,6 +3285,7 @@ export const MAP_METHODS = {
   ...PERMISSION_METHODS,
   ...FEDERATION_METHODS,
   ...MAIL_METHODS,
+  ...WORKSPACE_METHODS,
 } as const;
 
 // Legacy aliases for backward compatibility
@@ -3379,6 +3469,11 @@ export const CAPABILITY_REQUIREMENTS: Record<string, string[]> = {
   [MAIL_METHODS.MAIL_THREAD_LIST]: ["mail.canJoin"],
   [MAIL_METHODS.MAIL_SUMMARY]: ["mail.canViewHistory"],
   [MAIL_METHODS.MAIL_REPLAY]: ["mail.canViewHistory"],
+
+  // Workspace
+  [WORKSPACE_METHODS.WORKSPACE_SEARCH]: ["workspace.canSearch"],
+  [WORKSPACE_METHODS.WORKSPACE_LIST]: ["workspace.canList"],
+  [WORKSPACE_METHODS.WORKSPACE_READ]: ["workspace.canRead"],
 } as const;
 
 // =============================================================================

@@ -6,6 +6,7 @@
  */
 
 import type { DIDWBAProof } from '../../types';
+import type { webcrypto } from 'crypto';
 
 /**
  * Options for generating a DID:WBA proof.
@@ -16,7 +17,7 @@ export interface ProofGenerationOptions {
   /** Server-provided challenge nonce */
   challenge: string;
   /** Private key in JWK format */
-  privateKey: JsonWebKey;
+  privateKey: webcrypto.JsonWebKey;
   /** Proof type (default: "JsonWebSignature2020") */
   proofType?: string;
 }
@@ -30,7 +31,7 @@ export interface ProofVerificationOptions {
   /** The proof to verify */
   proof: DIDWBAProof;
   /** Public key from the DID Document (JWK format) */
-  publicKey: JsonWebKey;
+  publicKey: webcrypto.JsonWebKey;
   /** Maximum proof age in ms (default: 300000 = 5 min) */
   maxAgeMs?: number;
 }
@@ -121,7 +122,7 @@ export async function verifyDIDWBAProof(options: ProofVerificationOptions): Prom
   const algorithm = getSigningAlgorithm(publicKey);
 
   // Import the public key
-  let cryptoKey: CryptoKey;
+  let cryptoKey: webcrypto.CryptoKey;
   try {
     cryptoKey = await crypto.subtle.importKey(
       'jwk',
@@ -154,7 +155,7 @@ export async function verifyDIDWBAProof(options: ProofVerificationOptions): Prom
 /**
  * Determine the Web Crypto algorithm parameters from a JWK.
  */
-function getSigningAlgorithm(key: JsonWebKey): EcdsaParams & EcKeyImportParams {
+function getSigningAlgorithm(key: webcrypto.JsonWebKey): webcrypto.EcdsaParams & webcrypto.EcKeyImportParams {
   if (key.kty === 'EC') {
     const namedCurve = key.crv ?? 'P-256';
     const hashMap: Record<string, string> = {

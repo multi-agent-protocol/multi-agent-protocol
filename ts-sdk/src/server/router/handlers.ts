@@ -53,6 +53,8 @@ export interface ConnectionHandlerOptions {
   mailCapabilities?: MailCapabilityConfig;
   /** Credential brokering configuration (optional). When provided and enabled, credential capabilities are advertised. */
   credentialCapabilities?: import("../credentials").CredentialCapabilityConfig;
+  /** Workspace capability configuration (optional). When provided and enabled, workspace capabilities are advertised. */
+  workspaceCapabilities?: import("../workspace").WorkspaceCapabilityConfig;
 }
 
 /**
@@ -124,6 +126,7 @@ export function createConnectionHandlers(
     mailCapabilities,
   } = options;
   const credentialCapabilities = options.credentialCapabilities;
+  const workspaceCapabilities = options.workspaceCapabilities;
 
   return {
     "map/connect": async (params: unknown, ctx: HandlerContext) => {
@@ -257,6 +260,16 @@ export function createConnectionHandlers(
           canGet: credentialCapabilities.canGet ?? true,
           canList: credentialCapabilities.canList ?? true,
           canStatus: credentialCapabilities.canStatus ?? true,
+        };
+      }
+
+      // Include workspace capabilities if configured and enabled
+      if (workspaceCapabilities?.enabled) {
+        capabilities.workspace = {
+          enabled: true,
+          canSearch: workspaceCapabilities.canSearch ?? true,
+          canList: workspaceCapabilities.canList ?? true,
+          canRead: workspaceCapabilities.canRead ?? true,
         };
       }
 

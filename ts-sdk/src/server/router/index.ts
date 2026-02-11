@@ -35,6 +35,9 @@ export {
   type MailCapabilityConfig,
 } from "./handlers";
 
+// Re-export workspace capability config for convenience
+export type { WorkspaceCapabilityConfig } from "../workspace";
+
 // MAPRouter OOP interface
 export { routerToHandlers, getProtocolMethods, getInterfaceMethod } from "./adapter";
 export { BaseMAPRouter, DefaultMAPRouter } from "./base-router";

@@ -55,6 +55,8 @@ import {
 } from "./router";
 import type { MailCapabilityConfig } from "./router/handlers";
 import { createCredentialHandlers } from "./credentials";
+import { createWorkspaceHandlers } from "./workspace";
+import type { WorkspaceCapabilityConfig, WorkspaceFileService } from "./workspace";
 import { AuthManagerImpl, authMiddleware } from "./auth";
 import type { AuthManager } from "./auth";
 
@@ -198,6 +200,17 @@ export interface MAPServerOptions {
     capabilities?: Omit<import('./credentials').CredentialCapabilityConfig, 'enabled'>;
     /** If set, only these providers are visible */
     allowedProviders?: string[];
+  };
+
+  // === Workspace Config ===
+  /** Workspace file access configuration. Omit or set enabled=false to disable. */
+  workspace?: {
+    /** Enable workspace file access (default: false) */
+    enabled?: boolean;
+    /** File service implementation. Required when enabled=true. */
+    fileService?: WorkspaceFileService;
+    /** Workspace capability overrides for connect handshake */
+    capabilities?: Omit<WorkspaceCapabilityConfig, 'enabled'>;
   };
 }
 
@@ -373,6 +386,13 @@ export class MAPServer {
       );
     }
 
+    // Validate workspace config
+    if (options.workspace?.enabled && !options.workspace.fileService) {
+      throw new Error(
+        'MAPServer: workspace.fileService is required when workspace.enabled is true',
+      );
+    }
+
     // Set up authentication if configured
     if (options.auth?.authenticators?.length) {
       this.auth = new AuthManagerImpl({
@@ -414,6 +434,9 @@ export class MAPServer {
           credentialCapabilities: options.credentials?.enabled
             ? { enabled: true, ...options.credentials.capabilities }
             : undefined,
+          workspaceCapabilities: options.workspace?.enabled
+            ? { enabled: true, ...options.workspace.capabilities }
+            : undefined,
         }),
         createAgentHandlers({ agents: this.agents, sessions: this.sessions }),
         createScopeHandlers({ scopes: this.scopes }),
@@ -443,6 +466,13 @@ export class MAPServer {
                 broker: options.credentials.broker!,
                 eventBus: this.eventBus,
                 allowedProviders: options.credentials.allowedProviders,
+              }),
+            ]
+          : []),
+        ...(options.workspace?.enabled
+          ? [
+              createWorkspaceHandlers({
+                fileService: options.workspace.fileService!,
               }),
             ]
           : []),

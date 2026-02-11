@@ -131,7 +131,7 @@ export class GatewayConnection {
   #connected = false;
   #isReconnecting = false;
   #lastConnectOptions?: {
-    auth?: FederationAuth | { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
+    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
   };
 
   constructor(stream: Stream, options: GatewayConnectionOptions = {}) {

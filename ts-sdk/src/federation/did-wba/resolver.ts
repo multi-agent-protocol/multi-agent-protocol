@@ -5,7 +5,7 @@
  * `https://<domain>/<path>/did.json` over HTTPS.
  */
 
-import type { DIDDocument, DIDVerificationMethod, DIDService } from '../../types';
+import type { DIDDocument, DIDVerificationMethod } from '../../types';
 
 /**
  * Options for the DID:WBA resolver.

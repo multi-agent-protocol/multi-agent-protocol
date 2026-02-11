@@ -408,6 +408,33 @@
       "description": "Check credential broker status and available providers",
       "requestType": "CredStatusRequest",
       "responseType": "CredStatusResponse"
+    },
+    "workspace/search": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["workspace.canSearch"],
+      "description": "Search for files matching a query in an agent's workspace",
+      "requestType": "WorkspaceSearchRequest",
+      "responseType": "WorkspaceSearchResponse"
+    },
+    "workspace/list": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["workspace.canList"],
+      "description": "List files in a directory of an agent's workspace",
+      "requestType": "WorkspaceListRequest",
+      "responseType": "WorkspaceListResponse"
+    },
+    "workspace/read": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["workspace.canRead"],
+      "description": "Read file contents from an agent's workspace",
+      "requestType": "WorkspaceReadRequest",
+      "responseType": "WorkspaceReadResponse"
     }
   },
   "notifications": {
@@ -483,6 +510,12 @@
       "11001": "Credential scope denied",
       "11002": "Credential provider unavailable",
       "11003": "Credential request failed"
+    },
+    "workspace": {
+      "12000": "Workspace not enabled",
+      "12001": "File not found",
+      "12002": "Permission denied",
+      "12003": "Invalid path"
     }
   },
   "tiers": {
