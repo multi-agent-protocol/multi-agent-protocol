@@ -1059,7 +1059,13 @@ export interface SubscriptionAckNotification extends MAPNotificationBase<Subscri
 // Message Event Data Types
 // =============================================================================
 
-/** Data for message_sent events (no payload for privacy) */
+/**
+ * Data for message_sent events.
+ *
+ * Payload is included for subscribers that have permission to observe the
+ * event stream. Access control is enforced at the subscription level —
+ * clients that can subscribe are trusted to see message content.
+ */
 export interface MessageSentEventData {
   messageId: MessageId;
   from: ParticipantId;
@@ -1067,15 +1073,22 @@ export interface MessageSentEventData {
   timestamp: Timestamp;
   correlationId?: CorrelationId;
   priority?: MessagePriority;
+  payload?: unknown;
 }
 
-/** Data for message_delivered events (no payload for privacy) */
+/**
+ * Data for message_delivered events.
+ *
+ * Payload is included for subscribers that have permission to observe the
+ * event stream. Access control is enforced at the subscription level.
+ */
 export interface MessageDeliveredEventData {
   messageId: MessageId;
   from: ParticipantId;
   deliveredTo: ParticipantId[];
   timestamp: Timestamp;
   correlationId?: CorrelationId;
+  payload?: unknown;
 }
 
 /** Data for message_failed events */

@@ -663,11 +663,11 @@ export class TestServer {
       }
     }
 
-    // Emit message_sent event
+    // Emit message_sent event (includes full message for observation)
     this.emitEvent({
       type: EVENT_TYPES.MESSAGE_SENT,
       source: senderId,
-      data: { messageId, to: params.to },
+      data: { messageId, to: params.to, message },
     });
 
     return buildSendResponse(messageId, delivered);
