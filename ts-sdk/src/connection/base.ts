@@ -240,7 +240,12 @@ export class BaseConnection {
 
     await this.#sendMessage(request as AnyMessage);
 
-    return responsePromise;
+    // `return await` (not bare `return`) ensures the rejection handler is
+    // attached synchronously, preventing the runtime from detecting the
+    // rejection as unhandled during the gap before the async function
+    // adopts the promise. This matters in Bun worker threads where
+    // unhandled rejections terminate the thread.
+    return await responsePromise;
   }
 
   /**

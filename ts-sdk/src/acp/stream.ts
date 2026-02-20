@@ -319,18 +319,42 @@ export class ACPStreamConnection extends EventEmitter {
           this.#lastEventId = event.id;
         }
 
-        // Handle message events
+        // Handle message events — wrapped in per-message try/catch so
+        // one bad message doesn't kill the event processing loop.
         if (event.type === "message_delivered" && event.data) {
           const message = (event.data as { message?: Message }).message;
           if (message?.payload) {
-            await this.#handleIncomingMessage(message);
+            try {
+              await this.#handleIncomingMessage(message);
+            } catch (msgError) {
+              // Emit error but keep processing — don't let one message
+              // crash the entire event loop.
+              this.#safeEmitError(
+                msgError instanceof Error ? msgError : new Error(String(msgError))
+              );
+            }
           }
         }
       }
     } catch (error) {
       if (!this.#closed) {
-        this.emit("error", error);
+        this.#safeEmitError(error instanceof Error ? error : new Error(String(error)));
       }
+    }
+  }
+
+  /**
+   * Emit an "error" event safely. If no listeners are attached,
+   * EventEmitter.emit("error") throws the error as an uncaught
+   * exception — this method logs instead when no listeners exist.
+   */
+  #safeEmitError(error: Error): void {
+    if (this.listenerCount("error") > 0) {
+      this.emit("error", error);
+    } else {
+      // No listeners — log to prevent the EventEmitter from throwing
+      // an uncaught exception that crashes the process/worker thread.
+      console.error("ACPStreamConnection error (no listener):", error.message);
     }
   }
 
@@ -575,7 +599,11 @@ export class ACPStreamConnection extends EventEmitter {
       throw new Error("ACP stream closed");
     }
 
-    return resultPromise;
+    // `return await` (not bare `return`) ensures the rejection handler is
+    // attached synchronously, preventing the runtime from detecting the
+    // rejection as unhandled during the microtask gap before the async
+    // function adopts the promise. Critical in Bun worker threads.
+    return await resultPromise;
   }
 
   /**
@@ -637,7 +665,7 @@ export class ACPStreamConnection extends EventEmitter {
       throw new Error("Must call initialize() before authenticate()");
     }
 
-    return this.#sendRequest<ACPAuthenticateRequest, ACPAuthenticateResponse>(
+    return await this.#sendRequest<ACPAuthenticateRequest, ACPAuthenticateResponse>(
       ACP_METHODS.AUTHENTICATE,
       params
     );
@@ -685,7 +713,7 @@ export class ACPStreamConnection extends EventEmitter {
    * Set the session mode.
    */
   async setSessionMode(params: ACPSetSessionModeRequest): Promise<ACPSetSessionModeResponse> {
-    return this.#sendRequest<ACPSetSessionModeRequest, ACPSetSessionModeResponse>(
+    return await this.#sendRequest<ACPSetSessionModeRequest, ACPSetSessionModeResponse>(
       ACP_METHODS.SESSION_SET_MODE,
       params
     );
@@ -704,7 +732,7 @@ export class ACPStreamConnection extends EventEmitter {
       throw new Error("Must call newSession() or loadSession() before prompt()");
     }
 
-    return this.#sendRequest<ACPPromptRequest, ACPPromptResponse>(
+    return await this.#sendRequest<ACPPromptRequest, ACPPromptResponse>(
       ACP_METHODS.SESSION_PROMPT,
       params
     );
@@ -754,7 +782,7 @@ export class ACPStreamConnection extends EventEmitter {
       throw new Error("Must call initialize() before callExtension()");
     }
 
-    return this.#sendRequest<TParams, TResult>(method, params);
+    return await this.#sendRequest<TParams, TResult>(method, params);
   }
 
   // ===========================================================================

@@ -1236,7 +1236,7 @@ export class ClientConnection {
     method: string,
     params?: TParams,
   ): Promise<TResult> {
-    return this.#connection.sendRequest<TParams, TResult>(method, params);
+    return await this.#connection.sendRequest<TParams, TResult>(method, params);
   }
 
   // ===========================================================================
