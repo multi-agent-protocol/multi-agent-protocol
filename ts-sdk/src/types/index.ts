@@ -51,6 +51,9 @@ export type TurnId = string;
 /** Unique identifier for a thread within a conversation (format: 'thread-{ulid}') */
 export type ThreadId = string;
 
+/** Unique identifier for a trajectory checkpoint */
+export type CheckpointId = string;
+
 /** JSON-RPC request ID */
 export type RequestId = string | number;
 
@@ -269,6 +272,17 @@ export interface ParticipantCapabilities {
     canList?: boolean;
     /** Can read file contents */
     canRead?: boolean;
+  };
+  /** Trajectory checkpoint tracking capabilities */
+  trajectory?: {
+    /** Whether trajectory tracking is enabled (server response only) */
+    enabled?: boolean;
+    /** Can report trajectory checkpoints */
+    canReport?: boolean;
+    /** Can list and query checkpoints */
+    canQuery?: boolean;
+    /** Can request full checkpoint content */
+    canRequestContent?: boolean;
   };
   /** Streaming/backpressure capabilities */
   streaming?: StreamingCapabilities;
@@ -811,6 +825,10 @@ export const EVENT_TYPES = {
   FEDERATION_CONNECTED: "federation_connected",
   FEDERATION_DISCONNECTED: "federation_disconnected",
 
+  // Trajectory events
+  TRAJECTORY_CHECKPOINT: "trajectory.checkpoint",
+  TRAJECTORY_CONTENT_AVAILABLE: "trajectory.content.available",
+
   // Mail events
   MAIL_CREATED: "mail.created",
   MAIL_CLOSED: "mail.closed",
@@ -983,6 +1001,12 @@ export interface SubscriptionFilter {
    */
   mail?: MailSubscriptionFilter;
 
+  /**
+   * Trajectory-specific filter for checkpoint events.
+   * Matches trajectory events for a specific agent, session, or branch.
+   */
+  trajectory?: TrajectorySubscriptionFilter;
+
   _meta?: Meta;
 }
 
@@ -1113,6 +1137,7 @@ export type ErrorCategory =
   | "resource"
   | "federation"
   | "mail"
+  | "trajectory"
   | "internal";
 
 /** Structured error data */
@@ -3041,6 +3066,205 @@ export interface WorkspaceReadResponseResult {
 }
 
 // =============================================================================
+// Trajectory Types
+// =============================================================================
+
+/**
+ * A trajectory checkpoint records a snapshot of agent work at a meaningful point.
+ *
+ * The checkpoint intentionally carries only minimal, agent-agnostic fields.
+ * Domain-specific data (token usage, file lists, summaries, attribution, VCS
+ * info, etc.) belongs in the freeform `metadata` bag so that different agent
+ * implementations can attach whatever makes sense for their workflow.
+ */
+export interface TrajectoryCheckpoint {
+  /** Unique checkpoint identifier */
+  id: CheckpointId;
+  /** The agent that created this checkpoint */
+  agentId: AgentId;
+  /** When the checkpoint was created */
+  timestamp: Timestamp;
+  /** Short human-readable label (e.g., commit message, task name) */
+  label?: string;
+  /** Agent's work session identifier (distinct from MAP protocol SessionId) */
+  sessionId?: string;
+  /** Extensible key-value metadata — agent-specific data goes here */
+  metadata?: Record<string, unknown>;
+  _meta?: Meta;
+}
+
+/**
+ * Content artifact names are freeform strings.
+ * Well-known names include "metadata", "transcript", "prompts", "context"
+ * but agents may define their own.
+ */
+export type TrajectoryContentField = string;
+
+/** Base fields common to both inline and streaming content responses */
+export interface TrajectoryContentResultBase {
+  checkpointId: CheckpointId;
+  /** Named content artifacts — small payloads are delivered inline */
+  artifacts: Record<string, unknown>;
+}
+
+/** Inline content response — all content fits in a single message */
+export interface TrajectoryContentResultInline extends TrajectoryContentResultBase {
+  streaming: false;
+}
+
+/** Streaming content response — one large artifact will arrive as chunks */
+export interface TrajectoryContentResultStreaming extends TrajectoryContentResultBase {
+  streaming: true;
+  /** Unique ID for correlating chunks */
+  streamId: string;
+  /** Which artifact key is being streamed */
+  streamArtifact: string;
+  /** Info about the upcoming stream */
+  streamInfo: {
+    totalBytes: number;
+    totalChunks: number;
+    encoding: "base64";
+  };
+}
+
+/** Content result — either inline or streaming */
+export type TrajectoryContentResult =
+  | TrajectoryContentResultInline
+  | TrajectoryContentResultStreaming;
+
+/** Params for a content chunk notification */
+export interface TrajectoryContentChunkParams {
+  /** Correlates to streamId from the streaming response */
+  streamId: string;
+  /** 0-based chunk index */
+  index: number;
+  /** Base64-encoded chunk data */
+  data: string;
+  /** True on the last chunk */
+  final?: boolean;
+  /** SHA-256 checksum of the full content (only on final chunk) */
+  checksum?: string;
+}
+
+// =============================================================================
+// Trajectory Subscription Filter
+// =============================================================================
+
+/** Trajectory-specific subscription filter */
+export interface TrajectorySubscriptionFilter {
+  /** Filter by agent ID */
+  agentId?: AgentId;
+  /** Filter by work session ID */
+  sessionId?: string;
+}
+
+// =============================================================================
+// Trajectory Event Data Types
+// =============================================================================
+
+/** Data for trajectory.checkpoint events */
+export interface TrajectoryCheckpointEventData {
+  checkpoint: TrajectoryCheckpoint;
+}
+
+/** Data for trajectory.content.available events */
+export interface TrajectoryContentAvailableEventData {
+  checkpointId: CheckpointId;
+  agentId: AgentId;
+}
+
+// =============================================================================
+// Trajectory Request/Response Types
+// =============================================================================
+
+// --- trajectory/checkpoint ---
+
+export interface TrajectoryCheckpointRequestParams {
+  /** Checkpoint data (timestamp auto-filled by server if omitted) */
+  checkpoint: Omit<TrajectoryCheckpoint, "timestamp"> & { timestamp?: Timestamp };
+  _meta?: Meta;
+}
+
+export interface TrajectoryCheckpointRequest extends MAPRequestBase<TrajectoryCheckpointRequestParams> {
+  method: "trajectory/checkpoint";
+  params: TrajectoryCheckpointRequestParams;
+}
+
+export interface TrajectoryCheckpointResponseResult {
+  checkpoint: TrajectoryCheckpoint;
+  _meta?: Meta;
+}
+
+// --- trajectory/list ---
+
+export interface TrajectoryListRequestParams {
+  filter?: {
+    agentId?: AgentId;
+    sessionId?: string;
+    afterTimestamp?: Timestamp;
+    beforeTimestamp?: Timestamp;
+  };
+  limit?: number;
+  cursor?: string;
+  _meta?: Meta;
+}
+
+export interface TrajectoryListRequest extends MAPRequestBase<TrajectoryListRequestParams> {
+  method: "trajectory/list";
+  params: TrajectoryListRequestParams;
+}
+
+export interface TrajectoryListResponseResult {
+  checkpoints: TrajectoryCheckpoint[];
+  hasMore: boolean;
+  nextCursor?: string;
+  _meta?: Meta;
+}
+
+// --- trajectory/get ---
+
+export interface TrajectoryGetRequestParams {
+  checkpointId: CheckpointId;
+  _meta?: Meta;
+}
+
+export interface TrajectoryGetRequest extends MAPRequestBase<TrajectoryGetRequestParams> {
+  method: "trajectory/get";
+  params: TrajectoryGetRequestParams;
+}
+
+export interface TrajectoryGetResponseResult {
+  checkpoint: TrajectoryCheckpoint;
+  _meta?: Meta;
+}
+
+// --- trajectory/content ---
+
+export interface TrajectoryContentRequestParams {
+  checkpointId: CheckpointId;
+  /** Which content fields to include (default: all) */
+  include?: TrajectoryContentField[];
+  _meta?: Meta;
+}
+
+export interface TrajectoryContentRequest extends MAPRequestBase<TrajectoryContentRequestParams> {
+  method: "trajectory/content";
+  params: TrajectoryContentRequestParams;
+}
+
+export interface TrajectoryContentResponseResult {
+  content: TrajectoryContentResult;
+  _meta?: Meta;
+}
+
+// --- trajectory/content.chunk (notification) ---
+
+export interface TrajectoryContentChunkNotification extends MAPNotificationBase<TrajectoryContentChunkParams> {
+  method: "trajectory/content.chunk";
+  params: TrajectoryContentChunkParams;
+}
+
+// =============================================================================
 // Notification Types
 // =============================================================================
 
@@ -3167,13 +3391,19 @@ export type MAPRequest =
   | MailThreadCreateRequest
   | MailThreadListRequest
   | MailSummaryRequest
-  | MailReplayRequest;
+  | MailReplayRequest
+  // Trajectory
+  | TrajectoryCheckpointRequest
+  | TrajectoryListRequest
+  | TrajectoryGetRequest
+  | TrajectoryContentRequest;
 
 /** All MAP notification types */
 export type MAPNotification =
   | EventNotification
   | MessageNotification
-  | SubscriptionAckNotification;
+  | SubscriptionAckNotification
+  | TrajectoryContentChunkNotification;
 
 // =============================================================================
 // Method Constants (Reorganized by capability domain)
@@ -3275,6 +3505,14 @@ export const WORKSPACE_METHODS = {
   WORKSPACE_READ: "workspace/read",
 } as const;
 
+/** Trajectory methods - Agent work trajectory tracking */
+export const TRAJECTORY_METHODS = {
+  TRAJECTORY_CHECKPOINT: "trajectory/checkpoint",
+  TRAJECTORY_LIST: "trajectory/list",
+  TRAJECTORY_GET: "trajectory/get",
+  TRAJECTORY_CONTENT: "trajectory/content",
+} as const;
+
 /** Notification methods */
 export const NOTIFICATION_METHODS = {
   EVENT: "map/event",
@@ -3283,6 +3521,8 @@ export const NOTIFICATION_METHODS = {
   SUBSCRIBE_ACK: "map/subscribe.ack",
   /** Server notifies client that auth is about to expire */
   AUTH_EXPIRING: "map/auth/expiring",
+  /** Content chunk for streaming large trajectory transcripts */
+  TRAJECTORY_CONTENT_CHUNK: "trajectory/content.chunk",
 } as const;
 
 /** All MAP methods */
@@ -3299,6 +3539,7 @@ export const MAP_METHODS = {
   ...FEDERATION_METHODS,
   ...MAIL_METHODS,
   ...WORKSPACE_METHODS,
+  ...TRAJECTORY_METHODS,
 } as const;
 
 // Legacy aliases for backward compatibility
@@ -3394,6 +3635,15 @@ export const MAIL_ERROR_CODES = {
   MAIL_PARENT_CONVERSATION_NOT_FOUND: 10010,
 } as const;
 
+/** Trajectory error codes */
+export const TRAJECTORY_ERROR_CODES = {
+  TRAJECTORY_NOT_ENABLED: 13000,
+  TRAJECTORY_CHECKPOINT_NOT_FOUND: 13001,
+  TRAJECTORY_CONTENT_UNAVAILABLE: 13002,
+  TRAJECTORY_STREAM_FAILED: 13003,
+  TRAJECTORY_PERMISSION_DENIED: 13004,
+} as const;
+
 /** All error codes */
 export const ERROR_CODES = {
   ...PROTOCOL_ERROR_CODES,
@@ -3403,6 +3653,7 @@ export const ERROR_CODES = {
   ...RESOURCE_ERROR_CODES,
   ...FEDERATION_ERROR_CODES,
   ...MAIL_ERROR_CODES,
+  ...TRAJECTORY_ERROR_CODES,
 } as const;
 
 /** Protocol version */
@@ -3487,6 +3738,12 @@ export const CAPABILITY_REQUIREMENTS: Record<string, string[]> = {
   [WORKSPACE_METHODS.WORKSPACE_SEARCH]: ["workspace.canSearch"],
   [WORKSPACE_METHODS.WORKSPACE_LIST]: ["workspace.canList"],
   [WORKSPACE_METHODS.WORKSPACE_READ]: ["workspace.canRead"],
+
+  // Trajectory
+  [TRAJECTORY_METHODS.TRAJECTORY_CHECKPOINT]: ["trajectory.canReport"],
+  [TRAJECTORY_METHODS.TRAJECTORY_LIST]: ["trajectory.canQuery"],
+  [TRAJECTORY_METHODS.TRAJECTORY_GET]: ["trajectory.canQuery"],
+  [TRAJECTORY_METHODS.TRAJECTORY_CONTENT]: ["trajectory.canRequestContent"],
 } as const;
 
 // =============================================================================

@@ -1741,3 +1741,82 @@ export interface BaseMAPRouterOptions {
   messages: MessageRouter;
   eventBus: EventBus;
 }
+
+// =============================================================================
+// Trajectory - Agent Work Trajectory Tracking
+// =============================================================================
+
+import type {
+  TrajectoryCheckpoint,
+  TrajectoryContentField,
+  TrajectoryContentResult,
+} from "../types";
+
+/** Filter criteria for querying trajectory checkpoints */
+export interface TrajectoryFilter {
+  agentId?: string;
+  sessionId?: string;
+  afterTimestamp?: number;
+  beforeTimestamp?: number;
+}
+
+/** Storage interface for trajectory checkpoints */
+export interface TrajectoryStore {
+  save(checkpoint: TrajectoryCheckpoint): void;
+  get(id: string): TrajectoryCheckpoint | undefined;
+  list(filter?: TrajectoryFilter): TrajectoryCheckpoint[];
+  delete(id: string): boolean;
+  clear(): void;
+}
+
+/**
+ * Content provider for serving full checkpoint content.
+ * Implementations may read from git, filesystem, or remote storage.
+ */
+export interface TrajectoryContentProvider {
+  getContent(
+    checkpointId: string,
+    include?: TrajectoryContentField[]
+  ): Promise<TrajectoryContentResult>;
+}
+
+/** Options for creating a TrajectoryManager */
+export interface TrajectoryManagerOptions {
+  store: TrajectoryStore;
+  eventBus: EventBus;
+  contentProvider?: TrajectoryContentProvider;
+}
+
+/**
+ * Manages trajectory checkpoints and content retrieval.
+ *
+ * Events emitted:
+ * - trajectory.checkpoint — when a checkpoint is reported
+ * - trajectory.content.available — when content is cached/available
+ */
+export interface TrajectoryManager {
+  /** Report a new checkpoint. Returns the stored checkpoint with server-assigned timestamp. */
+  reportCheckpoint(
+    checkpoint: Omit<TrajectoryCheckpoint, "timestamp"> & { timestamp?: number },
+    reportedBy: string
+  ): TrajectoryCheckpoint;
+
+  /** Get a checkpoint by ID */
+  get(id: string): TrajectoryCheckpoint | undefined;
+
+  /** List checkpoints with optional filter and pagination */
+  list(
+    filter?: TrajectoryFilter,
+    limit?: number,
+    cursor?: string
+  ): { checkpoints: TrajectoryCheckpoint[]; hasMore: boolean; nextCursor?: string };
+
+  /** Set the content provider for serving full checkpoint content */
+  setContentProvider(provider: TrajectoryContentProvider): void;
+
+  /** Request full content for a checkpoint */
+  requestContent(
+    checkpointId: string,
+    include?: TrajectoryContentField[]
+  ): Promise<TrajectoryContentResult>;
+}

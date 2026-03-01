@@ -435,6 +435,42 @@
       "description": "Read file contents from an agent's workspace",
       "requestType": "WorkspaceReadRequest",
       "responseType": "WorkspaceReadResponse"
+    },
+    "trajectory/checkpoint": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["agent"],
+      "capabilities": ["trajectory.canReport"],
+      "description": "Report a trajectory checkpoint with metadata",
+      "requestType": "TrajectoryCheckpointRequest",
+      "responseType": "TrajectoryCheckpointResponse"
+    },
+    "trajectory/list": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["trajectory.canQuery"],
+      "description": "List trajectory checkpoints with filtering",
+      "requestType": "TrajectoryListRequest",
+      "responseType": "TrajectoryListResponse"
+    },
+    "trajectory/get": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["trajectory.canQuery"],
+      "description": "Get a specific trajectory checkpoint",
+      "requestType": "TrajectoryGetRequest",
+      "responseType": "TrajectoryGetResponse"
+    },
+    "trajectory/content": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["trajectory.canRequestContent"],
+      "description": "Request full checkpoint content (may stream large transcripts)",
+      "requestType": "TrajectoryContentRequest",
+      "responseType": "TrajectoryContentResponse"
     }
   },
   "notifications": {
@@ -449,6 +485,12 @@
       "direction": "system-to-participant",
       "description": "Message delivery notification",
       "paramsType": "MessageNotification"
+    },
+    "trajectory/content.chunk": {
+      "tier": "extension",
+      "direction": "system-to-participant",
+      "description": "Content chunk for streaming large trajectory transcripts",
+      "paramsType": "TrajectoryContentChunkNotification"
     }
   },
   "errorCodes": {
@@ -516,6 +558,13 @@
       "12001": "File not found",
       "12002": "Permission denied",
       "12003": "Invalid path"
+    },
+    "trajectory": {
+      "13000": "Trajectory not enabled",
+      "13001": "Checkpoint not found",
+      "13002": "Content unavailable",
+      "13003": "Stream failed",
+      "13004": "Permission denied"
     }
   },
   "tiers": {

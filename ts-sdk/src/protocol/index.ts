@@ -51,6 +51,7 @@ export type MethodCategory =
   | 'federation'
   | 'mail'
   | 'workspace'
+  | 'trajectory'
   | 'notification';
 
 /** Capability path like 'observation.canQuery' */
@@ -373,6 +374,32 @@ export const METHOD_REGISTRY: Record<string, MethodInfo> = {
     category: 'workspace',
     capabilities: ['workspace.canRead'],
     description: 'Read file contents',
+  },
+
+  // Trajectory methods
+  'trajectory/checkpoint': {
+    method: 'trajectory/checkpoint',
+    category: 'trajectory',
+    capabilities: ['trajectory.canReport'],
+    description: 'Report a trajectory checkpoint',
+  },
+  'trajectory/list': {
+    method: 'trajectory/list',
+    category: 'trajectory',
+    capabilities: ['trajectory.canQuery'],
+    description: 'List trajectory checkpoints',
+  },
+  'trajectory/get': {
+    method: 'trajectory/get',
+    category: 'trajectory',
+    capabilities: ['trajectory.canQuery'],
+    description: 'Get a specific trajectory checkpoint',
+  },
+  'trajectory/content': {
+    method: 'trajectory/content',
+    category: 'trajectory',
+    capabilities: ['trajectory.canRequestContent'],
+    description: 'Request full content for a checkpoint',
   },
 
   // Notification methods (client → server)
