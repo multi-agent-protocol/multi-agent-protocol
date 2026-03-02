@@ -1250,6 +1250,27 @@ export class AgentConnection {
   }
 
   // ===========================================================================
+  // Extensions
+  // ===========================================================================
+
+  /**
+   * Call an extension method on the MAP server.
+   *
+   * Sends a raw JSON-RPC request with the given method and params.
+   * Use this for protocol extensions like trajectory, macro-agent, etc.
+   *
+   * @param method - The extension method name (e.g., 'trajectory/checkpoint')
+   * @param params - Optional parameters for the method
+   * @returns The result from the server
+   */
+  async callExtension<TParams = unknown, TResult = unknown>(
+    method: string,
+    params?: TParams,
+  ): Promise<TResult> {
+    return await this.#connection.sendRequest<TParams, TResult>(method, params);
+  }
+
+  // ===========================================================================
   // Internal
   // ===========================================================================
 
