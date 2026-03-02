@@ -1,6 +1,6 @@
 {
   "name": "@multi-agent-protocol/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "TypeScript SDK for the Multi-Agent Protocol (MAP)",
   "main": "dist/index.cjs",
