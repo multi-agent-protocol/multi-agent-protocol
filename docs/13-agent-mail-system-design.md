@@ -40,6 +40,347 @@ The current `AgentConnection` exposes mail as **13 individual RPC methods**. Thi
 
 ---
 
+## Interface and Delivery Mechanism
+
+This is the central design question: how does mail actually reach agents, and what does the agent interact with?
+
+### Current Delivery Path
+
+Today MAP has **two separate delivery channels** that operate independently:
+
+```
+Channel 1: Ephemeral Messages (map/send → notification/message)
+─────────────────────────────────────────────────────────────
+Agent A                    MAP Server                    Agent B
+   │                          │                            │
+   │─── map/send ────────────►│                            │
+   │   { to: { agent: B },   │                            │
+   │     payload: {...},      │                            │
+   │     meta: { mail: {      │                            │
+   │       conversationId } } │                            │
+   │   }                      │                            │
+   │                          │── notification/message ───►│
+   │                          │  { message: {              │
+   │                          │    id, from, to, payload,  │
+   │                          │    meta: { mail: {...} }   │
+   │                          │  } }                       │
+   │                          │                            │
+   │                          │ (server also records       │
+   │                          │  an intercepted Turn)      │
+
+Channel 2: Event Subscriptions (mail.* events)
+─────────────────────────────────────────────────────────────
+Agent B (or Client)        MAP Server
+   │                          │
+   │─── map/subscribe ───────►│
+   │   { filter: {            │
+   │     eventTypes:           │
+   │       ["mail.turn.added"],│
+   │     mail: {               │
+   │       conversationId }    │
+   │   } }                    │
+   │                          │
+   │◄── notification/event ───│  (when any turn is added)
+   │   { event: {             │
+   │     type: "mail.turn.added",
+   │     data: {              │
+   │       conversationId,    │
+   │       turn: { id, participant, contentType, content, ... }
+   │     }                    │
+   │   } }                    │
+```
+
+**The problem:** These two channels are disconnected at the agent interface level. An agent gets messages through `onMessage()` and events through `subscribe()`, but there's no unified "mail arrived" signal. The agent must mentally correlate: "this `notification/message` I received also has a `meta.mail` field, so it's part of a conversation" or "this `mail.turn.added` event corresponds to a turn someone recorded explicitly."
+
+### Proposed Delivery: Unified Mail Handler
+
+The `Mailbox` provides a **single delivery interface** that unifies both channels:
+
+```
+                          MAP Server
+                              │
+                    ┌─────────┴─────────┐
+                    │                   │
+           notification/message   notification/event
+           (has meta.mail)       (mail.turn.added)
+                    │                   │
+                    └─────────┬─────────┘
+                              │
+                     ┌────────┴────────┐
+                     │  AgentMailManager │  (client-side)
+                     │                  │
+                     │  Deduplicates    │  ← Same turn can arrive via
+                     │  by turn ID     │    both channels simultaneously
+                     │                  │
+                     │  Enriches with   │  ← Attaches conversation context
+                     │  conversation    │    from local cache
+                     │  context         │
+                     │                  │
+                     │  Provides reply  │  ← Wraps turn with .reply(),
+                     │  affordances     │    .acknowledge(), .thread()
+                     └────────┬─────────┘
+                              │
+                      MailTurn object
+                              │
+                    ┌─────────┴──────────┐
+                    │                    │
+              mailbox.onMail()     mailbox.inbox()
+              (push/reactive)      (pull/query)
+```
+
+### How Delivery Actually Works
+
+#### Step 1: Agent Opts In
+
+When an agent accesses `agent.mailbox`, the `AgentMailManager` lazily initializes:
+
+```typescript
+// Internal: what happens when agent.mailbox is first accessed
+class AgentMailManager {
+  #subscription: Subscription | null = null;
+  #mailHandlers: Set<MailHandler> = new Set();
+  #conversationCache: Map<ConversationId, Conversation> = new Map();
+  #seenTurnIds: Set<TurnId> = new Set();  // dedup window
+
+  async initialize(connection: AgentConnection) {
+    // 1. Subscribe to all mail events for this agent's conversations
+    this.#subscription = await connection.subscribe({
+      eventTypes: [
+        "mail.turn.added",
+        "mail.participant.joined",
+        "mail.participant.left",
+        "mail.created",
+        "mail.closed",
+      ],
+      // Filter to conversations this agent participates in
+      // (server enforces this based on session identity)
+    });
+
+    // 2. Intercept incoming messages that have meta.mail
+    connection.onMessage((message) => {
+      if (message.meta?.mail) {
+        this.#handleMailMessage(message);
+      }
+    });
+
+    // 3. Consume event subscription
+    this.#consumeEvents();
+  }
+}
+```
+
+#### Step 2: Turn Arrives via Either Channel
+
+A turn can arrive two ways, and the agent sees **exactly one delivery** regardless:
+
+**Path A — Intercepted turn (agent sends via `sendWithMail()`):**
+
+1. Agent A calls `sendWithMail(to, payload, conversationId)`
+2. Server routes message to Agent B via `notification/message`
+3. Server records intercepted turn, emits `mail.turn.added` event
+4. Agent B's `AgentMailManager` receives the message (fast path)
+5. It extracts `meta.mail`, creates a `MailTurn` object, delivers to `onMail()` handlers
+6. When the `mail.turn.added` event arrives moments later, the turn ID is already in `#seenTurnIds` → deduplicated
+
+**Path B — Explicit turn (agent records via `mail/turn`):**
+
+1. Agent A calls `recordTurn({ conversationId, contentType, content })`
+2. Server records turn, emits `mail.turn.added` event
+3. Agent B's `AgentMailManager` receives the event via subscription
+4. It creates a `MailTurn` object, delivers to `onMail()` handlers
+5. No corresponding `notification/message` exists (this was a pure mail operation)
+
+**Path C — Agent not subscribed (fallback to pull):**
+
+1. Agent B never accessed `agent.mailbox` (Level 0/1 agent)
+2. Messages still arrive via `onMessage()` as normal
+3. Mail events are not received (no subscription)
+4. Agent can still call `mailbox.inbox()` later to poll — this calls `mail/turns/list` under the hood
+
+#### Step 3: What the Agent Receives
+
+The `MailTurn` object wraps a raw `Turn` with contextual affordances:
+
+```typescript
+interface MailTurn {
+  // === Data from the Turn ===
+  readonly id: TurnId;
+  readonly conversationId: ConversationId;
+  readonly participant: ParticipantId;
+  readonly contentType: string;
+  readonly content: unknown;
+  readonly threadId?: ThreadId;
+  readonly inReplyTo?: TurnId;
+  readonly timestamp: Timestamp;
+  readonly source: TurnSource;
+  readonly visibility?: TurnVisibility;
+  readonly metadata?: Record<string, unknown>;
+
+  // === Contextual Data (enriched by AgentMailManager) ===
+  /** The conversation this turn belongs to (from cache or fetched) */
+  readonly conversation: Conversation;
+  /** The original message, if this turn was intercepted from map/send */
+  readonly originalMessage?: Message;
+
+  // === Actions ===
+  /** Reply within the same conversation and thread */
+  reply(params: {
+    contentType: string;
+    content: unknown;
+    visibility?: TurnVisibility;
+  }): Promise<MailTurn>;
+
+  /** Acknowledge receipt (records an x-ack turn) */
+  acknowledge(params?: {
+    status?: "accepted" | "rejected";
+    reason?: string;
+  }): Promise<void>;
+
+  /** Create a thread branching from this turn */
+  thread(subject?: string): Promise<ConversationContext>;
+
+  /** Forward this turn's content to another conversation */
+  forward(conversationId: ConversationId): Promise<MailTurn>;
+}
+```
+
+### The `onMail()` Handler Contract
+
+```typescript
+type MailHandler = (
+  turn: MailTurn,
+  conversation: Conversation
+) => void | Promise<void>;
+```
+
+Handlers fire for:
+- Turns in conversations this agent participates in
+- Both intercepted turns (from `map/send` with `meta.mail`) and explicit turns (from `mail/turn`)
+- Turns from **other** participants only (agent doesn't get notified of its own turns)
+
+Handlers do NOT fire for:
+- Turns with visibility that excludes this agent
+- Turns the agent itself recorded
+- Conversations the agent hasn't joined
+
+### Delivery Guarantees
+
+| Property | Guarantee |
+|----------|-----------|
+| **At-most-once per turn** | Deduplication by turn ID across both channels |
+| **Ordering** | Turns delivered in causal order within a conversation (uses MAP's causal buffer) |
+| **Offline delivery** | Turns recorded while agent is disconnected are available via `inbox()` after reconnect. `onMail()` fires for turns that arrive during active session only. |
+| **Reconnect behavior** | On reconnect, `AgentMailManager` re-subscribes to mail events. It does NOT replay missed turns automatically — agent calls `inbox({ since: lastSeenTimestamp })` to catch up. |
+| **Backpressure** | Uses MAP subscription backpressure (`pause()`/`resume()`/`ack()`). If agent is slow, events buffer on server. |
+
+### ConversationContext: Scoped Send Interface
+
+When an agent is actively working within a conversation, `ConversationContext` provides a scoped interface that eliminates ID threading:
+
+```typescript
+interface ConversationContext {
+  readonly conversationId: ConversationId;
+  readonly conversation: Conversation;
+  readonly currentThreadId?: ThreadId;
+
+  /** Send a message AND record it as a turn (uses sendWithMail internally) */
+  send(
+    to: Address,
+    payload: unknown,
+    meta?: Omit<MessageMeta, "mail">
+  ): Promise<{ sendResult: SendResponseResult; turn: Turn }>;
+
+  /** Record a turn without sending a message (pure mail, no routing) */
+  record(params: {
+    contentType: string;
+    content: unknown;
+    visibility?: TurnVisibility;
+  }): Promise<Turn>;
+
+  /** Sugar for record() with contentType "event" and private visibility */
+  log(text: string): Promise<Turn>;
+
+  /** Sugar for record() with contentType "x-tool-call" */
+  recordToolCall(
+    tool: string,
+    input: unknown,
+    output: unknown,
+    metadata?: Record<string, unknown>
+  ): Promise<Turn>;
+
+  /** Create a sub-thread within this conversation */
+  thread(rootTurnId: TurnId, subject?: string): Promise<ConversationContext>;
+
+  /** Listen for turns in this specific conversation */
+  onTurn(handler: MailHandler): () => void;
+
+  /** Get turn history */
+  history(params?: { limit?: number; before?: TurnId }): Promise<Turn[]>;
+
+  /** Invite another participant */
+  invite(participantId: ParticipantId, role?: ParticipantRole): Promise<void>;
+
+  /** Hand off to another agent (invite + record handoff turn + optionally leave) */
+  handoff(params: {
+    to: ParticipantId;
+    role?: ParticipantRole;
+    reason?: string;
+    leave?: boolean;
+  }): Promise<void>;
+
+  /** Close the conversation */
+  close(reason?: string): Promise<void>;
+}
+```
+
+**Key implementation detail:** `ctx.send()` calls `agent.sendWithMail()` (which does `map/send` with `meta.mail`), so the message is both **routed to the target** and **recorded as a turn**. This is the dual-channel write path:
+
+```
+ctx.send(to, payload)
+    │
+    ├──► map/send with meta.mail.conversationId
+    │        │
+    │        ├──► Server routes message to target (Channel 1)
+    │        └──► Server records intercepted turn (Channel 2)
+    │
+    └──► Returns both SendResponseResult and the recorded Turn
+```
+
+`ctx.record()` is for turns that don't need routing — internal observations, status updates, tool call logs. These only go through `mail/turn` (Channel 2).
+
+### Where Each Piece Lives
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       New Files (Agent-Side)                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ts-sdk/src/mail/                                                │
+│  ├── mailbox.ts           # Mailbox class (inbox/outbox/onMail)  │
+│  ├── mail-manager.ts      # AgentMailManager (subscription       │
+│  │                        #   management, dedup, dispatch)       │
+│  ├── mail-turn.ts         # MailTurn wrapper with reply/ack      │
+│  ├── conversation-context.ts  # Scoped send/record interface     │
+│  └── index.ts             # Public exports                       │
+│                                                                   │
+│  ts-sdk/src/connection/agent.ts                                  │
+│  └── get mailbox(): Mailbox  # Lazy accessor, new property       │
+│                                                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                     Unchanged (Server-Side)                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ts-sdk/src/server/mail/   # No changes needed                   │
+│  ts-sdk/src/types/         # No changes needed (Turn, etc.)      │
+│  schema/schema.json        # No changes needed                   │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+The entire mail interface is **client-side only**. No protocol changes, no new RPC methods, no schema modifications. It's a convenience layer that composes existing primitives.
+
+---
+
 ## Design Proposal
 
 ### 1. Agent Mailbox Abstraction
