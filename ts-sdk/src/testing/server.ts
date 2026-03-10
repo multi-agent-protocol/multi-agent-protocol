@@ -16,6 +16,7 @@ import {
   STEERING_METHODS,
   SCOPE_METHODS,
   FEDERATION_METHODS,
+  TASK_METHODS,
   NOTIFICATION_METHODS,
   PERMISSION_METHODS,
   PROTOCOL_VERSION,
@@ -34,6 +35,9 @@ import {
   type MessageId,
   type Event,
   type Address,
+  type MAPTask,
+  type TaskId,
+  type MAPTaskStatus,
   type ConnectRequestParams,
   type ConnectResponseResult,
   type AgentsRegisterRequestParams,
@@ -45,6 +49,10 @@ import {
   type DisconnectPolicy,
   type ReplayRequestParams,
   type ReplayResponseResult,
+  type TasksCreateRequestParams,
+  type TasksAssignRequestParams,
+  type TasksUpdateRequestParams,
+  type TasksListRequestParams,
   type FederationRouteRequestParams,
   type FederationRoutingConfig,
   type FederationEnvelope,
@@ -145,6 +153,7 @@ export class TestServer {
   readonly #agents: Map<AgentId, Agent> = new Map();
   readonly #scopes: Map<ScopeId, Scope & { members: Set<AgentId> }> = new Map();
   readonly #subscriptions: Map<SubscriptionId, ServerSubscription> = new Map();
+  readonly #tasks: Map<TaskId, MAPTask> = new Map();
   readonly #messages: Message[] = [];
   readonly #eventHistory: StoredEvent[] = [];
   readonly #maxEventHistory: number;
@@ -161,6 +170,7 @@ export class TestServer {
   #nextScopeId = 1;
   #nextSubscriptionId = 1;
   #nextMessageId = 1;
+  #nextTaskId = 1;
 
   constructor(options: TestServerOptions = {}) {
     this.#options = options;
@@ -196,6 +206,13 @@ export class TestServer {
    */
   get scopes(): ReadonlyMap<ScopeId, Scope> {
     return this.#scopes;
+  }
+
+  /**
+   * Get all tasks
+   */
+  get tasks(): ReadonlyMap<TaskId, MAPTask> {
+    return this.#tasks;
   }
 
   /**
@@ -406,6 +423,22 @@ export class TestServer {
           connection,
           params as PermissionsUpdateRequestParams
         );
+
+      // =======================================================================
+      // Task Methods
+      // =======================================================================
+
+      case TASK_METHODS.TASKS_CREATE:
+        return this.#handleTasksCreate(params as TasksCreateRequestParams);
+
+      case TASK_METHODS.TASKS_ASSIGN:
+        return this.#handleTasksAssign(params as TasksAssignRequestParams);
+
+      case TASK_METHODS.TASKS_UPDATE:
+        return this.#handleTasksUpdate(params as TasksUpdateRequestParams);
+
+      case TASK_METHODS.TASKS_LIST:
+        return this.#handleTasksList(params as TasksListRequestParams | undefined);
 
       default:
         throw MAPRequestError.methodNotFound(method);
@@ -1506,6 +1539,115 @@ export class TestServer {
     return {
       success: true,
       effectivePermissions,
+    };
+  }
+
+  // ===========================================================================
+  // Task Handlers
+  // ===========================================================================
+
+  #handleTasksCreate(params: TasksCreateRequestParams): { task: MAPTask } {
+    const { task: taskInput } = params;
+    const id = taskInput.id ?? `task-${this.#nextTaskId++}`;
+
+    const task: MAPTask = {
+      id,
+      ...(taskInput.assignee !== undefined && { assignee: taskInput.assignee }),
+      ...(taskInput.title !== undefined && { title: taskInput.title }),
+      ...(taskInput.status !== undefined && { status: taskInput.status }),
+      ...(taskInput.description !== undefined && { description: taskInput.description }),
+      ...(taskInput.meta !== undefined && { meta: taskInput.meta }),
+    };
+
+    this.#tasks.set(id, task);
+
+    this.emitEvent({
+      type: EVENT_TYPES.TASK_CREATED,
+      data: { task },
+    });
+
+    return { task };
+  }
+
+  #handleTasksAssign(params: TasksAssignRequestParams): { task: MAPTask } {
+    const { taskId, agentId } = params;
+    const task = this.#tasks.get(taskId);
+    if (!task) {
+      throw MAPRequestError.invalidParams(`Task ${taskId} not found`);
+    }
+
+    task.assignee = agentId;
+    this.#tasks.set(taskId, task);
+
+    this.emitEvent({
+      type: EVENT_TYPES.TASK_ASSIGNED,
+      data: { taskId, agentId },
+    });
+
+    return { task };
+  }
+
+  #handleTasksUpdate(params: TasksUpdateRequestParams): { task: MAPTask } {
+    const { taskId, ...updates } = params;
+    const task = this.#tasks.get(taskId);
+    if (!task) {
+      throw MAPRequestError.invalidParams(`Task ${taskId} not found`);
+    }
+
+    const previousStatus = task.status;
+
+    if (updates.status !== undefined) task.status = updates.status;
+    if (updates.title !== undefined) task.title = updates.title;
+    if (updates.description !== undefined) task.description = updates.description;
+    if (updates.assignee !== undefined) task.assignee = updates.assignee;
+    if (updates.meta !== undefined) task.meta = { ...task.meta, ...updates.meta };
+
+    this.#tasks.set(taskId, task);
+
+    if (updates.status !== undefined && updates.status !== previousStatus) {
+      this.emitEvent({
+        type: EVENT_TYPES.TASK_STATUS,
+        data: {
+          taskId,
+          previous: previousStatus ?? 'open',
+          current: updates.status,
+        },
+      });
+    }
+
+    if (updates.status === 'completed') {
+      this.emitEvent({
+        type: EVENT_TYPES.TASK_COMPLETED,
+        data: { taskId },
+      });
+    }
+
+    return { task };
+  }
+
+  #handleTasksList(params?: TasksListRequestParams): { tasks: MAPTask[]; hasMore: boolean; nextCursor?: string } {
+    let tasks = Array.from(this.#tasks.values());
+
+    if (params?.filter) {
+      const { assignee, status } = params.filter;
+      if (assignee) {
+        tasks = tasks.filter((t) => t.assignee === assignee);
+      }
+      if (status) {
+        const statuses: MAPTaskStatus[] = Array.isArray(status) ? status : [status];
+        tasks = tasks.filter((t) => t.status !== undefined && statuses.includes(t.status));
+      }
+    }
+
+    const limit = params?.limit ?? 100;
+    const startIndex = params?.cursor ? parseInt(params.cursor, 10) : 0;
+    const slice = tasks.slice(startIndex, startIndex + limit);
+    const hasMore = startIndex + limit < tasks.length;
+
+    return {
+      tasks: slice,
+      hasMore,
+      nextCursor: hasMore ? String(startIndex + limit) : undefined,
     };
   }
 }

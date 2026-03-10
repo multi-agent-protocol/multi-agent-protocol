@@ -26,6 +26,7 @@ import {
   SESSION_METHODS,
   AUTH_METHODS,
   MAIL_METHODS,
+  TASK_METHODS,
   NOTIFICATION_METHODS,
   PROTOCOL_VERSION,
   type ParticipantCapabilities,
@@ -99,6 +100,15 @@ import {
   type MailSummaryResponseResult,
   type MailReplayRequestParams,
   type MailReplayResponseResult,
+  type TaskId,
+  type TasksCreateRequestParams,
+  type TasksCreateResponseResult,
+  type TasksAssignRequestParams,
+  type TasksAssignResponseResult,
+  type TasksUpdateRequestParams,
+  type TasksUpdateResponseResult,
+  type TasksListRequestParams,
+  type TasksListResponseResult,
 } from '../types';
 
 /**
@@ -1467,6 +1477,72 @@ export class ClientConnection {
       ...options?.meta,
       mail: { conversationId, threadId: options?.threadId },
     });
+  }
+
+  // ===========================================================================
+  // Tasks
+  // ===========================================================================
+
+  /**
+   * Create a new task.
+   *
+   * @param params - Task creation parameters
+   * @returns The created task
+   */
+  async createTask(
+    params: Omit<TasksCreateRequestParams, '_meta'>
+  ): Promise<TasksCreateResponseResult> {
+    return this.#connection.sendRequest<TasksCreateRequestParams, TasksCreateResponseResult>(
+      TASK_METHODS.TASKS_CREATE,
+      params
+    );
+  }
+
+  /**
+   * Assign a task to an agent.
+   *
+   * @param taskId - ID of the task to assign
+   * @param agentId - ID of the agent to assign to
+   * @returns The updated task
+   */
+  async assignTask(
+    taskId: TaskId,
+    agentId: AgentId
+  ): Promise<TasksAssignResponseResult> {
+    return this.#connection.sendRequest<TasksAssignRequestParams, TasksAssignResponseResult>(
+      TASK_METHODS.TASKS_ASSIGN,
+      { taskId, agentId }
+    );
+  }
+
+  /**
+   * Update a task's status or fields.
+   *
+   * @param params - Update parameters including taskId and fields to change
+   * @returns The updated task
+   */
+  async updateTask(
+    params: Omit<TasksUpdateRequestParams, '_meta'>
+  ): Promise<TasksUpdateResponseResult> {
+    return this.#connection.sendRequest<TasksUpdateRequestParams, TasksUpdateResponseResult>(
+      TASK_METHODS.TASKS_UPDATE,
+      params
+    );
+  }
+
+  /**
+   * List tasks with optional filters.
+   *
+   * @param params - Optional filter, limit, and cursor parameters
+   * @returns Paginated list of tasks
+   */
+  async listTasks(
+    params?: Omit<TasksListRequestParams, '_meta'>
+  ): Promise<TasksListResponseResult> {
+    return this.#connection.sendRequest<TasksListRequestParams, TasksListResponseResult>(
+      TASK_METHODS.TASKS_LIST,
+      params ?? {}
+    );
   }
 
   // ===========================================================================

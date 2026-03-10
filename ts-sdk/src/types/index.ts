@@ -54,6 +54,9 @@ export type ThreadId = string;
 /** Unique identifier for a trajectory checkpoint */
 export type CheckpointId = string;
 
+/** Unique identifier for a task */
+export type TaskId = string;
+
 /** JSON-RPC request ID */
 export type RequestId = string | number;
 
@@ -283,6 +286,19 @@ export interface ParticipantCapabilities {
     canQuery?: boolean;
     /** Can request full checkpoint content */
     canRequestContent?: boolean;
+  };
+  /** Task management capabilities */
+  tasks?: {
+    /** Whether task management is enabled (server response only) */
+    enabled?: boolean;
+    /** Can create tasks */
+    canCreate?: boolean;
+    /** Can assign tasks to agents */
+    canAssign?: boolean;
+    /** Can update task status and fields */
+    canUpdate?: boolean;
+    /** Can list and query tasks */
+    canList?: boolean;
   };
   /** Streaming/backpressure capabilities */
   streaming?: StreamingCapabilities;
@@ -828,6 +844,12 @@ export const EVENT_TYPES = {
   // Trajectory events
   TRAJECTORY_CHECKPOINT: "trajectory.checkpoint",
   TRAJECTORY_CONTENT_AVAILABLE: "trajectory.content.available",
+
+  // Task events
+  TASK_CREATED: "task.created",
+  TASK_ASSIGNED: "task.assigned",
+  TASK_STATUS: "task.status",
+  TASK_COMPLETED: "task.completed",
 
   // Mail events
   MAIL_CREATED: "mail.created",
@@ -3265,6 +3287,155 @@ export interface TrajectoryContentChunkNotification extends MAPNotificationBase<
 }
 
 // =============================================================================
+// Task Types
+// =============================================================================
+
+/** Standard task status values. Implementations may use `meta` for richer states. */
+export type MAPTaskStatus = 'open' | 'in_progress' | 'blocked' | 'completed' | 'failed';
+
+/**
+ * A task in the MAP system.
+ *
+ * Intentionally minimal — MAP defines the coordination envelope,
+ * not the task semantics. Providers (e.g., OpenTasks) can use
+ * the `meta` field for implementation-specific data (graph edges,
+ * priority levels, content hashes, etc.).
+ */
+export interface MAPTask {
+  /** Unique task identifier */
+  id: TaskId;
+
+  /** Agent this task is assigned to (null = unassigned) */
+  assignee?: AgentId | null;
+
+  /** Human-readable task title */
+  title?: string;
+
+  /** Current task status */
+  status?: MAPTaskStatus;
+
+  /** Task description or instructions */
+  description?: string;
+
+  /** Provider/implementation-specific metadata */
+  meta?: Meta;
+}
+
+// =============================================================================
+// Task Event Data Types
+// =============================================================================
+
+/** Data for task.created events */
+export interface TaskCreatedEventData {
+  task: MAPTask;
+}
+
+/** Data for task.assigned events */
+export interface TaskAssignedEventData {
+  taskId: TaskId;
+  agentId: AgentId;
+}
+
+/** Data for task.status events */
+export interface TaskStatusEventData {
+  taskId: TaskId;
+  previous: MAPTaskStatus;
+  current: MAPTaskStatus;
+}
+
+/** Data for task.completed events */
+export interface TaskCompletedEventData {
+  taskId: TaskId;
+  result?: unknown;
+}
+
+// =============================================================================
+// Task Request/Response Types
+// =============================================================================
+
+// --- map/tasks/create ---
+
+export interface TasksCreateRequestParams {
+  /** Task data. If `id` is omitted, the server generates one. */
+  task: Omit<MAPTask, 'id'> & { id?: TaskId };
+  _meta?: Meta;
+}
+
+export interface TasksCreateRequest extends MAPRequestBase<TasksCreateRequestParams> {
+  method: "map/tasks/create";
+  params: TasksCreateRequestParams;
+}
+
+export interface TasksCreateResponseResult {
+  task: MAPTask;
+  _meta?: Meta;
+}
+
+// --- map/tasks/assign ---
+
+export interface TasksAssignRequestParams {
+  taskId: TaskId;
+  agentId: AgentId;
+  _meta?: Meta;
+}
+
+export interface TasksAssignRequest extends MAPRequestBase<TasksAssignRequestParams> {
+  method: "map/tasks/assign";
+  params: TasksAssignRequestParams;
+}
+
+export interface TasksAssignResponseResult {
+  task: MAPTask;
+  _meta?: Meta;
+}
+
+// --- map/tasks/update ---
+
+export interface TasksUpdateRequestParams {
+  taskId: TaskId;
+  status?: MAPTaskStatus;
+  title?: string;
+  description?: string;
+  assignee?: AgentId | null;
+  meta?: Meta;
+  _meta?: Meta;
+}
+
+export interface TasksUpdateRequest extends MAPRequestBase<TasksUpdateRequestParams> {
+  method: "map/tasks/update";
+  params: TasksUpdateRequestParams;
+}
+
+export interface TasksUpdateResponseResult {
+  task: MAPTask;
+  _meta?: Meta;
+}
+
+// --- map/tasks/list ---
+
+export interface TasksListRequestParams {
+  filter?: {
+    assignee?: AgentId;
+    status?: MAPTaskStatus | MAPTaskStatus[];
+  };
+  limit?: number;
+  cursor?: string;
+  _meta?: Meta;
+}
+
+export interface TasksListRequest extends MAPRequestBase<TasksListRequestParams> {
+  method: "map/tasks/list";
+  params?: TasksListRequestParams;
+}
+
+export interface TasksListResponseResult {
+  tasks: MAPTask[];
+  hasMore: boolean;
+  nextCursor?: string;
+  _meta?: Meta;
+}
+
+// =============================================================================
 // Notification Types
 // =============================================================================
 
@@ -3513,6 +3684,14 @@ export const TRAJECTORY_METHODS = {
   TRAJECTORY_CONTENT: "trajectory/content",
 } as const;
 
+/** Task methods - Task management */
+export const TASK_METHODS = {
+  TASKS_CREATE: "map/tasks/create",
+  TASKS_ASSIGN: "map/tasks/assign",
+  TASKS_UPDATE: "map/tasks/update",
+  TASKS_LIST: "map/tasks/list",
+} as const;
+
 /** Notification methods */
 export const NOTIFICATION_METHODS = {
   EVENT: "map/event",
@@ -3540,6 +3719,7 @@ export const MAP_METHODS = {
   ...MAIL_METHODS,
   ...WORKSPACE_METHODS,
   ...TRAJECTORY_METHODS,
+  ...TASK_METHODS,
 } as const;
 
 // Legacy aliases for backward compatibility
@@ -3744,6 +3924,12 @@ export const CAPABILITY_REQUIREMENTS: Record<string, string[]> = {
   [TRAJECTORY_METHODS.TRAJECTORY_LIST]: ["trajectory.canQuery"],
   [TRAJECTORY_METHODS.TRAJECTORY_GET]: ["trajectory.canQuery"],
   [TRAJECTORY_METHODS.TRAJECTORY_CONTENT]: ["trajectory.canRequestContent"],
+
+  // Tasks
+  [TASK_METHODS.TASKS_CREATE]: ["tasks.canCreate"],
+  [TASK_METHODS.TASKS_ASSIGN]: ["tasks.canAssign"],
+  [TASK_METHODS.TASKS_UPDATE]: ["tasks.canUpdate"],
+  [TASK_METHODS.TASKS_LIST]: ["tasks.canList"],
 } as const;
 
 // =============================================================================

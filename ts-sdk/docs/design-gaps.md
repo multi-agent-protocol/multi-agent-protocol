@@ -205,7 +205,7 @@ Spec: `docs/00-design-specification.md`
 
 | ID | Gap | Type | Priority | Status | Notes |
 |----|-----|------|----------|--------|-------|
-| CORE-001 | No task methods | missing | P3 | deferred | Tier 3 optional: `map/tasks/create`, `map/tasks/assign`, etc. Spec lines 412-416. |
+| CORE-001 | No task methods | missing | P3 | **resolved** | Implemented: `MAPTask` type, `map/tasks/create`, `map/tasks/assign`, `map/tasks/update`, `map/tasks/list`. Client convenience methods and TestServer handlers added. |
 | CORE-002 | No ACP session adapter | missing | P3 | deferred | Conversion utility for ACP-compatible sessions. Spec line 82. |
 
 ---

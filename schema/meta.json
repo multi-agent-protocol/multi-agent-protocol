@@ -471,6 +471,42 @@
       "description": "Request full checkpoint content (may stream large transcripts)",
       "requestType": "TrajectoryContentRequest",
       "responseType": "TrajectoryContentResponse"
+    },
+    "map/tasks/create": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["tasks.canCreate"],
+      "description": "Create a new task with optional assignee, status, and provider metadata",
+      "requestType": "TasksCreateRequest",
+      "responseType": "TasksCreateResponse"
+    },
+    "map/tasks/assign": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["tasks.canAssign"],
+      "description": "Assign a task to an agent",
+      "requestType": "TasksAssignRequest",
+      "responseType": "TasksAssignResponse"
+    },
+    "map/tasks/update": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["tasks.canUpdate"],
+      "description": "Update task status, fields, or provider metadata",
+      "requestType": "TasksUpdateRequest",
+      "responseType": "TasksUpdateResponse"
+    },
+    "map/tasks/list": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["tasks.canList"],
+      "description": "List tasks with optional filters by assignee and status",
+      "requestType": "TasksListRequest",
+      "responseType": "TasksListResponse"
     }
   },
   "notifications": {
@@ -565,6 +601,12 @@
       "13002": "Content unavailable",
       "13003": "Stream failed",
       "13004": "Permission denied"
+    },
+    "tasks": {
+      "14000": "Tasks not enabled",
+      "14001": "Task not found",
+      "14002": "Task assignment failed",
+      "14003": "Task permission denied"
     }
   },
   "tiers": {

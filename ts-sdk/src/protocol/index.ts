@@ -10,6 +10,7 @@
 import type {
   Agent,
   Scope,
+  MAPTask,
   ParticipantCapabilities,
   ConnectResponseResult,
   DisconnectResponseResult,
@@ -26,6 +27,10 @@ import type {
   ScopesLeaveResponseResult,
   SubscribeResponseResult,
   UnsubscribeResponseResult,
+  TasksCreateResponseResult,
+  TasksAssignResponseResult,
+  TasksUpdateResponseResult,
+  TasksListResponseResult,
   SessionInfo,
   SubscriptionId,
   MessageId,
@@ -52,6 +57,7 @@ export type MethodCategory =
   | 'mail'
   | 'workspace'
   | 'trajectory'
+  | 'task'
   | 'notification';
 
 /** Capability path like 'observation.canQuery' */
@@ -402,6 +408,32 @@ export const METHOD_REGISTRY: Record<string, MethodInfo> = {
     description: 'Request full content for a checkpoint',
   },
 
+  // Task methods
+  'tasks/create': {
+    method: 'map/tasks/create',
+    category: 'task',
+    capabilities: ['tasks.canCreate'],
+    description: 'Create a new task',
+  },
+  'tasks/assign': {
+    method: 'map/tasks/assign',
+    category: 'task',
+    capabilities: ['tasks.canAssign'],
+    description: 'Assign a task to an agent',
+  },
+  'tasks/update': {
+    method: 'map/tasks/update',
+    category: 'task',
+    capabilities: ['tasks.canUpdate'],
+    description: 'Update task status or fields',
+  },
+  'tasks/list': {
+    method: 'map/tasks/list',
+    category: 'task',
+    capabilities: ['tasks.canList'],
+    description: 'List tasks with optional filters',
+  },
+
   // Notification methods (client → server)
   'subscription/ack': {
     method: 'map/subscribe.ack',
@@ -601,4 +633,36 @@ export function buildUnsubscribeResponse(
       closedAt,
     },
   };
+}
+
+/**
+ * Build tasks/create response
+ */
+export function buildTasksCreateResponse(task: MAPTask): TasksCreateResponseResult {
+  return { task };
+}
+
+/**
+ * Build tasks/assign response
+ */
+export function buildTasksAssignResponse(task: MAPTask): TasksAssignResponseResult {
+  return { task };
+}
+
+/**
+ * Build tasks/update response
+ */
+export function buildTasksUpdateResponse(task: MAPTask): TasksUpdateResponseResult {
+  return { task };
+}
+
+/**
+ * Build tasks/list response
+ */
+export function buildTasksListResponse(
+  tasks: MAPTask[],
+  hasMore: boolean,
+  nextCursor?: string
+): TasksListResponseResult {
+  return { tasks, hasMore, nextCursor };
 }
