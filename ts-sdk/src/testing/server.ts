@@ -367,7 +367,7 @@ export class TestServer {
       case LIFECYCLE_METHODS.AGENTS_SPAWN:
         return this.#handleAgentsSpawn(
           connection,
-          params as { parent: AgentId; name?: string; role?: string }
+          params as { parent: AgentId; agentId?: AgentId; name?: string; role?: string }
         );
 
       // =======================================================================
@@ -967,7 +967,7 @@ export class TestServer {
 
   #handleAgentsSpawn(
     connection: BaseConnection,
-    params: { parent: AgentId; name?: string; role?: string }
+    params: { parent: AgentId; agentId?: AgentId; name?: string; role?: string }
   ): { agent: Agent } {
     // Verify parent exists
     if (!this.#agents.has(params.parent)) {
@@ -975,6 +975,7 @@ export class TestServer {
     }
 
     return this.#handleAgentsRegister(connection, {
+      agentId: params.agentId,
       name: params.name,
       role: params.role,
       parent: params.parent,
