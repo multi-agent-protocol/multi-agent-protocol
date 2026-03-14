@@ -1626,7 +1626,8 @@ export class ClientConnection {
         break;
       }
 
-      case NOTIFICATION_METHODS.MESSAGE: {
+      case NOTIFICATION_METHODS.MESSAGE:
+      case 'map/send': {
         // Message notifications could be handled here if needed
         // For now, they're delivered through event subscriptions
         break;

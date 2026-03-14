@@ -5,15 +5,19 @@
  * update state, spawn children, and communicate with peers.
  */
 
-import { type Stream, websocketStream, waitForOpen } from '../stream';
+import { type Stream, websocketStream, waitForOpen } from "../stream";
 import type {
   AgenticMeshStreamConfig,
   MeshPeerEndpoint,
   MeshTransportAdapter,
-} from '../stream/agentic-mesh';
-import { BaseConnection, type BaseConnectionOptions, type ConnectionState } from './base';
-import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from '../utils';
-import { Subscription, createSubscription } from '../subscription';
+} from "../stream/agentic-mesh";
+import {
+  BaseConnection,
+  type BaseConnectionOptions,
+  type ConnectionState,
+} from "./base";
+import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from "../utils";
+import { Subscription, createSubscription } from "../subscription";
 import {
   CORE_METHODS,
   LIFECYCLE_METHODS,
@@ -97,7 +101,7 @@ import {
   type TasksUpdateResponseResult,
   type TasksListRequestParams,
   type TasksListResponseResult,
-} from '../types';
+} from "../types";
 
 /**
  * Handler for incoming messages addressed to this agent
@@ -126,10 +130,10 @@ export interface AgentReconnectionOptions {
  * Agent reconnection event types
  */
 export type AgentReconnectionEventType =
-  | 'disconnected'
-  | 'reconnecting'
-  | 'reconnected'
-  | 'reconnectFailed';
+  | "disconnected"
+  | "reconnecting"
+  | "reconnected"
+  | "reconnectFailed";
 
 /**
  * Handler for reconnection events
@@ -183,7 +187,7 @@ export interface AgentConnectOptions {
   metadata?: Record<string, unknown>;
   /** Authentication credentials */
   auth?: {
-    method: 'bearer' | 'api-key' | 'mtls' | 'none';
+    method: "bearer" | "api-key" | "mtls" | "none";
     token?: string;
   };
   /**
@@ -223,7 +227,7 @@ export interface AgentMeshConnectOptions {
   metadata?: Record<string, unknown>;
   /** Authentication credentials */
   auth?: {
-    method: 'bearer' | 'api-key' | 'mtls' | 'none';
+    method: "bearer" | "api-key" | "mtls" | "none";
     token?: string;
   };
   /**
@@ -253,17 +257,18 @@ export class AgentConnection {
   readonly #subscriptions: Map<SubscriptionId, Subscription> = new Map();
   readonly #options: AgentConnectionOptions;
   readonly #messageHandlers: Set<MessageHandler> = new Set();
-  readonly #reconnectionHandlers: Set<AgentReconnectionEventHandler> = new Set();
+  readonly #reconnectionHandlers: Set<AgentReconnectionEventHandler> =
+    new Set();
   readonly #scopeMemberships: Set<ScopeId> = new Set();
 
   #agentId: AgentId | null = null;
   #sessionId: SessionId | null = null;
   #serverCapabilities: ParticipantCapabilities | null = null;
-  #currentState: AgentState = 'registered';
+  #currentState: AgentState = "registered";
   #connected = false;
   #lastConnectOptions?: {
     agentId?: AgentId;
-    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
+    auth?: { method: "bearer" | "api-key" | "mtls" | "none"; token?: string };
   };
   #isReconnecting = false;
 
@@ -272,12 +277,14 @@ export class AgentConnection {
     this.#options = options;
 
     // Set up notification handler for events and messages
-    this.#connection.setNotificationHandler(this.#handleNotification.bind(this));
+    this.#connection.setNotificationHandler(
+      this.#handleNotification.bind(this),
+    );
 
     // Set up disconnect detection for auto-reconnect
     if (options.reconnection?.enabled && options.createStream) {
       this.#connection.onStateChange((newState) => {
-        if (newState === 'closed' && this.#connected && !this.#isReconnecting) {
+        if (newState === "closed" && this.#connected && !this.#isReconnecting) {
           void this.#handleDisconnect();
         }
       });
@@ -317,13 +324,13 @@ export class AgentConnection {
    */
   static async connect(
     url: string,
-    options?: AgentConnectOptions
+    options?: AgentConnectOptions,
   ): Promise<AgentConnection> {
     // Validate URL
     const parsedUrl = new URL(url);
-    if (!['ws:', 'wss:'].includes(parsedUrl.protocol)) {
+    if (!["ws:", "wss:"].includes(parsedUrl.protocol)) {
       throw new Error(
-        `Unsupported protocol: ${parsedUrl.protocol}. Use ws: or wss:`
+        `Unsupported protocol: ${parsedUrl.protocol}. Use ws: or wss:`,
       );
     }
 
@@ -345,7 +352,7 @@ export class AgentConnection {
     const reconnection =
       options?.reconnection === true
         ? { enabled: true }
-        : typeof options?.reconnection === 'object'
+        : typeof options?.reconnection === "object"
           ? options.reconnection
           : undefined;
 
@@ -403,9 +410,11 @@ export class AgentConnection {
    * await agent.busy();
    * ```
    */
-  static async connectMesh(options: AgentMeshConnectOptions): Promise<AgentConnection> {
+  static async connectMesh(
+    options: AgentMeshConnectOptions,
+  ): Promise<AgentConnection> {
     // Dynamic import for optional peer dependency
-    const { agenticMeshStream } = await import('../stream/agentic-mesh');
+    const { agenticMeshStream } = await import("../stream/agentic-mesh");
 
     const streamConfig: AgenticMeshStreamConfig = {
       transport: options.transport,
@@ -424,7 +433,7 @@ export class AgentConnection {
     const reconnection =
       options.reconnection === true
         ? { enabled: true }
-        : typeof options.reconnection === 'object'
+        : typeof options.reconnection === "object"
           ? options.reconnection
           : undefined;
 
@@ -457,12 +466,12 @@ export class AgentConnection {
     agentId?: AgentId;
     /** Token to resume a previously disconnected session */
     resumeToken?: string;
-    auth?: { method: 'bearer' | 'api-key' | 'mtls' | 'none'; token?: string };
+    auth?: { method: "bearer" | "api-key" | "mtls" | "none"; token?: string };
   }): Promise<{ connection: ConnectResponseResult; agent: Agent }> {
     // First, establish the connection
     const connectParams: ConnectRequestParams = {
       protocolVersion: PROTOCOL_VERSION,
-      participantType: 'agent',
+      participantType: "agent",
       participantId: options?.agentId,
       name: this.#options.name,
       capabilities: this.#options.capabilities,
@@ -502,7 +511,7 @@ export class AgentConnection {
     this.#currentState = registerResult.agent.state;
 
     // Transition to connected state
-    this.#connection._transitionTo('connected');
+    this.#connection._transitionTo("connected");
 
     return { connection: connectResult, agent: registerResult.agent };
   }
@@ -538,7 +547,7 @@ export class AgentConnection {
    * ```
    */
   async authenticate(auth: {
-    method: 'bearer' | 'api-key' | 'mtls' | 'none';
+    method: "bearer" | "api-key" | "mtls" | "none";
     token?: string;
   }): Promise<AuthenticateResponseResult> {
     const params: AuthenticateRequestParams = {
@@ -605,10 +614,10 @@ export class AgentConnection {
       }
 
       // Then disconnect
-      const result = await this.#connection.sendRequest<{ reason?: string }, DisconnectResponseResult>(
-        CORE_METHODS.DISCONNECT,
-        reason ? { reason } : undefined
-      );
+      const result = await this.#connection.sendRequest<
+        { reason?: string },
+        DisconnectResponseResult
+      >(CORE_METHODS.DISCONNECT, reason ? { reason } : undefined);
       resumeToken = result.resumeToken;
     } finally {
       // Close all subscriptions
@@ -701,7 +710,7 @@ export class AgentConnection {
    */
   async updateState(state: AgentState): Promise<Agent> {
     if (!this.#agentId) {
-      throw new Error('Agent not registered');
+      throw new Error("Agent not registered");
     }
 
     const result = await this.#connection.sendRequest<
@@ -721,7 +730,7 @@ export class AgentConnection {
    */
   async updateMetadata(metadata: Record<string, unknown>): Promise<Agent> {
     if (!this.#agentId) {
-      throw new Error('Agent not registered');
+      throw new Error("Agent not registered");
     }
 
     const result = await this.#connection.sendRequest<
@@ -739,25 +748,28 @@ export class AgentConnection {
    * Mark this agent as busy
    */
   async busy(): Promise<Agent> {
-    return this.updateState('busy');
+    return this.updateState("busy");
   }
 
   /**
    * Mark this agent as idle
    */
   async idle(): Promise<Agent> {
-    return this.updateState('idle');
+    return this.updateState("idle");
   }
 
   /**
    * Mark this agent as done/stopped
    */
-  async done(result?: { exitCode?: number; exitReason?: string }): Promise<void> {
+  async done(result?: {
+    exitCode?: number;
+    exitReason?: string;
+  }): Promise<void> {
     if (!this.#agentId) {
-      throw new Error('Agent not registered');
+      throw new Error("Agent not registered");
     }
 
-    await this.updateState('stopped');
+    await this.updateState("stopped");
 
     // Optionally update metadata with result
     if (result) {
@@ -786,7 +798,7 @@ export class AgentConnection {
     metadata?: Record<string, unknown>;
   }): Promise<AgentsSpawnResponseResult> {
     if (!this.#agentId) {
-      throw new Error('Agent not registered');
+      throw new Error("Agent not registered");
     }
 
     const params: AgentsSpawnRequestParams = {
@@ -810,7 +822,7 @@ export class AgentConnection {
   async send(
     to: Address,
     payload?: unknown,
-    meta?: MessageMeta
+    meta?: MessageMeta,
   ): Promise<SendResponseResult> {
     const params: SendRequestParams = { to };
     if (payload !== undefined) params.payload = payload;
@@ -822,20 +834,26 @@ export class AgentConnection {
   /**
    * Send a message to the parent agent
    */
-  async sendToParent(payload?: unknown, meta?: MessageMeta): Promise<SendResponseResult> {
+  async sendToParent(
+    payload?: unknown,
+    meta?: MessageMeta,
+  ): Promise<SendResponseResult> {
     return this.send({ parent: true }, payload, {
       ...meta,
-      relationship: 'child-to-parent',
+      relationship: "child-to-parent",
     });
   }
 
   /**
    * Send a message to child agents
    */
-  async sendToChildren(payload?: unknown, meta?: MessageMeta): Promise<SendResponseResult> {
+  async sendToChildren(
+    payload?: unknown,
+    meta?: MessageMeta,
+  ): Promise<SendResponseResult> {
     return this.send({ children: true }, payload, {
       ...meta,
-      relationship: 'parent-to-child',
+      relationship: "parent-to-child",
     });
   }
 
@@ -845,7 +863,7 @@ export class AgentConnection {
   async sendToAgent(
     agentId: AgentId,
     payload?: unknown,
-    meta?: MessageMeta
+    meta?: MessageMeta,
   ): Promise<SendResponseResult> {
     return this.send({ agent: agentId }, payload, meta);
   }
@@ -856,7 +874,7 @@ export class AgentConnection {
   async sendToScope(
     scopeId: ScopeId,
     payload?: unknown,
-    meta?: MessageMeta
+    meta?: MessageMeta,
   ): Promise<SendResponseResult> {
     return this.send({ scope: scopeId }, payload, meta);
   }
@@ -864,10 +882,13 @@ export class AgentConnection {
   /**
    * Send a message to sibling agents
    */
-  async sendToSiblings(payload?: unknown, meta?: MessageMeta): Promise<SendResponseResult> {
+  async sendToSiblings(
+    payload?: unknown,
+    meta?: MessageMeta,
+  ): Promise<SendResponseResult> {
     return this.send({ siblings: true }, payload, {
       ...meta,
-      relationship: 'peer',
+      relationship: "peer",
     });
   }
 
@@ -877,7 +898,7 @@ export class AgentConnection {
   async reply(
     originalMessage: Message,
     payload?: unknown,
-    meta?: MessageMeta
+    meta?: MessageMeta,
   ): Promise<SendResponseResult> {
     return this.send({ agent: originalMessage.from as AgentId }, payload, {
       ...meta,
@@ -906,7 +927,7 @@ export class AgentConnection {
    */
   async joinScope(scopeId: ScopeId): Promise<ScopesJoinResponseResult> {
     if (!this.#agentId) {
-      throw new Error('Agent not registered');
+      throw new Error("Agent not registered");
     }
 
     const result = await this.#connection.sendRequest<
@@ -928,7 +949,7 @@ export class AgentConnection {
    */
   async leaveScope(scopeId: ScopeId): Promise<ScopesLeaveResponseResult> {
     if (!this.#agentId) {
-      throw new Error('Agent not registered');
+      throw new Error("Agent not registered");
     }
 
     const result = await this.#connection.sendRequest<
@@ -964,7 +985,7 @@ export class AgentConnection {
     const subscription = createSubscription(
       result.subscriptionId,
       () => this.unsubscribe(result.subscriptionId),
-      { filter }
+      { filter },
     );
 
     this.#subscriptions.set(result.subscriptionId, subscription);
@@ -1024,7 +1045,7 @@ export class AgentConnection {
    * @returns Unsubscribe function to remove the handler
    */
   onStateChange(
-    handler: (newState: ConnectionState, oldState: ConnectionState) => void
+    handler: (newState: ConnectionState, oldState: ConnectionState) => void,
   ): () => void {
     return this.#connection.onStateChange(handler);
   }
@@ -1040,12 +1061,12 @@ export class AgentConnection {
    * @returns Created conversation and participant info
    */
   async createConversation(
-    params?: Omit<MailCreateRequestParams, '_meta'>
+    params?: Omit<MailCreateRequestParams, "_meta">,
   ): Promise<MailCreateResponseResult> {
-    return this.#connection.sendRequest<MailCreateRequestParams, MailCreateResponseResult>(
-      MAIL_METHODS.MAIL_CREATE,
-      params ?? {}
-    );
+    return this.#connection.sendRequest<
+      MailCreateRequestParams,
+      MailCreateResponseResult
+    >(MAIL_METHODS.MAIL_CREATE, params ?? {});
   }
 
   /**
@@ -1057,12 +1078,12 @@ export class AgentConnection {
    */
   async getConversation(
     conversationId: ConversationId,
-    include?: MailGetRequestParams['include']
+    include?: MailGetRequestParams["include"],
   ): Promise<MailGetResponseResult> {
-    return this.#connection.sendRequest<MailGetRequestParams, MailGetResponseResult>(
-      MAIL_METHODS.MAIL_GET,
-      { conversationId, include }
-    );
+    return this.#connection.sendRequest<
+      MailGetRequestParams,
+      MailGetResponseResult
+    >(MAIL_METHODS.MAIL_GET, { conversationId, include });
   }
 
   /**
@@ -1072,12 +1093,12 @@ export class AgentConnection {
    * @returns Paginated list of conversations
    */
   async listConversations(
-    params?: Omit<MailListRequestParams, '_meta'>
+    params?: Omit<MailListRequestParams, "_meta">,
   ): Promise<MailListResponseResult> {
-    return this.#connection.sendRequest<MailListRequestParams, MailListResponseResult>(
-      MAIL_METHODS.MAIL_LIST,
-      params ?? {}
-    );
+    return this.#connection.sendRequest<
+      MailListRequestParams,
+      MailListResponseResult
+    >(MAIL_METHODS.MAIL_LIST, params ?? {});
   }
 
   /**
@@ -1089,12 +1110,12 @@ export class AgentConnection {
    */
   async closeConversation(
     conversationId: ConversationId,
-    reason?: string
+    reason?: string,
   ): Promise<MailCloseResponseResult> {
-    return this.#connection.sendRequest<MailCloseRequestParams, MailCloseResponseResult>(
-      MAIL_METHODS.MAIL_CLOSE,
-      { conversationId, reason }
-    );
+    return this.#connection.sendRequest<
+      MailCloseRequestParams,
+      MailCloseResponseResult
+    >(MAIL_METHODS.MAIL_CLOSE, { conversationId, reason });
   }
 
   /**
@@ -1104,12 +1125,12 @@ export class AgentConnection {
    * @returns Conversation, participant, and optional history
    */
   async joinConversation(
-    params: Omit<MailJoinRequestParams, '_meta'>
+    params: Omit<MailJoinRequestParams, "_meta">,
   ): Promise<MailJoinResponseResult> {
-    return this.#connection.sendRequest<MailJoinRequestParams, MailJoinResponseResult>(
-      MAIL_METHODS.MAIL_JOIN,
-      params
-    );
+    return this.#connection.sendRequest<
+      MailJoinRequestParams,
+      MailJoinResponseResult
+    >(MAIL_METHODS.MAIL_JOIN, params);
   }
 
   /**
@@ -1121,12 +1142,12 @@ export class AgentConnection {
    */
   async leaveConversation(
     conversationId: ConversationId,
-    reason?: string
+    reason?: string,
   ): Promise<MailLeaveResponseResult> {
-    return this.#connection.sendRequest<MailLeaveRequestParams, MailLeaveResponseResult>(
-      MAIL_METHODS.MAIL_LEAVE,
-      { conversationId, reason }
-    );
+    return this.#connection.sendRequest<
+      MailLeaveRequestParams,
+      MailLeaveResponseResult
+    >(MAIL_METHODS.MAIL_LEAVE, { conversationId, reason });
   }
 
   /**
@@ -1136,12 +1157,12 @@ export class AgentConnection {
    * @returns Invite result
    */
   async inviteToConversation(
-    params: Omit<MailInviteRequestParams, '_meta'>
+    params: Omit<MailInviteRequestParams, "_meta">,
   ): Promise<MailInviteResponseResult> {
-    return this.#connection.sendRequest<MailInviteRequestParams, MailInviteResponseResult>(
-      MAIL_METHODS.MAIL_INVITE,
-      params
-    );
+    return this.#connection.sendRequest<
+      MailInviteRequestParams,
+      MailInviteResponseResult
+    >(MAIL_METHODS.MAIL_INVITE, params);
   }
 
   /**
@@ -1151,12 +1172,12 @@ export class AgentConnection {
    * @returns The created turn
    */
   async recordTurn(
-    params: Omit<MailTurnRequestParams, '_meta'>
+    params: Omit<MailTurnRequestParams, "_meta">,
   ): Promise<MailTurnResponseResult> {
-    return this.#connection.sendRequest<MailTurnRequestParams, MailTurnResponseResult>(
-      MAIL_METHODS.MAIL_TURN,
-      params
-    );
+    return this.#connection.sendRequest<
+      MailTurnRequestParams,
+      MailTurnResponseResult
+    >(MAIL_METHODS.MAIL_TURN, params);
   }
 
   /**
@@ -1166,12 +1187,12 @@ export class AgentConnection {
    * @returns Paginated list of turns
    */
   async listTurns(
-    params: Omit<MailTurnsListRequestParams, '_meta'>
+    params: Omit<MailTurnsListRequestParams, "_meta">,
   ): Promise<MailTurnsListResponseResult> {
-    return this.#connection.sendRequest<MailTurnsListRequestParams, MailTurnsListResponseResult>(
-      MAIL_METHODS.MAIL_TURNS_LIST,
-      params
-    );
+    return this.#connection.sendRequest<
+      MailTurnsListRequestParams,
+      MailTurnsListResponseResult
+    >(MAIL_METHODS.MAIL_TURNS_LIST, params);
   }
 
   /**
@@ -1181,12 +1202,12 @@ export class AgentConnection {
    * @returns The created thread
    */
   async createThread(
-    params: Omit<MailThreadCreateRequestParams, '_meta'>
+    params: Omit<MailThreadCreateRequestParams, "_meta">,
   ): Promise<MailThreadCreateResponseResult> {
-    return this.#connection.sendRequest<MailThreadCreateRequestParams, MailThreadCreateResponseResult>(
-      MAIL_METHODS.MAIL_THREAD_CREATE,
-      params
-    );
+    return this.#connection.sendRequest<
+      MailThreadCreateRequestParams,
+      MailThreadCreateResponseResult
+    >(MAIL_METHODS.MAIL_THREAD_CREATE, params);
   }
 
   /**
@@ -1196,12 +1217,12 @@ export class AgentConnection {
    * @returns Paginated list of threads
    */
   async listThreads(
-    params: Omit<MailThreadListRequestParams, '_meta'>
+    params: Omit<MailThreadListRequestParams, "_meta">,
   ): Promise<MailThreadListResponseResult> {
-    return this.#connection.sendRequest<MailThreadListRequestParams, MailThreadListResponseResult>(
-      MAIL_METHODS.MAIL_THREAD_LIST,
-      params
-    );
+    return this.#connection.sendRequest<
+      MailThreadListRequestParams,
+      MailThreadListResponseResult
+    >(MAIL_METHODS.MAIL_THREAD_LIST, params);
   }
 
   /**
@@ -1211,12 +1232,12 @@ export class AgentConnection {
    * @returns Generated summary with optional key points, decisions, and questions
    */
   async getConversationSummary(
-    params: Omit<MailSummaryRequestParams, '_meta'>
+    params: Omit<MailSummaryRequestParams, "_meta">,
   ): Promise<MailSummaryResponseResult> {
-    return this.#connection.sendRequest<MailSummaryRequestParams, MailSummaryResponseResult>(
-      MAIL_METHODS.MAIL_SUMMARY,
-      params
-    );
+    return this.#connection.sendRequest<
+      MailSummaryRequestParams,
+      MailSummaryResponseResult
+    >(MAIL_METHODS.MAIL_SUMMARY, params);
   }
 
   /**
@@ -1226,12 +1247,12 @@ export class AgentConnection {
    * @returns Replayed turns with pagination info
    */
   async replayConversation(
-    params: Omit<MailReplayRequestParams, '_meta'>
+    params: Omit<MailReplayRequestParams, "_meta">,
   ): Promise<MailReplayResponseResult> {
-    return this.#connection.sendRequest<MailReplayRequestParams, MailReplayResponseResult>(
-      MAIL_METHODS.MAIL_REPLAY,
-      params
-    );
+    return this.#connection.sendRequest<
+      MailReplayRequestParams,
+      MailReplayResponseResult
+    >(MAIL_METHODS.MAIL_REPLAY, params);
   }
 
   /**
@@ -1251,7 +1272,7 @@ export class AgentConnection {
     to: Address,
     payload: unknown,
     conversationId: ConversationId,
-    options?: { threadId?: ThreadId; meta?: MessageMeta }
+    options?: { threadId?: ThreadId; meta?: MessageMeta },
   ): Promise<SendResponseResult> {
     return this.send(to, payload, {
       ...options?.meta,
@@ -1291,12 +1312,12 @@ export class AgentConnection {
    * @returns The created task
    */
   async createTask(
-    params: Omit<TasksCreateRequestParams, '_meta'>
+    params: Omit<TasksCreateRequestParams, "_meta">,
   ): Promise<TasksCreateResponseResult> {
-    return this.#connection.sendRequest<TasksCreateRequestParams, TasksCreateResponseResult>(
-      TASK_METHODS.TASKS_CREATE,
-      params
-    );
+    return this.#connection.sendRequest<
+      TasksCreateRequestParams,
+      TasksCreateResponseResult
+    >(TASK_METHODS.TASKS_CREATE, params);
   }
 
   /**
@@ -1308,12 +1329,12 @@ export class AgentConnection {
    */
   async assignTask(
     taskId: TaskId,
-    agentId: AgentId
+    agentId: AgentId,
   ): Promise<TasksAssignResponseResult> {
-    return this.#connection.sendRequest<TasksAssignRequestParams, TasksAssignResponseResult>(
-      TASK_METHODS.TASKS_ASSIGN,
-      { taskId, agentId }
-    );
+    return this.#connection.sendRequest<
+      TasksAssignRequestParams,
+      TasksAssignResponseResult
+    >(TASK_METHODS.TASKS_ASSIGN, { taskId, agentId });
   }
 
   /**
@@ -1323,12 +1344,12 @@ export class AgentConnection {
    * @returns The updated task
    */
   async updateTask(
-    params: Omit<TasksUpdateRequestParams, '_meta'>
+    params: Omit<TasksUpdateRequestParams, "_meta">,
   ): Promise<TasksUpdateResponseResult> {
-    return this.#connection.sendRequest<TasksUpdateRequestParams, TasksUpdateResponseResult>(
-      TASK_METHODS.TASKS_UPDATE,
-      params
-    );
+    return this.#connection.sendRequest<
+      TasksUpdateRequestParams,
+      TasksUpdateResponseResult
+    >(TASK_METHODS.TASKS_UPDATE, params);
   }
 
   /**
@@ -1338,12 +1359,12 @@ export class AgentConnection {
    * @returns Paginated list of tasks
    */
   async listTasks(
-    params?: Omit<TasksListRequestParams, '_meta'>
+    params?: Omit<TasksListRequestParams, "_meta">,
   ): Promise<TasksListResponseResult> {
-    return this.#connection.sendRequest<TasksListRequestParams, TasksListResponseResult>(
-      TASK_METHODS.TASKS_LIST,
-      params ?? {}
-    );
+    return this.#connection.sendRequest<
+      TasksListRequestParams,
+      TasksListResponseResult
+    >(TASK_METHODS.TASKS_LIST, params ?? {});
   }
 
   // ===========================================================================
@@ -1357,40 +1378,48 @@ export class AgentConnection {
     switch (method) {
       case NOTIFICATION_METHODS.EVENT: {
         const eventParams = params as EventNotificationParams;
-        const subscription = this.#subscriptions.get(eventParams.subscriptionId);
+        const subscription = this.#subscriptions.get(
+          eventParams.subscriptionId,
+        );
         if (subscription) {
           subscription._pushEvent(eventParams);
         }
         break;
       }
 
-      case NOTIFICATION_METHODS.MESSAGE: {
+      case NOTIFICATION_METHODS.MESSAGE:
+      case NOTIFICATION_METHODS.SEND: {
         const messageParams = params as MessageNotificationParams;
-        // Deliver to message handlers
+        // Deliver to message handlers.
+        // Servers may use either map/message (spec) or map/send (common alias).
+        const message =
+          messageParams.message ?? (messageParams as unknown as Message);
         for (const handler of this.#messageHandlers) {
           try {
-            await handler(messageParams.message);
+            await handler(message);
           } catch (error) {
-            console.error('MAP: Message handler error:', error);
+            console.error("MAP: Message handler error:", error);
           }
         }
         break;
       }
 
       default:
-        console.warn('MAP: Unknown notification:', method);
+        console.warn("MAP: Unknown notification:", method);
     }
   }
 
   /**
    * Emit a reconnection event to all registered handlers
    */
-  #emitReconnectionEvent(event: Parameters<AgentReconnectionEventHandler>[0]): void {
+  #emitReconnectionEvent(
+    event: Parameters<AgentReconnectionEventHandler>[0],
+  ): void {
     for (const handler of this.#reconnectionHandlers) {
       try {
         handler(event);
       } catch (error) {
-        console.error('MAP: Reconnection event handler error:', error);
+        console.error("MAP: Reconnection event handler error:", error);
       }
     }
   }
@@ -1402,14 +1431,14 @@ export class AgentConnection {
     this.#isReconnecting = true;
     this.#connected = false;
 
-    this.#emitReconnectionEvent({ type: 'disconnected' });
+    this.#emitReconnectionEvent({ type: "disconnected" });
 
     try {
       await this.#attemptReconnect();
     } catch (error) {
       this.#isReconnecting = false;
       this.#emitReconnectionEvent({
-        type: 'reconnectFailed',
+        type: "reconnectFailed",
         error: error instanceof Error ? error : new Error(String(error)),
       });
     }
@@ -1457,17 +1486,17 @@ export class AgentConnection {
       {
         onRetry: (state) => {
           this.#emitReconnectionEvent({
-            type: 'reconnecting',
+            type: "reconnecting",
             attempt: state.attempt,
             delay: state.nextDelayMs,
             error: state.lastError,
           });
         },
-      }
+      },
     );
 
     this.#isReconnecting = false;
-    this.#emitReconnectionEvent({ type: 'reconnected' });
+    this.#emitReconnectionEvent({ type: "reconnected" });
 
     // Restore scope memberships if enabled
     if (options.restoreScopeMemberships !== false) {
@@ -1486,7 +1515,11 @@ export class AgentConnection {
       try {
         await this.joinScope(scopeId);
       } catch (error) {
-        console.warn('MAP: Failed to restore scope membership:', scopeId, error);
+        console.warn(
+          "MAP: Failed to restore scope membership:",
+          scopeId,
+          error,
+        );
       }
     }
   }

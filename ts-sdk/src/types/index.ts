@@ -1233,7 +1233,12 @@ export interface SessionInfo {
 // =============================================================================
 
 /** Standard authentication methods defined by the protocol */
-export type StandardAuthMethod = "bearer" | "api-key" | "mtls" | "none" | "did:wba";
+export type StandardAuthMethod =
+  | "bearer"
+  | "api-key"
+  | "mtls"
+  | "none"
+  | "did:wba";
 
 /** Authentication method - standard or custom (x- prefixed) */
 export type AuthMethod = StandardAuthMethod | `x-${string}`;
@@ -1318,7 +1323,14 @@ export interface AuthResult {
 /**
  * Supported federation authentication methods.
  */
-export type FederationAuthMethod = "bearer" | "api-key" | "mtls" | "none" | "did:wba" | "oauth2" | `x-${string}`;
+export type FederationAuthMethod =
+  | "bearer"
+  | "api-key"
+  | "mtls"
+  | "none"
+  | "did:wba"
+  | "oauth2"
+  | `x-${string}`;
 
 /**
  * Authentication for federated connections.
@@ -3203,7 +3215,9 @@ export interface TrajectoryContentAvailableEventData {
 
 export interface TrajectoryCheckpointRequestParams {
   /** Checkpoint data (timestamp auto-filled by server if omitted) */
-  checkpoint: Omit<TrajectoryCheckpoint, "timestamp"> & { timestamp?: Timestamp };
+  checkpoint: Omit<TrajectoryCheckpoint, "timestamp"> & {
+    timestamp?: Timestamp;
+  };
   _meta?: Meta;
 }
 
@@ -3291,7 +3305,12 @@ export interface TrajectoryContentChunkNotification extends MAPNotificationBase<
 // =============================================================================
 
 /** Standard task status values. Implementations may use `meta` for richer states. */
-export type MAPTaskStatus = 'open' | 'in_progress' | 'blocked' | 'completed' | 'failed';
+export type MAPTaskStatus =
+  | "open"
+  | "in_progress"
+  | "blocked"
+  | "completed"
+  | "failed";
 
 /**
  * A task in the MAP system.
@@ -3357,7 +3376,7 @@ export interface TaskCompletedEventData {
 
 export interface TasksCreateRequestParams {
   /** Task data. If `id` is omitted, the server generates one. */
-  task: Omit<MAPTask, 'id'> & { id?: TaskId };
+  task: Omit<MAPTask, "id"> & { id?: TaskId };
   _meta?: Meta;
 }
 
@@ -3696,6 +3715,7 @@ export const TASK_METHODS = {
 export const NOTIFICATION_METHODS = {
   EVENT: "map/event",
   MESSAGE: "map/message",
+  SEND: "map/send",
   /** Client acknowledges received events (for backpressure) */
   SUBSCRIBE_ACK: "map/subscribe.ack",
   /** Server notifies client that auth is about to expire */
