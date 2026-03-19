@@ -420,6 +420,8 @@ export interface ServerSession {
     id: string;
     issuer?: string;
     claims?: Record<string, unknown>;
+    /** Token expiration timestamp (Unix ms) */
+    expiresAt?: number;
   };
   /** Provider-specific auth data, keyed by providerId */
   providers?: Record<string, {
@@ -542,6 +544,8 @@ export interface SubscriptionFilter {
   eventTypes?: string[];
   /** Agents to watch */
   agents?: string[];
+  /** Filter by source agent ID */
+  fromAgents?: string[];
   /** Scopes to watch (includes nested scopes by default) */
   scopes?: string[];
   /** Message types to filter (for message events) */

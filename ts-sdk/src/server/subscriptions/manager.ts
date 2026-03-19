@@ -15,7 +15,6 @@ import type {
   EventBus,
   ScopeManager,
   CausalOrderingOptions,
-  MultiCauseMode,
   ReplayOptions,
 } from "../types";
 import { ulid } from "../../utils/ulid";
