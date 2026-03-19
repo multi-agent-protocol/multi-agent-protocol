@@ -63,6 +63,7 @@ import {
   type AuthenticateRequestParams,
   type AuthenticateResponseResult,
   type AuthPrincipal,
+  type AuthMethod,
   type ConversationId,
   type ThreadId,
   type MailCreateRequestParams,
@@ -187,7 +188,7 @@ export interface AgentConnectOptions {
   metadata?: Record<string, unknown>;
   /** Authentication credentials */
   auth?: {
-    method: "bearer" | "api-key" | "mtls" | "none";
+    method: AuthMethod;
     token?: string;
   };
   /**
@@ -268,7 +269,7 @@ export class AgentConnection {
   #connected = false;
   #lastConnectOptions?: {
     agentId?: AgentId;
-    auth?: { method: "bearer" | "api-key" | "mtls" | "none"; token?: string };
+    auth?: { method: AuthMethod; token?: string };
   };
   #isReconnecting = false;
 
@@ -375,6 +376,66 @@ export class AgentConnection {
   }
 
   /**
+   * Create an AgentConnection over WebSocket without performing the MAP handshake.
+   *
+   * Use this when you need to control the connection flow — e.g., to handle
+   * server-driven auth negotiation before registration.
+   *
+   * @example
+   * ```typescript
+   * const agent = await AgentConnection.createConnection('ws://localhost:8080', {
+   *   name: 'Worker',
+   *   role: 'processor',
+   * });
+   *
+   * const result = await agent.connectOnly();
+   * if (result.authRequired) {
+   *   await agent.authenticate({ method: result.authRequired.methods[0], token: cred });
+   * }
+   * await agent.register();
+   * ```
+   */
+  static async createConnection(
+    url: string,
+    options?: AgentConnectOptions,
+  ): Promise<AgentConnection> {
+    const parsedUrl = new URL(url);
+    if (!["ws:", "wss:"].includes(parsedUrl.protocol)) {
+      throw new Error(`Unsupported protocol: ${parsedUrl.protocol}. Use ws: or wss:`);
+    }
+
+    const timeout = options?.connectTimeout ?? 10000;
+
+    const ws = new WebSocket(url);
+    await waitForOpen(ws, timeout);
+    const stream = websocketStream(ws);
+
+    const createStream = async () => {
+      const newWs = new WebSocket(url);
+      await waitForOpen(newWs, timeout);
+      return websocketStream(newWs);
+    };
+
+    const reconnection =
+      options?.reconnection === true
+        ? { enabled: true }
+        : typeof options?.reconnection === "object"
+          ? options.reconnection
+          : undefined;
+
+    return new AgentConnection(stream, {
+      name: options?.name,
+      role: options?.role,
+      capabilities: options?.capabilities,
+      visibility: options?.visibility,
+      parent: options?.parent,
+      scopes: options?.scopes,
+      createStream,
+      reconnection,
+    });
+  }
+
+  /**
    * Connect and register an agent via agentic-mesh transport.
    *
    * Handles:
@@ -466,7 +527,7 @@ export class AgentConnection {
     agentId?: AgentId;
     /** Token to resume a previously disconnected session */
     resumeToken?: string;
-    auth?: { method: "bearer" | "api-key" | "mtls" | "none"; token?: string };
+    auth?: { method: AuthMethod; token?: string };
   }): Promise<{ connection: ConnectResponseResult; agent: Agent }> {
     // First, establish the connection
     const connectParams: ConnectRequestParams = {
@@ -517,6 +578,91 @@ export class AgentConnection {
   }
 
   /**
+   * Connect to the MAP system without registering an agent.
+   *
+   * Use this when the server may require authentication before registration.
+   * After connecting, check `authRequired` in the response and call
+   * `authenticate()` if needed, then `register()` to complete the handshake.
+   *
+   * @example
+   * ```typescript
+   * const result = await agent.connectOnly();
+   *
+   * if (result.authRequired) {
+   *   const method = result.authRequired.methods[0];
+   *   await agent.authenticate({ method, token: myCredential });
+   * }
+   *
+   * await agent.register();
+   * ```
+   */
+  async connectOnly(options?: {
+    agentId?: AgentId;
+    resumeToken?: string;
+    auth?: { method: AuthMethod; token?: string };
+  }): Promise<ConnectResponseResult> {
+    const connectParams: ConnectRequestParams = {
+      protocolVersion: PROTOCOL_VERSION,
+      participantType: "agent",
+      participantId: options?.agentId,
+      name: this.#options.name,
+      capabilities: this.#options.capabilities,
+      resumeToken: options?.resumeToken,
+      auth: options?.auth,
+    };
+
+    const connectResult = await this.#connection.sendRequest<
+      ConnectRequestParams,
+      ConnectResponseResult
+    >(CORE_METHODS.CONNECT, connectParams);
+
+    this.#sessionId = connectResult.sessionId;
+    this.#serverCapabilities = connectResult.capabilities;
+    this.#connected = true;
+
+    // Store for reconnection
+    this.#lastConnectOptions = options;
+
+    return connectResult;
+  }
+
+  /**
+   * Register as an agent after connecting.
+   *
+   * Call this after `connectOnly()` and optional `authenticate()` to complete
+   * the connection handshake. Uses the options provided during construction
+   * (name, role, scopes, etc.) unless overridden.
+   */
+  async register(overrides?: {
+    agentId?: AgentId;
+    name?: string;
+    role?: string;
+  }): Promise<Agent> {
+    const registerParams: AgentsRegisterRequestParams = {
+      agentId: overrides?.agentId ?? this.#lastConnectOptions?.agentId,
+      name: overrides?.name ?? this.#options.name,
+      role: overrides?.role ?? this.#options.role,
+      parent: this.#options.parent,
+      scopes: this.#options.scopes,
+      visibility: this.#options.visibility,
+      capabilities: this.#options.capabilities,
+    };
+
+    const registerResult = await this.#connection.sendRequest<
+      AgentsRegisterRequestParams,
+      AgentsRegisterResponseResult
+    >(LIFECYCLE_METHODS.AGENTS_REGISTER, registerParams);
+
+    this.#agentId = registerResult.agent.id;
+    this.#currentState = registerResult.agent.state;
+
+    // Transition to connected state
+    this.#connection._transitionTo("connected");
+
+    return registerResult.agent;
+  }
+
+  /**
    * Authenticate with the server after connection.
    *
    * Use this when the server returns `authRequired` in the connect response,
@@ -528,26 +674,21 @@ export class AgentConnection {
    *
    * @example
    * ```typescript
-   * const agent = new AgentConnection(stream, { name: 'MyAgent' });
+   * const result = await agent.connectOnly();
    *
-   * // First connect to get auth requirements
-   * const connectResult = await agent.connectOnly();
-   *
-   * if (connectResult.authRequired) {
+   * if (result.authRequired) {
    *   const authResult = await agent.authenticate({
-   *     method: 'api-key',
-   *     token: process.env.AGENT_API_KEY,
+   *     method: result.authRequired.methods[0],
+   *     token: myCredential,
    *   });
-   *
    *   if (authResult.success) {
-   *     // Now register the agent
-   *     await agent.register({ name: 'MyAgent', role: 'worker' });
+   *     await agent.register();
    *   }
    * }
    * ```
    */
   async authenticate(auth: {
-    method: "bearer" | "api-key" | "mtls" | "none";
+    method: AuthMethod;
     token?: string;
   }): Promise<AuthenticateResponseResult> {
     const params: AuthenticateRequestParams = {
@@ -577,7 +718,7 @@ export class AgentConnection {
    * @returns Updated principal information
    */
   async refreshAuth(auth: {
-    method: "bearer" | "api-key" | "mtls" | "none";
+    method: AuthMethod;
     token?: string;
   }): Promise<{
     success: boolean;
