@@ -63,6 +63,8 @@ ts-sdk/
   - Agent registration and state management
   - Scope membership with restoration on reconnect
   - Message handling via `onMessage()`
+  - Custom notification handling via `onNotification(method, handler)` for server-to-agent notifications
+  - Raw notification sending via `sendNotification(method, params)` for agent-to-server notifications
 
 - **GatewayConnection**: For federation
   - Route messages between MAP systems
@@ -206,6 +208,12 @@ npm run lint               # ESLint
 2. Add event data interface
 3. Update TestServer to emit the event
 4. Update permission filters if needed
+
+**Handling custom notifications (server → agent):**
+1. Register handler: `agent.onNotification('my/method', async (params) => { ... })`
+2. Respond: `agent.sendNotification('my/method.response', { ... })`
+3. Declare capability so server knows to send: `capabilities: { my: { canHandle: true } }`
+4. Server checks capability before sending notification to agent
 
 **Debugging connections:**
 - Check `connection.state` for current state

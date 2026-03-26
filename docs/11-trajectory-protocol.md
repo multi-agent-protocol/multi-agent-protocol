@@ -270,14 +270,70 @@ Add `trajectory` to `ParticipantCapabilities`:
 
 ```typescript
 trajectory?: {
-  enabled?: boolean;         // Server supports trajectory
-  canReport?: boolean;       // Can report checkpoints
-  canQuery?: boolean;        // Can list/get checkpoints
-  canRequestContent?: boolean; // Can request full content
+  enabled?: boolean;           // Server supports trajectory
+  canReport?: boolean;         // Can report checkpoints
+  canQuery?: boolean;          // Can list/get checkpoints
+  canRequestContent?: boolean; // Can request full content from server
+  canServeContent?: boolean;   // Can serve content on demand (agent-side)
 }
 ```
 
 Advertised in `map/connect` response when the server supports trajectory tracking.
+
+### Agent Content Serving
+
+When an agent declares `canServeContent: true`, the server may send `trajectory/content.request` notifications to request content on demand. The agent handles the notification and responds with a `trajectory/content.response` notification containing the requested artifacts.
+
+This uses the SDK's **custom notification** mechanism (see below) — the server sends a notification to the agent, and the agent responds with a notification back.
+
+---
+
+## Custom Notifications
+
+The MAP SDK supports custom (non-standard) notifications between servers and agents. This is the mechanism used for on-demand content serving and can be extended for other server-to-agent communication patterns.
+
+### AgentConnection API
+
+```typescript
+// Register a handler for a specific notification method
+agent.onNotification('trajectory/content.request', async (params) => {
+  const { request_id, checkpoint_id } = params;
+  // ... read content ...
+  agent.sendNotification('trajectory/content.response', {
+    request_id,
+    transcript: '...',
+    metadata: { ... },
+  });
+});
+
+// Remove a handler
+agent.offNotification('trajectory/content.request', handler);
+
+// Send a raw JSON-RPC notification to the server
+agent.sendNotification(method, params);
+```
+
+### Design Notes
+
+- **Non-breaking**: Agents that don't register handlers see no change (unknown notifications are silently ignored)
+- **Fire-and-forget**: Notifications have no built-in request/response correlation. The `request_id` pattern is an application-level convention
+- **Capability-gated**: Servers should check agent capabilities before sending custom notifications (e.g., `canServeContent` before sending `trajectory/content.request`)
+- **Not a replacement for callExtension**: `onNotification` handles server-to-agent notifications. For agent-to-server requests, use `callExtension()` as before
+
+### Content Request/Response Flow
+
+```
+Server                         Agent (canServeContent: true)
+  |                               |
+  |-- trajectory/content.request -->|  (notification: request_id, checkpoint_id)
+  |                               |
+  |                               |  (agent reads content from local store)
+  |                               |
+  |<-- trajectory/content.response -|  (notification: request_id, transcript, metadata)
+  |                               |
+```
+
+The server initiates by sending a `trajectory/content.request` notification to the agent's WebSocket. The agent's `onNotification` handler fires, reads the content, and sends a `trajectory/content.response` notification back via `sendNotification()`.
 
 ---
 

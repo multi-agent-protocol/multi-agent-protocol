@@ -260,6 +260,8 @@ export class AgentConnection {
   readonly #messageHandlers: Set<MessageHandler> = new Set();
   readonly #reconnectionHandlers: Set<AgentReconnectionEventHandler> =
     new Set();
+  readonly #notificationHandlers: Map<string, Set<(params: unknown) => Promise<void> | void>> =
+    new Map();
   readonly #scopeMemberships: Set<ScopeId> = new Set();
 
   #agentId: AgentId | null = null;
@@ -840,6 +842,56 @@ export class AgentConnection {
   offMessage(handler: MessageHandler): this {
     this.#messageHandlers.delete(handler);
     return this;
+  }
+
+  /**
+   * Register a handler for a specific notification method.
+   *
+   * Handles server-to-agent notifications that aren't standard MAP methods
+   * (e.g., `trajectory/content.request`). When the server sends a JSON-RPC
+   * notification with the specified method, the handler fires with the params.
+   *
+   * @param method - The JSON-RPC notification method name to handle
+   * @param handler - Async function called with the notification params
+   */
+  onNotification(
+    method: string,
+    handler: (params: unknown) => Promise<void> | void,
+  ): this {
+    if (!this.#notificationHandlers.has(method)) {
+      this.#notificationHandlers.set(method, new Set());
+    }
+    this.#notificationHandlers.get(method)!.add(handler);
+    return this;
+  }
+
+  /**
+   * Remove a notification handler for a specific method.
+   */
+  offNotification(
+    method: string,
+    handler: (params: unknown) => Promise<void> | void,
+  ): this {
+    const handlers = this.#notificationHandlers.get(method);
+    if (handlers) {
+      handlers.delete(handler);
+      if (handlers.size === 0) this.#notificationHandlers.delete(method);
+    }
+    return this;
+  }
+
+  /**
+   * Send a raw JSON-RPC notification to the server.
+   *
+   * Used for custom protocol notifications (e.g., `trajectory/content.response`)
+   * that aren't standard MAP methods. The notification is sent directly on the
+   * underlying connection without any MAP-level wrapping.
+   *
+   * @param method - The JSON-RPC notification method name
+   * @param params - The notification parameters
+   */
+  async sendNotification(method: string, params: unknown): Promise<void> {
+    return this.#connection.sendNotification(method, params);
   }
 
   // ===========================================================================
@@ -1545,8 +1597,20 @@ export class AgentConnection {
         break;
       }
 
-      default:
-        console.warn("MAP: Unknown notification:", method);
+      default: {
+        // Dispatch to registered notification handlers for custom methods
+        const handlers = this.#notificationHandlers.get(method);
+        if (handlers?.size) {
+          for (const handler of handlers) {
+            try {
+              await handler(params);
+            } catch (error) {
+              console.error("MAP: Notification handler error:", error);
+            }
+          }
+        }
+        break;
+      }
     }
   }
 

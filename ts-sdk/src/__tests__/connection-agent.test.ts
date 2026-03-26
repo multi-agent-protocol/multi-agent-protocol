@@ -491,4 +491,100 @@ describe('AgentConnection', () => {
       expect(agent.closed).toBeInstanceOf(Promise);
     });
   });
+
+  describe('onNotification / offNotification', () => {
+    it('dispatches custom notifications to registered handlers', async () => {
+      await agent.connect('ws://test');
+
+      const received: unknown[] = [];
+      const handler = async (params: unknown) => { received.push(params); };
+      agent.onNotification('trajectory/content.request', handler);
+
+      // Server sends a custom notification
+      mockServer.server.sendNotification('trajectory/content.request', {
+        request_id: 'req-001',
+        checkpoint_id: 'cp-123',
+      });
+
+      // Allow async dispatch
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(received.length).toBe(1);
+      expect(received[0]).toEqual({
+        request_id: 'req-001',
+        checkpoint_id: 'cp-123',
+      });
+    });
+
+    it('supports multiple handlers for the same method', async () => {
+      await agent.connect('ws://test');
+
+      let count = 0;
+      const handler1 = async () => { count += 1; };
+      const handler2 = async () => { count += 10; };
+      agent.onNotification('custom/event', handler1);
+      agent.onNotification('custom/event', handler2);
+
+      mockServer.server.sendNotification('custom/event', {});
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(count).toBe(11);
+    });
+
+    it('does not fire removed handlers', async () => {
+      await agent.connect('ws://test');
+
+      let called = false;
+      const handler = async () => { called = true; };
+      agent.onNotification('custom/removed', handler);
+      agent.offNotification('custom/removed', handler);
+
+      mockServer.server.sendNotification('custom/removed', {});
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(called).toBe(false);
+    });
+
+    it('does not interfere with standard MAP notifications', async () => {
+      await agent.connect('ws://test');
+
+      // Register a custom handler — should not affect standard notifications
+      const received: unknown[] = [];
+      agent.onNotification('custom/test', async (p) => { received.push(p); });
+
+      // Standard MAP notifications should still work normally
+      // (e.g., agent.state.changed, scope.membership.changed)
+      // Send a custom one and verify only it fires
+      mockServer.server.sendNotification('custom/test', { foo: 'bar' });
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(received).toEqual([{ foo: 'bar' }]);
+    });
+  });
+
+  describe('sendNotification', () => {
+    it('sends a raw JSON-RPC notification to the server', async () => {
+      await agent.connect('ws://test');
+
+      const serverReceived: { method: string; params: unknown }[] = [];
+      // Listen for notifications on the server side
+      mockServer.server.setNotificationHandler((method, params) => {
+        serverReceived.push({ method, params });
+      });
+
+      await agent.sendNotification('trajectory/content.response', {
+        request_id: 'req-001',
+        transcript: 'test transcript',
+      });
+
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(serverReceived.length).toBe(1);
+      expect(serverReceived[0].method).toBe('trajectory/content.response');
+      expect(serverReceived[0].params).toEqual({
+        request_id: 'req-001',
+        transcript: 'test transcript',
+      });
+    });
+  });
 });
