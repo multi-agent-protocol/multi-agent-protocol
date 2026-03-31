@@ -55,6 +55,7 @@ export class RouterConnectionImpl implements RouterConnection {
   private _started = false;
   private _running = false;
   private _isClosed = false;
+  private _notificationHandler: ((method: string, params: unknown) => void) | null = null;
 
   constructor(options: RouterConnectionOptions) {
     this.stream = options.stream;
@@ -160,6 +161,16 @@ export class RouterConnectionImpl implements RouterConnection {
   }
 
   /**
+   * Register a handler for incoming notifications from the client.
+   * By default, notifications are silently ignored. Setting a handler
+   * allows the server to process custom notifications (e.g., opentasks
+   * responses, trajectory content responses).
+   */
+  onNotification(handler: (method: string, params: unknown) => void): void {
+    this._notificationHandler = handler;
+  }
+
+  /**
    * Send a notification to the connected peer.
    */
   async notify(method: string, params: unknown): Promise<void> {
@@ -211,9 +222,32 @@ export class RouterConnectionImpl implements RouterConnection {
     // Check if it's a request (has id and method)
     if (this.isRequest(message)) {
       await this.handleRequest(message as MAPRequestBase);
+    } else if (this.isNotification(message)) {
+      // Forward notifications to the handler if one is registered
+      if (this._notificationHandler) {
+        try {
+          const msg = message as { method: string; params?: unknown };
+          this._notificationHandler(msg.method, msg.params);
+        } catch {
+          // Don't let handler errors break message processing
+        }
+      }
     }
-    // Notifications (method but no id) are ignored by server
     // Responses (id but no method) are for client-side correlation
+  }
+
+  /**
+   * Check if a message is a notification (method but no id).
+   */
+  private isNotification(message: AnyMessage): boolean {
+    return (
+      typeof message === "object" &&
+      message !== null &&
+      "jsonrpc" in message &&
+      message.jsonrpc === "2.0" &&
+      "method" in message &&
+      !("id" in message)
+    );
   }
 
   /**

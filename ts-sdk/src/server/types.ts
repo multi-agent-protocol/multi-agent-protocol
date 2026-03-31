@@ -926,6 +926,9 @@ export interface RouterConnection {
 
   /** Send notification to connected peer */
   notify(method: string, params: unknown): Promise<void>;
+
+  /** Register a handler for incoming notifications from the client */
+  onNotification(handler: (method: string, params: unknown) => void): void;
 }
 
 export interface RouterConnectionOptions {
