@@ -80,6 +80,13 @@ export class InMemoryAgentStore implements AgentStore {
         if (!match) continue;
       }
 
+      // Filter by persistent identity
+      if (filter?.persistentId !== undefined) {
+        if (agent.persistentIdentity?.persistentId !== filter.persistentId) {
+          continue;
+        }
+      }
+
       // Note: scopeId filter is handled by caller (requires ScopeManager)
       results.push({ ...agent });
     }

@@ -50,6 +50,8 @@ interface RegisterParams {
   capabilities?: string[];
   /** Structured capability descriptor for rich agent discovery */
   capabilityDescriptor?: import('../../types').MAPAgentCapabilityDescriptor;
+  /** Persistent identity for this agent */
+  persistentIdentity?: import('../../types').AgentPersistentIdentity;
 }
 
 /**
@@ -82,6 +84,8 @@ interface ListParams {
   tags?: string[];
   /** Filter by accepted content type from capabilityDescriptor */
   accepts?: string;
+  /** Filter by persistent identity */
+  persistentId?: string;
 }
 
 /**
@@ -147,7 +151,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
 
   return {
     "map/agents/register": async (params: unknown, ctx: HandlerContext) => {
-      const { name, role, metadata, capabilities, capabilityDescriptor } = params as RegisterParams;
+      const { name, role, metadata, capabilities, capabilityDescriptor, persistentIdentity } = params as RegisterParams;
 
       const registeredAgent = agents.register({
         name,
@@ -156,6 +160,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         sessionId: ctx.session.id,
         capabilities,
         capabilityDescriptor,
+        persistentIdentity,
       });
 
       // Track agent in session - use SessionManager if available for atomic updates
@@ -176,6 +181,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           metadata: registeredAgent.metadata,
           capabilities: registeredAgent.capabilities,
           capabilityDescriptor: registeredAgent.capabilityDescriptor,
+          persistentIdentity: registeredAgent.persistentIdentity,
           visibility: "public",
         },
       };
@@ -225,6 +231,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           metadata: a.metadata,
           capabilities: a.capabilities,
           capabilityDescriptor: a.capabilityDescriptor,
+          persistentIdentity: a.persistentIdentity,
           visibility: "public",
         })),
       };
@@ -248,6 +255,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           metadata: agent.metadata,
           capabilities: agent.capabilities,
           capabilityDescriptor: agent.capabilityDescriptor,
+          persistentIdentity: agent.persistentIdentity,
           visibility: "public",
         },
       };
@@ -281,6 +289,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           metadata: agent.metadata,
           capabilities: agent.capabilities,
           capabilityDescriptor: agent.capabilityDescriptor,
+          persistentIdentity: agent.persistentIdentity,
           visibility: "public",
         },
       };
@@ -375,6 +384,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           state: childAgent.state,
           metadata: childAgent.metadata,
           capabilityDescriptor: childAgent.capabilityDescriptor,
+          persistentIdentity: childAgent.persistentIdentity,
           visibility: "public",
         },
       };

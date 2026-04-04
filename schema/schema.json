@@ -407,6 +407,59 @@
       },
       "additionalProperties": false
     },
+    "IdentityType": {
+      "type": "string",
+      "description": "How the identity was established. Standard types align with agent-iam providers; custom types use x- prefix.",
+      "enum": ["keypair", "platform", "attested", "decentralized"],
+      "x-extensible": "x-prefixed custom values allowed"
+    },
+    "IdentityVerificationStatus": {
+      "type": "string",
+      "description": "How the server verified the agent's persistent identity. Servers MUST NOT set 'verified' unless cryptographic verification succeeded.",
+      "enum": ["verified", "auth-derived", "self-declared", "unverified"]
+    },
+    "AgentIdentityProof": {
+      "type": "object",
+      "description": "Proof binding a persistent identity to the current session",
+      "properties": {
+        "challenge": { "type": "string", "description": "The challenge/nonce that was signed" },
+        "signature": { "type": "string", "description": "Cryptographic signature over the challenge" },
+        "provenAt": { "type": "string", "format": "date-time", "description": "When the proof was generated (ISO 8601)" }
+      },
+      "required": ["challenge", "signature", "provenAt"],
+      "additionalProperties": false
+    },
+    "AgentEndorsement": {
+      "type": "object",
+      "description": "An authority endorsement vouching for an agent's identity",
+      "properties": {
+        "authorityId": { "type": "string", "description": "Identifier of the endorsing authority" },
+        "claim": { "type": "string", "description": "What the authority is claiming" },
+        "signature": { "type": "string", "description": "Cryptographic signature over persistentId + publicKey + claim" },
+        "issuedAt": { "type": "string", "format": "date-time", "description": "When the endorsement was issued" },
+        "expiresAt": { "type": "string", "format": "date-time", "description": "When the endorsement expires" }
+      },
+      "required": ["authorityId", "claim", "signature", "issuedAt"],
+      "additionalProperties": false
+    },
+    "AgentPersistentIdentity": {
+      "type": "object",
+      "description": "Persistent identity for an agent that survives across sessions and connections. Identity (who you are) is separate from capability (what you can do) and from the transient AgentId assigned per registration.",
+      "properties": {
+        "persistentId": { "type": "string", "description": "Stable identifier across sessions (e.g., key:fingerprint, platform:uuid, did:agent:...)" },
+        "identityType": { "$ref": "#/$defs/IdentityType" },
+        "publicKey": { "type": "string", "description": "Public key for self-certifying verification (PEM format)" },
+        "proof": { "$ref": "#/$defs/AgentIdentityProof" },
+        "endorsements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AgentEndorsement" }
+        },
+        "verificationStatus": { "$ref": "#/$defs/IdentityVerificationStatus" },
+        "_meta": { "$ref": "#/$defs/Meta" }
+      },
+      "required": ["persistentId", "identityType"],
+      "additionalProperties": false
+    },
     "AgentVisibility": {
       "type": "string",
       "enum": ["public", "parent-only", "scope", "system"],
@@ -435,6 +488,7 @@
         "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
         "capabilityDescriptor": { "$ref": "#/$defs/MAPAgentCapabilityDescriptor" },
         "environment": { "$ref": "#/$defs/AgentEnvironment" },
+        "persistentIdentity": { "$ref": "#/$defs/AgentPersistentIdentity" },
         "metadata": { "type": "object" },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
@@ -1074,6 +1128,10 @@
                 "accepts": {
                   "type": "string",
                   "description": "Filter by accepted content type from capabilityDescriptor (MIME type)"
+                },
+                "persistentId": {
+                  "type": "string",
+                  "description": "Filter by persistent identity"
                 }
               }
             },
@@ -1286,6 +1344,7 @@
             "capabilities": { "$ref": "#/$defs/ParticipantCapabilities" },
             "capabilityDescriptor": { "$ref": "#/$defs/MAPAgentCapabilityDescriptor" },
             "environment": { "$ref": "#/$defs/AgentEnvironment" },
+            "persistentIdentity": { "$ref": "#/$defs/AgentPersistentIdentity" },
             "metadata": { "type": "object" },
             "_meta": { "$ref": "#/$defs/Meta" }
           }
@@ -1298,6 +1357,7 @@
       "description": "Response to map/agents/register",
       "properties": {
         "agent": { "$ref": "#/$defs/Agent" },
+        "resumed": { "type": "boolean", "description": "Whether this registration resumed a previous agent via persistent identity" },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
       "required": ["agent"]

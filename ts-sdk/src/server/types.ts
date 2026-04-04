@@ -164,6 +164,8 @@ export interface RegisteredAgent {
   capabilities?: string[];
   /** Structured capability descriptor for rich agent discovery */
   capabilityDescriptor?: import('../types').MAPAgentCapabilityDescriptor;
+  /** Persistent identity that survives across sessions */
+  persistentIdentity?: import('../types').AgentPersistentIdentity;
 }
 
 /**
@@ -190,6 +192,8 @@ export interface AgentFilter {
   tag?: string;
   /** Filter by accepted content type from capabilityDescriptor */
   accepts?: string;
+  /** Filter by persistent identity */
+  persistentId?: string;
 }
 
 /**
@@ -223,6 +227,7 @@ export interface AgentRegistry {
     sessionId: string;
     capabilities?: string[];
     capabilityDescriptor?: import('../types').MAPAgentCapabilityDescriptor;
+    persistentIdentity?: import('../types').AgentPersistentIdentity;
   }): RegisteredAgent;
 
   /** Get agent by ID */

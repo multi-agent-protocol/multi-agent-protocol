@@ -815,7 +815,149 @@ await client.send({
 });
 ```
  
-## 6. Type Mappings Summary
+## 6. Persistent Identity Integration
+
+### 6.1 Overview
+
+agent-iam's persistent identity system maps directly to MAP's `AgentPersistentIdentity` type. Identity ("who you are") is kept separate from capability ("what you can do") at both layers.
+
+| agent-iam | MAP | Notes |
+|-----------|-----|-------|
+| `PersistentIdentity.persistentId` | `AgentPersistentIdentity.persistentId` | Direct mapping |
+| `PersistentIdentity.identityType` | `AgentPersistentIdentity.identityType` | Same enum values |
+| `IdentityProof.challenge` | `AgentIdentityProof.challenge` | Direct mapping |
+| `IdentityProof.proof` | `AgentIdentityProof.signature` | Renamed for clarity |
+| `IdentityProof.provenAt` | `AgentIdentityProof.provenAt` | Direct mapping |
+| `AuthorityEndorsement` | `AgentEndorsement` | Same structure |
+| Token `publicKey` | `AgentPersistentIdentity.publicKey` | For self-certifying verification |
+
+### 6.2 Extracting Persistent Identity from Tokens
+
+When an agent authenticates via `x-agent-iam`, the authenticator extracts the persistent identity from the token and maps it to both `AuthPrincipal.persistentId` and `AgentPersistentIdentity`:
+
+```typescript
+private buildPrincipal(token: AgentToken): AuthPrincipal {
+  return {
+    id: token.agentId,
+    issuer: token.identity?.systemId ?? this.systemId,
+    // Extract persistentId from token's persistent identity
+    persistentId: token.persistentIdentity?.persistentId,
+    claims: {
+      agentId: token.agentId,
+      parentId: token.parentId,
+      scopes: token.scopes,
+      delegationDepth: token.currentDepth,
+      ...(token.identity && {
+        principalId: token.identity.principalId,
+        principalType: token.identity.principalType,
+        tenantId: token.identity.tenantId,
+        organizationId: token.identity.organizationId,
+      }),
+    },
+    expiresAt: token.expiresAt ? new Date(token.expiresAt).getTime() : undefined,
+  };
+}
+```
+
+### 6.3 Mapping Token Identity to AgentPersistentIdentity
+
+On agent registration, if the auth token contains a persistent identity, the server maps it to `AgentPersistentIdentity`:
+
+```typescript
+function mapTokenToAgentPersistentIdentity(
+  token: AgentToken
+): AgentPersistentIdentity | undefined {
+  if (!token.persistentIdentity) return undefined;
+
+  return {
+    persistentId: token.persistentIdentity.persistentId,
+    identityType: token.persistentIdentity.identityType as IdentityType,
+    publicKey: token.persistentIdentity.publicKey,
+    proof: token.persistentIdentity.proof && token.persistentIdentity.challenge
+      ? {
+          challenge: token.persistentIdentity.challenge,
+          signature: token.persistentIdentity.proof,
+          provenAt: new Date().toISOString(),
+        }
+      : undefined,
+    endorsements: token.persistentIdentity.endorsements?.map((e) => ({
+      authorityId: e.authorityId,
+      claim: e.claim,
+      signature: e.signature,
+      issuedAt: e.issuedAt,
+      expiresAt: e.expiresAt,
+    })),
+    // Auth layer already verified the token, so identity is auth-derived
+    verificationStatus: "auth-derived",
+  };
+}
+```
+
+### 6.4 Verification Status Mapping
+
+The `verificationStatus` field on `AgentPersistentIdentity` follows Option D semantics:
+servers MUST NOT set `"verified"` unless cryptographic verification succeeded.
+
+| Scenario | Status | Rationale |
+|----------|--------|-----------|
+| Agent authenticated via `x-agent-iam` with keypair token | `"auth-derived"` | Token signature was verified, identity is trusted transitively |
+| Server called `verifyIdentityProof()` standalone | `"verified"` | Direct Ed25519 proof verification |
+| Agent presented identity but server has no verifier | `"self-declared"` | Server stores but cannot verify |
+| Agent registered without identity, server auto-assigned | `"verified"` | Server created the identity itself |
+| Agent claimed `persistentId` with no proof | `"unverified"` | No cryptographic evidence |
+
+### 6.5 Self-Certifying Verification at the MAP Gateway
+
+For federated scenarios, a MAP gateway can verify keypair identities without contacting the agent-iam broker:
+
+```typescript
+import { verifyIdentityProof } from 'agent-iam';
+
+function verifyAtGateway(
+  identity: AgentPersistentIdentity,
+  trustedAuthorities?: Record<string, string>
+): IdentityVerificationStatus {
+  if (identity.identityType !== 'keypair' || !identity.publicKey || !identity.proof) {
+    return 'self-declared';
+  }
+
+  const result = verifyIdentityProof(
+    {
+      persistentIdentity: {
+        persistentId: identity.persistentId,
+        identityType: identity.identityType,
+        publicKey: identity.publicKey,
+        challenge: identity.proof.challenge,
+        proof: identity.proof.signature,
+      },
+    } as any,
+    { trustedAuthorities }
+  );
+
+  return result.valid ? 'verified' : 'unverified';
+}
+```
+
+### 6.6 Agent Resumption via Persistent Identity
+
+When an agent reconnects with the same `persistentId`, the MAP server can resume the previous registration:
+
+```typescript
+// In the register handler, check for existing agent with same persistentId
+const existingAgents = agents.list({ persistentId: identity.persistentId });
+const orphaned = existingAgents.find(a => a.state === 'orphaned');
+
+if (orphaned) {
+  // Resume: update the orphaned agent's session and state
+  agents.updateSession(orphaned.id, ctx.session.id);
+  agents.updateState(orphaned.id, 'idle');
+  return { agent: orphaned, resumed: true };
+}
+
+// Otherwise: fresh registration with persistent identity attached
+```
+
+## 7. Type Mappings Summary
  
 | agent-iam | MAP | Notes |
 |-----------|-----|-------|
@@ -824,36 +966,38 @@ await client.send({
 | `AgentToken.identity.principalId` | `AuthPrincipal.claims.principalId` | In claims |
 | `AgentToken.identity.systemId` | `AuthPrincipal.issuer` | Token issuer |
 | `AgentToken.identity.tenantId` | `AuthPrincipal.claims.tenantId` | For multi-tenant |
+| `AgentToken.persistentIdentity.persistentId` | `AuthPrincipal.persistentId` | Persistent identity |
+| `AgentToken.persistentIdentity` | `Agent.persistentIdentity` | Full identity on agent |
 | `AgentToken.agentCapabilities.canSpawn` | `ParticipantCapabilities.lifecycle.canSpawn` | Direct |
 | `AgentToken.agentCapabilities.canMessage` | `ParticipantCapabilities.messaging.canSend` | Direct |
 | `AgentToken.agentCapabilities.visibility` | `AgentPermissions.canSee` | Mapped |
 | `AgentToken.federation.crossSystemAllowed` | Gateway routing decision | Federation control |
 | `AgentToken.expiresAt` | `AuthPrincipal.expiresAt` | Token expiry |
  
-## 7. Security Considerations
+## 8. Security Considerations
  
-### 7.1 Token Validation
+### 8.1 Token Validation
  
 - Always verify token signature before trusting any claims
 - Check token expiration before each operation
 - Validate scopes against requested operations
 - Verify federation metadata for cross-system requests
  
-### 7.2 Federation Security
+### 8.2 Federation Security
  
 - Maintain separate signing keys per system (never share)
 - Use scope mapping to restrict federated tokens
 - Limit hop count to prevent routing loops
 - Log all federation events for audit
  
-### 7.3 Identity Binding
+### 8.3 Identity Binding
  
 - Require identity for audit-sensitive operations
 - Preserve identity through delegation chain
 - Include external auth info when available
 - Log principal ID with all security-relevant events
  
-## 8. Implementation Checklist
+## 9. Implementation Checklist
  
 ### MAP Server Side
  
@@ -863,6 +1007,14 @@ await client.send({
 - [ ] Update spawn handler for token delegation
 - [ ] Implement federation gateway
 - [ ] Add configuration options
+- [x] Add `AgentPersistentIdentity` to protocol types and schema
+- [x] Add `persistentIdentity` to Agent, AgentsRegisterRequestParams, RegisteredAgent
+- [x] Add `persistentId` filter to AgentsListFilter and AgentFilter
+- [x] Add `resumed` field to AgentsRegisterResponseResult
+- [x] Add `persistentId` to AuthPrincipal
+- [x] Pass `persistentIdentity` through agent registry and handlers
+- [ ] Implement persistent identity verification hooks
+- [ ] Implement agent resumption via persistent identity
 - [ ] Write tests
  
 ### Integration Tests
@@ -874,4 +1026,7 @@ await client.send({
 - [ ] Federation gateway (cross-org)
 - [ ] Token expiration handling
 - [ ] Identity inheritance
+- [ ] Persistent identity registration and query
+- [ ] Agent resumption via persistent identity
+- [ ] Self-certifying verification at gateway
  

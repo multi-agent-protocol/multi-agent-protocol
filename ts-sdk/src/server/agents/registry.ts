@@ -221,6 +221,8 @@ export class AgentRegistryImpl implements AgentRegistry {
     capabilities?: string[];
     /** Structured capability descriptor for rich agent discovery */
     capabilityDescriptor?: import('../../types').MAPAgentCapabilityDescriptor;
+    /** Persistent identity for this agent */
+    persistentIdentity?: import('../../types').AgentPersistentIdentity;
   }): RegisteredAgent {
     const now = Date.now();
     const agent: RegisteredAgent = {
@@ -234,6 +236,7 @@ export class AgentRegistryImpl implements AgentRegistry {
       lastStateChange: now,
       capabilities: params.capabilities,
       capabilityDescriptor: params.capabilityDescriptor,
+      persistentIdentity: params.persistentIdentity,
     };
 
     this.store.save(agent);

@@ -391,6 +391,101 @@ export interface AgentLifecycle {
   _meta?: Meta;
 }
 
+// =============================================================================
+// Persistent Identity Types
+// =============================================================================
+
+/**
+ * How the identity was established.
+ * Standard types align with agent-iam providers; custom types use "x-" prefix.
+ */
+export type IdentityType =
+  | "keypair"
+  | "platform"
+  | "attested"
+  | "decentralized"
+  | `x-${string}`;
+
+/**
+ * How the server verified the agent's persistent identity.
+ *
+ * - "verified": Server cryptographically verified the proof
+ * - "auth-derived": Identity was extracted from a verified auth token
+ * - "self-declared": Agent presented identity but proof was not verified
+ * - "unverified": No proof was provided
+ *
+ * Per Option D: Servers MUST NOT set "verified" unless cryptographic
+ * verification succeeded. If proof is present, servers SHOULD attempt
+ * verification.
+ */
+export type IdentityVerificationStatus =
+  | "verified"
+  | "auth-derived"
+  | "self-declared"
+  | "unverified";
+
+/**
+ * An authority endorsement vouching for an agent's identity.
+ * Enables progressive trust: TOFU → behavioral → authority-backed.
+ */
+export interface AgentEndorsement {
+  /** Identifier of the endorsing authority */
+  authorityId: string;
+  /** What the authority is claiming (e.g., "member-of:acme-engineering") */
+  claim: string;
+  /** Cryptographic signature over persistentId + publicKey + claim */
+  signature: string;
+  /** When the endorsement was issued (ISO 8601) */
+  issuedAt: string;
+  /** When the endorsement expires (ISO 8601, optional) */
+  expiresAt?: string;
+}
+
+/**
+ * Proof binding a persistent identity to the current session.
+ * Prevents replay attacks by tying the proof to a specific challenge.
+ */
+export interface AgentIdentityProof {
+  /** The challenge/nonce that was signed */
+  challenge: string;
+  /** Cryptographic signature over the challenge */
+  signature: string;
+  /** When the proof was generated (ISO 8601) */
+  provenAt: string;
+}
+
+/**
+ * Persistent identity for an agent that survives across sessions and connections.
+ *
+ * Identity ("who you are") is separate from capability ("what you can do")
+ * and from the transient AgentId assigned per registration.
+ *
+ * The persistentId is stable across:
+ * - Session boundaries (disconnect/reconnect)
+ * - Token refresh and expiration
+ * - Delegation chains (parent → child)
+ * - Federation (cross-system movement)
+ */
+export interface AgentPersistentIdentity {
+  /** Stable identifier across sessions (e.g., "key:fingerprint", "platform:uuid", "did:agent:...") */
+  persistentId: string;
+  /** How this identity was established */
+  identityType: IdentityType;
+  /** Public key for self-certifying verification (PEM format, optional) */
+  publicKey?: string;
+  /** Proof binding this identity to the current session */
+  proof?: AgentIdentityProof;
+  /** Authority endorsements for progressive trust */
+  endorsements?: AgentEndorsement[];
+  /**
+   * How the server verified this identity.
+   * Set by the server, not the client. Servers MUST NOT set "verified"
+   * unless cryptographic verification succeeded.
+   */
+  verificationStatus?: IdentityVerificationStatus;
+  _meta?: Meta;
+}
+
 /** Who can see this agent */
 export type AgentVisibility = "public" | "parent-only" | "scope" | "system";
 
@@ -450,6 +545,13 @@ export interface Agent {
 
   /** Structured capability descriptor for rich agent discovery */
   capabilityDescriptor?: MAPAgentCapabilityDescriptor;
+
+  /**
+   * Persistent identity that survives across sessions.
+   * When present, identifies this agent instance across reconnections,
+   * token refreshes, and federation boundaries.
+   */
+  persistentIdentity?: AgentPersistentIdentity;
 
   metadata?: Record<string, unknown>;
   _meta?: Meta;
@@ -1294,6 +1396,8 @@ export interface AuthPrincipal {
   claims?: Record<string, unknown>;
   /** Token expiration timestamp (Unix ms) - from JWT exp claim */
   expiresAt?: number;
+  /** Persistent identity extracted from credentials (if present) */
+  persistentId?: string;
 }
 
 /**
@@ -1563,6 +1667,8 @@ export interface AgentsListFilter {
   tags?: string[];
   /** Filter by accepted content type */
   accepts?: string;
+  /** Filter by persistent identity */
+  persistentId?: string;
 }
 
 export interface AgentsListRequestParams {
@@ -1627,6 +1733,14 @@ export interface AgentsRegisterRequestParams {
   environment?: AgentEnvironment;
   /** Structured capability descriptor for rich agent discovery */
   capabilityDescriptor?: MAPAgentCapabilityDescriptor;
+  /**
+   * Persistent identity for this agent.
+   * If provided, the server will attempt to verify the proof and may
+   * resume a previous registration with the same persistentId.
+   * If omitted and the server is configured to auto-assign identities,
+   * the server may generate one and return it in the response.
+   */
+  persistentIdentity?: AgentPersistentIdentity;
   metadata?: Record<string, unknown>;
   /** Permission overrides merged on top of role-based defaults */
   permissionOverrides?: Partial<AgentPermissions>;
@@ -1640,6 +1754,11 @@ export interface AgentsRegisterRequest extends MAPRequestBase<AgentsRegisterRequ
 
 export interface AgentsRegisterResponseResult {
   agent: Agent;
+  /**
+   * Whether this registration resumed a previous agent via persistent identity.
+   * When true, the agent's ID and state may reflect the previous registration.
+   */
+  resumed?: boolean;
   _meta?: Meta;
 }
 
