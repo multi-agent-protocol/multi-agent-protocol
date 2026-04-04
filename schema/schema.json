@@ -502,7 +502,7 @@
       "type": "object",
       "description": "Persistent identity for an agent that survives across sessions and connections. persistentId formats: did:key:z6Mk... (keypair), platform:uuid (platform), spiffe://domain/path (attested), did:web:domain:path (decentralized).",
       "properties": {
-        "persistentId": { "type": "string", "description": "Stable identifier across sessions (DID, SPIFFE URI, or platform identifier)" },
+        "persistentId": { "type": "string", "minLength": 1, "description": "Stable identifier across sessions (DID, SPIFFE URI, or platform identifier)" },
         "identityType": { "$ref": "#/$defs/IdentityType" },
         "publicKey": { "type": "string", "description": "Public key for self-certifying verification (PEM format)" },
         "publicKeyJwk": { "$ref": "#/$defs/AgentPublicKeyJwk" },
@@ -1416,6 +1416,13 @@
       "properties": {
         "agent": { "$ref": "#/$defs/Agent" },
         "resumed": { "type": "boolean", "description": "Whether this registration resumed a previous agent via persistent identity" },
+        "resumedFrom": {
+          "type": "object",
+          "description": "Context about the resumed agent (only present when resumed is true)",
+          "properties": {
+            "previousSessionId": { "type": "string" }
+          }
+        },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
       "required": ["agent"]
@@ -1446,6 +1453,8 @@
             "capabilityDescriptor": { "$ref": "#/$defs/MAPAgentCapabilityDescriptor" },
             "environment": { "$ref": "#/$defs/AgentEnvironment" },
             "initialMessage": { "$ref": "#/$defs/Message" },
+            "persistentIdentity": { "$ref": "#/$defs/AgentPersistentIdentity" },
+            "resumePersistentIdentity": { "type": "boolean", "description": "When true and persistentIdentity is provided, attempt to resume a previously orphaned agent with the same persistentId" },
             "metadata": { "type": "object" },
             "requestedScopes": {
               "type": "array",

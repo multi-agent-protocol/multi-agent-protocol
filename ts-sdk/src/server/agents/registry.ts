@@ -197,6 +197,7 @@ export function hasCapability(capabilities: string[] | undefined, pattern: strin
  * Events emitted:
  * - agent.registered
  * - agent.unregistered
+ * - agent.resumed
  * - agent.state.changed
  * - agent.metadata.changed
  */
@@ -361,13 +362,15 @@ export class AgentRegistryImpl implements AgentRegistry {
 
   /**
    * Resume an orphaned agent under a new session.
-   * Updates sessionId, resets state to idle, and optionally merges metadata.
+   * Updates sessionId, resets state to idle, optionally merges metadata,
+   * and optionally updates the persistent identity (e.g., with fresh proof).
    * Emits agent.resumed event.
    */
   resume(
     id: string,
     newSessionId: string,
     metadata?: Record<string, unknown>,
+    persistentIdentity?: import('../../types').AgentPersistentIdentity,
   ): RegisteredAgent {
     const agent = this.store.get(id);
     if (!agent) {
@@ -382,6 +385,7 @@ export class AgentRegistryImpl implements AgentRegistry {
       state: "idle",
       lastStateChange: now,
       metadata: metadata ? { ...agent.metadata, ...metadata } : agent.metadata,
+      ...(persistentIdentity && { persistentIdentity }),
     };
 
     this.store.save(resumedAgent);

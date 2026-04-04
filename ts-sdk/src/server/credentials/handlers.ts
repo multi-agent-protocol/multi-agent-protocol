@@ -110,7 +110,9 @@ export function createCredentialHandlers(
             type: 'credential.denied',
             data: {
               agentId: token.agentId,
-              persistentId: token.persistentIdentity?.persistentId,
+              ...(token.persistentIdentity?.persistentId && {
+                persistentId: token.persistentIdentity.persistentId,
+              }),
               scope,
               resource,
               reason: check.error,
@@ -131,7 +133,9 @@ export function createCredentialHandlers(
           type: 'credential.issued',
           data: {
             agentId: token.agentId,
-            persistentId: token.persistentIdentity?.persistentId,
+            ...(token.persistentIdentity?.persistentId && {
+              persistentId: token.persistentIdentity.persistentId,
+            }),
             scope,
             resource,
             credentialType: credential.credentialType,

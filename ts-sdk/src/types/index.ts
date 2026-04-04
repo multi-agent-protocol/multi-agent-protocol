@@ -1025,6 +1025,14 @@ export const EVENT_TYPES = {
   // System events
   SYSTEM_ERROR: "system_error",
 
+  // Agent identity events
+  AGENT_RESUMED: "agent.resumed",
+  AGENT_IDENTITY_VERIFICATION_FAILED: "agent.identity.verification.failed",
+
+  // Credential events
+  CREDENTIAL_ISSUED: "credential.issued",
+  CREDENTIAL_DENIED: "credential.denied",
+
   // Federation events
   FEDERATION_CONNECTED: "federation_connected",
   FEDERATION_DISCONNECTED: "federation_disconnected",
@@ -1851,6 +1859,13 @@ export interface AgentsRegisterResponseResult {
    * When true, the agent's ID and state may reflect the previous registration.
    */
   resumed?: boolean;
+  /**
+   * Context about what was resumed (only present when resumed is true).
+   * Indicates which session the agent was previously associated with.
+   */
+  resumedFrom?: {
+    previousSessionId: string;
+  };
   _meta?: Meta;
 }
 

@@ -198,6 +198,19 @@ export class FederatedAgentRegistry implements AgentRegistry {
   }
 
   /**
+   * Resume an orphaned agent under a new session.
+   * Delegates to the local registry.
+   */
+  resume(
+    id: string,
+    newSessionId: string,
+    metadata?: Record<string, unknown>,
+    persistentIdentity?: import('../../../types').AgentPersistentIdentity,
+  ): RegisteredAgent {
+    return this.local.resume(id, newSessionId, metadata, persistentIdentity);
+  }
+
+  /**
    * Check if an agent is remote.
    */
   isRemote(agentId: string): boolean {

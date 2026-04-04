@@ -213,6 +213,7 @@ export interface AgentStore {
  * Events emitted:
  * - agent.registered
  * - agent.unregistered
+ * - agent.resumed
  * - agent.state.changed
  * - agent.metadata.changed
  */
@@ -250,13 +251,15 @@ export interface AgentRegistry {
 
   /**
    * Resume an orphaned agent under a new session.
-   * Updates the agent's sessionId, resets state to idle, and merges metadata.
+   * Updates the agent's sessionId, resets state to idle, merges metadata,
+   * and optionally updates the persistent identity (e.g., with fresh proof).
    * Emits agent.resumed event.
    */
   resume(
     id: string,
     newSessionId: string,
     metadata?: Record<string, unknown>,
+    persistentIdentity?: import('../types').AgentPersistentIdentity,
   ): RegisteredAgent;
 
   /** Unregister all agents for a session (cleanup on disconnect) */
@@ -266,6 +269,18 @@ export interface AgentRegistry {
 export interface AgentRegistryOptions {
   eventBus: EventBus;
   store?: AgentStore;
+}
+
+/**
+ * Context provided to identity verifiers during registration.
+ */
+export interface IdentityVerificationContext {
+  /** The session requesting registration */
+  sessionId: string;
+  /** The agent name being registered */
+  agentName: string;
+  /** Whether this is a resumption attempt */
+  isResumption: boolean;
 }
 
 /**
@@ -283,10 +298,12 @@ export interface IdentityVerifier {
   /**
    * Verify an agent's persistent identity.
    * @param identity The persistent identity to verify
+   * @param context Additional context about the registration request
    * @returns The verification status, or undefined to skip verification
    */
   verify(
     identity: import('../types').AgentPersistentIdentity,
+    context?: IdentityVerificationContext,
   ): Promise<import('../types').IdentityVerificationStatus | undefined>;
 }
 
