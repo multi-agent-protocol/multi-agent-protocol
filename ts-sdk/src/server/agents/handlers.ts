@@ -153,6 +153,29 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
     "map/agents/register": async (params: unknown, ctx: HandlerContext) => {
       const { name, role, metadata, capabilities, capabilityDescriptor, persistentIdentity } = params as RegisterParams;
 
+      // Resolve persistent identity: explicit param takes precedence,
+      // then fall back to identity from the auth token (if authenticated via agent-iam)
+      let resolvedIdentity = persistentIdentity;
+      if (!resolvedIdentity) {
+        const tokenData = ctx.session.providers?.['agent-iam']?.providerData as
+          { persistentIdentity?: import('../../types').AgentPersistentIdentity } | undefined;
+        if (tokenData?.persistentIdentity) {
+          const pi = tokenData.persistentIdentity;
+          resolvedIdentity = {
+            persistentId: (pi as any).persistentId,
+            identityType: (pi as any).identityType,
+            publicKey: (pi as any).publicKey,
+            publicKeyJwk: (pi as any).publicKeyJwk,
+            proof: (pi as any).proof && (pi as any).challenge ? {
+              challenge: (pi as any).challenge,
+              signature: (pi as any).proof,
+              provenAt: new Date().toISOString(),
+            } : undefined,
+            verificationStatus: 'auth-derived' as const,
+          };
+        }
+      }
+
       const registeredAgent = agents.register({
         name,
         role,
@@ -160,7 +183,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         sessionId: ctx.session.id,
         capabilities,
         capabilityDescriptor,
-        persistentIdentity,
+        persistentIdentity: resolvedIdentity,
       });
 
       // Track agent in session - use SessionManager if available for atomic updates
@@ -337,7 +360,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         throw new Error(`Parent agent ${parent} does not belong to this session`);
       }
 
-      // Register the child agent
+      // Register the child agent, inheriting parent's persistent identity
       const childAgent = agents.register({
         name: name ?? `${parentAgent.name}-child`,
         role,
@@ -347,6 +370,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         },
         sessionId: ctx.session.id,
         capabilityDescriptor,
+        persistentIdentity: parentAgent.persistentIdentity,
       });
 
       // Track child in session

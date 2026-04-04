@@ -155,6 +155,7 @@ export class AgentIAMFederationGateway {
     const principal: AuthPrincipal = {
       id: `federated:${sourceSystemId}:${deserializedToken.agentId}`,
       issuer: sourceSystemId,
+      persistentId: deserializedToken.persistentIdentity?.persistentId,
       claims: {
         scopes: translatedScopes,
         federatedFrom: sourceSystemId,
@@ -245,13 +246,14 @@ export class AgentIAMFederationGateway {
       peerTrust?.scopeMapping,
     );
 
-    // 7. Delegate with short TTL
+    // 7. Delegate with short TTL, preserving persistent identity
     const delegated = this.#localTokenService.delegate(sourceToken, {
       agentId: sourceToken.agentId,
       requestedScopes: translatedScopes,
       delegatable: false,
       ttlMinutes: this.#federatedTTL,
       inheritIdentity: true,
+      inheritPersistentIdentity: true,
     });
 
     // 8. Set federation metadata on delegated token
