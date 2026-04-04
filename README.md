@@ -54,6 +54,7 @@ for await (const event of subscription) {
 - **Real-time streaming** - Subscribe to events with backpressure support
 - **Auto-reconnection** - Exponential backoff with subscription restoration
 - **Permission system** - 4-layer access control (system, participant, scope, agent)
+- **Persistent identity** - Stable agent identity across sessions using DID:key, SPIFFE, DID:web standards
 - **Federation** - Connect multiple MAP systems with envelope-based routing
 - **Causal ordering** - Events released in dependency order
 
@@ -102,7 +103,23 @@ The protocol defines 27 methods across three tiers:
 
 **Structure (Recommended):** Agent lifecycle (`register`, `spawn`, `unregister`, `update`, `stop`, `suspend`, `resume`), scope management (`scopes/create`, `join`, `leave`), and structure queries
 
-**Extensions (Optional):** Federation (`federation/connect`, `federation/route`), session management, and steering (`map/inject`)
+**Extensions (Optional):** Federation (`federation/connect`, `federation/route`), credential brokering (`cred/get`, `cred/list`, `cred/status`), session management, and steering (`map/inject`)
+
+### Persistent Agent Identity
+
+MAP supports stable agent identities that persist across sessions, connections, and delegation chains. Identity is separate from capability (what you can do) and transient AgentId (which instance you are).
+
+**Supported identity standards:**
+- **W3C DID:key** (`did:key:z6Mk...`) - Self-certifying Ed25519 keypair identities
+- **CNCF SPIFFE** (`spiffe://trust-domain/path`) - Workload/attested identities
+- **W3C DID:web** (`did:web:domain:path`) - Domain-anchored decentralized identities
+
+**Key features:**
+- Agent resumption - reconnect and resume a previous agent by matching `persistentId`
+- Pluggable identity verification via `IdentityVerifier` hook
+- Progressive trust through W3C Verifiable Credential endorsements
+- Identity propagation through spawn and federation
+- Credential audit trail with `persistentId`
 
 ## License
 
