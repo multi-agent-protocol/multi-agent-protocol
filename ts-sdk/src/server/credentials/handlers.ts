@@ -51,6 +51,7 @@ interface TokenLike {
   scopes: string[];
   constraints?: Record<string, unknown>;
   expiresAt?: string;
+  persistentIdentity?: { persistentId?: string };
 }
 
 /**
@@ -109,6 +110,7 @@ export function createCredentialHandlers(
             type: 'credential.denied',
             data: {
               agentId: token.agentId,
+              persistentId: token.persistentIdentity?.persistentId,
               scope,
               resource,
               reason: check.error,
@@ -129,6 +131,7 @@ export function createCredentialHandlers(
           type: 'credential.issued',
           data: {
             agentId: token.agentId,
+            persistentId: token.persistentIdentity?.persistentId,
             scope,
             resource,
             credentialType: credential.credentialType,

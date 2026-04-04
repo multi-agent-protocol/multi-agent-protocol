@@ -248,6 +248,17 @@ export interface AgentRegistry {
     metadata: Record<string, unknown>
   ): RegisteredAgent;
 
+  /**
+   * Resume an orphaned agent under a new session.
+   * Updates the agent's sessionId, resets state to idle, and merges metadata.
+   * Emits agent.resumed event.
+   */
+  resume(
+    id: string,
+    newSessionId: string,
+    metadata?: Record<string, unknown>,
+  ): RegisteredAgent;
+
   /** Unregister all agents for a session (cleanup on disconnect) */
   unregisterBySession(sessionId: string): string[];
 }
@@ -255,6 +266,28 @@ export interface AgentRegistry {
 export interface AgentRegistryOptions {
   eventBus: EventBus;
   store?: AgentStore;
+}
+
+/**
+ * Pluggable identity verification hook.
+ *
+ * Called during agent registration when a persistentIdentity is provided.
+ * Implementations can perform cryptographic verification (e.g., checking
+ * DID:key signatures, SPIFFE attestation, or DID:web resolution).
+ *
+ * The returned status is set on the agent's persistentIdentity.verificationStatus.
+ * If verification fails (returns undefined or throws), registration still
+ * proceeds with verificationStatus = "unverified".
+ */
+export interface IdentityVerifier {
+  /**
+   * Verify an agent's persistent identity.
+   * @param identity The persistent identity to verify
+   * @returns The verification status, or undefined to skip verification
+   */
+  verify(
+    identity: import('../types').AgentPersistentIdentity,
+  ): Promise<import('../types').IdentityVerificationStatus | undefined>;
 }
 
 // =============================================================================

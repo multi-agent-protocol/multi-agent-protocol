@@ -1827,6 +1827,12 @@ export interface AgentsRegisterRequestParams {
    * the server may generate one and return it in the response.
    */
   persistentIdentity?: AgentPersistentIdentity;
+  /**
+   * When true and persistentIdentity is provided, the server will attempt
+   * to resume a previously orphaned agent with the same persistentId.
+   * The resumed agent's ID and accumulated state are preserved.
+   */
+  resumePersistentIdentity?: boolean;
   metadata?: Record<string, unknown>;
   /** Permission overrides merged on top of role-based defaults */
   permissionOverrides?: Partial<AgentPermissions>;

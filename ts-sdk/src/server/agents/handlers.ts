@@ -10,6 +10,7 @@ import type {
   HandlerRegistry,
   ServerAgentState,
   SessionManager,
+  IdentityVerifier,
 } from "../types";
 import type { AuthManager } from "../auth";
 import type { AuthManagerImpl } from "../auth/manager";
@@ -37,6 +38,19 @@ export interface AgentHandlerOptions {
    * are returned in the spawn response for child agent setup.
    */
   authManager?: AuthManager;
+  /**
+   * Pluggable identity verifier hook.
+   * Called during registration when persistentIdentity is provided.
+   * Sets verificationStatus on the identity based on cryptographic verification.
+   */
+  identityVerifier?: IdentityVerifier;
+  /**
+   * When true, enforce that at most one active (non-stopped) agent exists
+   * per persistentId. Registration with an already-active persistentId
+   * will fail unless resumePersistentIdentity is set (which takes over
+   * the existing agent).
+   */
+  uniqueIdentity?: boolean;
 }
 
 /**
@@ -52,6 +66,8 @@ interface RegisterParams {
   capabilityDescriptor?: import('../../types').MAPAgentCapabilityDescriptor;
   /** Persistent identity for this agent */
   persistentIdentity?: import('../../types').AgentPersistentIdentity;
+  /** When true, attempt to resume an orphaned agent with the same persistentId */
+  resumePersistentIdentity?: boolean;
 }
 
 /**
@@ -147,11 +163,11 @@ interface SpawnParams {
  * - `map/agents/spawn` - Spawn a child agent with delegated credentials
  */
 export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegistry {
-  const { agents, sessions, authManager } = options;
+  const { agents, sessions, authManager, identityVerifier, uniqueIdentity } = options;
 
   return {
     "map/agents/register": async (params: unknown, ctx: HandlerContext) => {
-      const { name, role, metadata, capabilities, capabilityDescriptor, persistentIdentity } = params as RegisterParams;
+      const { name, role, metadata, capabilities, capabilityDescriptor, persistentIdentity, resumePersistentIdentity } = params as RegisterParams;
 
       // Resolve persistent identity: explicit param takes precedence,
       // then fall back to identity from the auth token (if authenticated via agent-iam)
@@ -173,6 +189,73 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
             } : undefined,
             verificationStatus: 'auth-derived' as const,
           };
+        }
+      }
+
+      // Run identity verifier hook if configured and identity is present
+      if (resolvedIdentity && identityVerifier) {
+        try {
+          const status = await identityVerifier.verify(resolvedIdentity);
+          if (status) {
+            resolvedIdentity = { ...resolvedIdentity, verificationStatus: status };
+          }
+        } catch {
+          // Verification failure is non-fatal; mark as unverified
+          resolvedIdentity = { ...resolvedIdentity, verificationStatus: 'unverified' };
+        }
+      }
+
+      // Check for existing agents with same persistentId
+      const persistentId = resolvedIdentity?.persistentId;
+      if (persistentId) {
+        const existingAgents = agents.list({ persistentId });
+        // Filter to active (non-stopped) agents
+        const activeAgents = existingAgents.filter((a) => a.state !== 'stopped');
+
+        if (resumePersistentIdentity && activeAgents.length > 0) {
+          // Resume the most recently active orphaned agent
+          const sorted = activeAgents.sort((a, b) => b.lastStateChange - a.lastStateChange);
+          const resumeTarget = sorted[0];
+
+          // Update session tracking
+          if (sessions) {
+            if (resumeTarget.sessionId !== ctx.session.id) {
+              sessions.removeAgent(resumeTarget.sessionId, resumeTarget.id);
+            }
+            sessions.addAgent(ctx.session.id, resumeTarget.id);
+          } else {
+            ctx.session.agentIds.push(resumeTarget.id);
+          }
+
+          // Resume: updates sessionId, resets to idle, merges metadata
+          const resumedAgent = agents.resume(resumeTarget.id, ctx.session.id, {
+            ...metadata,
+            resumedAt: Date.now(),
+            resumedFromSession: resumeTarget.sessionId,
+          });
+
+          return {
+            agent: {
+              id: resumedAgent.id,
+              name: resumedAgent.name,
+              role: resumedAgent.role,
+              state: resumedAgent.state,
+              metadata: resumedAgent.metadata,
+              capabilities: resumedAgent.capabilities,
+              capabilityDescriptor: resumedAgent.capabilityDescriptor,
+              persistentIdentity: resumedAgent.persistentIdentity,
+              visibility: "public",
+            },
+            resumed: true,
+          };
+        }
+
+        // uniqueIdentity enforcement: reject if active agent already exists
+        if (uniqueIdentity && activeAgents.length > 0) {
+          throw new Error(
+            `An active agent with persistentId "${persistentId}" already exists. ` +
+            `Use resumePersistentIdentity: true to resume it, or unregister the existing agent first.`
+          );
         }
       }
 

@@ -360,6 +360,45 @@ export class AgentRegistryImpl implements AgentRegistry {
   }
 
   /**
+   * Resume an orphaned agent under a new session.
+   * Updates sessionId, resets state to idle, and optionally merges metadata.
+   * Emits agent.resumed event.
+   */
+  resume(
+    id: string,
+    newSessionId: string,
+    metadata?: Record<string, unknown>,
+  ): RegisteredAgent {
+    const agent = this.store.get(id);
+    if (!agent) {
+      throw new AgentNotFoundError(id);
+    }
+
+    const previousSessionId = agent.sessionId;
+    const now = Date.now();
+    const resumedAgent: RegisteredAgent = {
+      ...agent,
+      sessionId: newSessionId,
+      state: "idle",
+      lastStateChange: now,
+      metadata: metadata ? { ...agent.metadata, ...metadata } : agent.metadata,
+    };
+
+    this.store.save(resumedAgent);
+
+    this.eventBus.emit({
+      type: "agent.resumed",
+      data: {
+        agent: resumedAgent,
+        previousSessionId,
+      },
+      source: { agentId: id, sessionId: newSessionId },
+    });
+
+    return resumedAgent;
+  }
+
+  /**
    * Unregister all agents for a session.
    * Used for cleanup when a session disconnects.
    */

@@ -1402,6 +1402,7 @@
             "capabilityDescriptor": { "$ref": "#/$defs/MAPAgentCapabilityDescriptor" },
             "environment": { "$ref": "#/$defs/AgentEnvironment" },
             "persistentIdentity": { "$ref": "#/$defs/AgentPersistentIdentity" },
+            "resumePersistentIdentity": { "type": "boolean", "description": "When true and persistentIdentity is provided, attempt to resume a previously orphaned agent with the same persistentId" },
             "metadata": { "type": "object" },
             "_meta": { "$ref": "#/$defs/Meta" }
           }
