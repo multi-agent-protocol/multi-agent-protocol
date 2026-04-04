@@ -70,6 +70,20 @@ export interface AgentIAMToken extends MappableToken {
     maxHops?: number;
     allowFurtherFederation?: boolean;
   };
+  /**
+   * Persistent identity binding (agent-iam 0.0.3+).
+   * When present, the token carries a stable identity that survives
+   * across sessions, token refreshes, and delegation chains.
+   */
+  persistentIdentity?: {
+    persistentId: string;
+    identityType: string;
+    proof?: string;
+    challenge?: string;
+    publicKey?: string;
+    publicKeyJwk?: { kty: string; crv?: string; x?: string; [key: string]: unknown };
+    endorsements?: unknown[];
+  };
 }
 
 /**
@@ -87,6 +101,7 @@ export interface TokenServiceLike {
     delegatable?: boolean;
     ttlMinutes?: number;
     inheritIdentity?: boolean;
+    inheritPersistentIdentity?: boolean;
     agentCapabilities?: Record<string, unknown>;
   }): AgentIAMToken;
 }
@@ -191,6 +206,7 @@ export class AgentIAMProvider implements AuthProvider {
     const principal: AuthPrincipal = {
       id: token.agentId,
       issuer: token.identity?.systemId ?? 'agent-iam',
+      persistentId: token.persistentIdentity?.persistentId,
       claims: {
         scopes: token.scopes,
         delegatable: token.delegatable,
@@ -232,6 +248,7 @@ export class AgentIAMProvider implements AuthProvider {
       delegatable: true,
       ttlMinutes: spawnRequest.ttlMinutes,
       inheritIdentity: spawnRequest.inheritIdentity ?? true,
+      inheritPersistentIdentity: spawnRequest.inheritIdentity ?? true,
     });
 
     const serialized = this.#tokenService.serialize(childToken);
