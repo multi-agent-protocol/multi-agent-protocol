@@ -429,11 +429,23 @@
       "required": ["challenge", "signature", "provenAt"],
       "additionalProperties": false
     },
+    "AgentPublicKeyJwk": {
+      "type": "object",
+      "description": "JSON Web Key (JWK) representation of a public key (RFC 7517). For Ed25519: kty=OKP, crv=Ed25519, x=base64url-raw-key.",
+      "properties": {
+        "kty": { "type": "string", "description": "Key type (e.g., OKP, EC, RSA)" },
+        "crv": { "type": "string", "description": "Curve name (e.g., Ed25519)" },
+        "x": { "type": "string", "description": "Public key value (base64url-encoded)" }
+      },
+      "required": ["kty"],
+      "additionalProperties": true
+    },
     "AgentEndorsement": {
       "type": "object",
-      "description": "An authority endorsement vouching for an agent's identity",
+      "description": "Legacy authority endorsement vouching for an agent's identity",
       "properties": {
         "authorityId": { "type": "string", "description": "Identifier of the endorsing authority" },
+        "authorityPublicKey": { "type": "string", "description": "The authority's public key (PEM) for verification" },
         "claim": { "type": "string", "description": "What the authority is claiming" },
         "signature": { "type": "string", "description": "Cryptographic signature over persistentId + publicKey + claim" },
         "issuedAt": { "type": "string", "format": "date-time", "description": "When the endorsement was issued" },
@@ -442,17 +454,62 @@
       "required": ["authorityId", "claim", "signature", "issuedAt"],
       "additionalProperties": false
     },
+    "AgentVerifiableCredential": {
+      "type": "object",
+      "description": "W3C Verifiable Credential endorsement format (aligned with VC Data Model 2.0). Proof is computed over a JCS (RFC 8785) canonicalization of the credential fields.",
+      "properties": {
+        "type": { "const": "VerifiableCredential" },
+        "issuer": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string", "description": "Issuer identifier (DID, URI, or plain string)" },
+            "name": { "type": "string", "description": "Human-readable name" }
+          },
+          "required": ["id"]
+        },
+        "issuanceDate": { "type": "string", "format": "date-time", "description": "When the credential was issued" },
+        "expirationDate": { "type": "string", "format": "date-time", "description": "When the credential expires" },
+        "credentialSubject": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string", "description": "The agent's persistentId" },
+            "claim": { "type": "string", "description": "What is being attested" }
+          },
+          "required": ["id", "claim"]
+        },
+        "proof": {
+          "type": "object",
+          "properties": {
+            "type": { "const": "Ed25519Signature2020" },
+            "verificationMethod": { "type": "string", "description": "Issuer's key reference (e.g., did:key:z6Mk...#z6Mk...)" },
+            "created": { "type": "string", "format": "date-time", "description": "When the proof was created" },
+            "proofValue": { "type": "string", "description": "base64url-encoded Ed25519 signature over JCS-canonicalized payload" }
+          },
+          "required": ["type", "verificationMethod", "created", "proofValue"]
+        }
+      },
+      "required": ["type", "issuer", "issuanceDate", "credentialSubject", "proof"],
+      "additionalProperties": false
+    },
+    "Endorsement": {
+      "description": "An endorsement can be either the legacy AgentEndorsement format or a W3C VerifiableCredential. Discriminate by checking for type: VerifiableCredential.",
+      "oneOf": [
+        { "$ref": "#/$defs/AgentEndorsement" },
+        { "$ref": "#/$defs/AgentVerifiableCredential" }
+      ]
+    },
     "AgentPersistentIdentity": {
       "type": "object",
-      "description": "Persistent identity for an agent that survives across sessions and connections. Identity (who you are) is separate from capability (what you can do) and from the transient AgentId assigned per registration.",
+      "description": "Persistent identity for an agent that survives across sessions and connections. persistentId formats: did:key:z6Mk... (keypair), platform:uuid (platform), spiffe://domain/path (attested), did:web:domain:path (decentralized).",
       "properties": {
-        "persistentId": { "type": "string", "description": "Stable identifier across sessions (e.g., key:fingerprint, platform:uuid, did:agent:...)" },
+        "persistentId": { "type": "string", "description": "Stable identifier across sessions (DID, SPIFFE URI, or platform identifier)" },
         "identityType": { "$ref": "#/$defs/IdentityType" },
         "publicKey": { "type": "string", "description": "Public key for self-certifying verification (PEM format)" },
+        "publicKeyJwk": { "$ref": "#/$defs/AgentPublicKeyJwk" },
         "proof": { "$ref": "#/$defs/AgentIdentityProof" },
         "endorsements": {
           "type": "array",
-          "items": { "$ref": "#/$defs/AgentEndorsement" }
+          "items": { "$ref": "#/$defs/Endorsement" }
         },
         "verificationStatus": { "$ref": "#/$defs/IdentityVerificationStatus" },
         "_meta": { "$ref": "#/$defs/Meta" }

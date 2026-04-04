@@ -398,6 +398,14 @@ export interface AgentLifecycle {
 /**
  * How the identity was established.
  * Standard types align with agent-iam providers; custom types use "x-" prefix.
+ *
+ * Provider routing by persistentId prefix:
+ * - "did:key:..."        → keypair
+ * - "key:..."            → keypair (legacy)
+ * - "platform:..."       → platform
+ * - "spiffe://..."       → attested
+ * - "did:web:..."        → decentralized
+ * - "did:wba:..."        → decentralized
  */
 export type IdentityType =
   | "keypair"
@@ -425,12 +433,30 @@ export type IdentityVerificationStatus =
   | "unverified";
 
 /**
- * An authority endorsement vouching for an agent's identity.
- * Enables progressive trust: TOFU → behavioral → authority-backed.
+ * JSON Web Key (JWK) representation of a public key (RFC 7517).
+ * Used for DID and Verifiable Credentials interoperability.
+ *
+ * For Ed25519 keys:
+ * - kty: "OKP"
+ * - crv: "Ed25519"
+ * - x: base64url-encoded raw 32-byte public key
+ */
+export interface AgentPublicKeyJwk {
+  kty: string;
+  crv?: string;
+  x?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Legacy authority endorsement format.
+ * Kept for backward compatibility with agent-iam < 0.0.3.
  */
 export interface AgentEndorsement {
   /** Identifier of the endorsing authority */
   authorityId: string;
+  /** The authority's public key (PEM) for verification */
+  authorityPublicKey?: string;
   /** What the authority is claiming (e.g., "member-of:acme-engineering") */
   claim: string;
   /** Cryptographic signature over persistentId + publicKey + claim */
@@ -439,6 +465,58 @@ export interface AgentEndorsement {
   issuedAt: string;
   /** When the endorsement expires (ISO 8601, optional) */
   expiresAt?: string;
+}
+
+/**
+ * W3C Verifiable Credential endorsement format (aligned with VC Data Model 2.0).
+ *
+ * Enables interoperability with the broader VC ecosystem.
+ * Proof is computed over a JCS (RFC 8785) canonicalization of the credential fields.
+ */
+export interface AgentVerifiableCredential {
+  type: "VerifiableCredential";
+  issuer: {
+    /** Issuer identifier (DID, URI, or plain string) */
+    id: string;
+    /** Human-readable name */
+    name?: string;
+  };
+  /** When the credential was issued (ISO 8601) */
+  issuanceDate: string;
+  /** When the credential expires (ISO 8601, optional) */
+  expirationDate?: string;
+  credentialSubject: {
+    /** The agent's persistentId (e.g., "did:key:z6Mk...") */
+    id: string;
+    /** What is being attested */
+    claim: string;
+  };
+  proof: {
+    type: "Ed25519Signature2020";
+    /** Issuer's key reference (e.g., "did:key:z6Mk...#z6Mk...") */
+    verificationMethod: string;
+    /** When the proof was created (ISO 8601) */
+    created: string;
+    /** base64url-encoded Ed25519 signature over JCS-canonicalized payload */
+    proofValue: string;
+  };
+}
+
+/**
+ * An endorsement can be either the legacy format or W3C VC format.
+ * Both are supported for backward compatibility.
+ * Use isVerifiableCredential() / isLegacyEndorsement() to discriminate.
+ */
+export type Endorsement = AgentEndorsement | AgentVerifiableCredential;
+
+/** Type guard for W3C VC-format endorsements */
+export function isVerifiableCredential(e: Endorsement): e is AgentVerifiableCredential {
+  return "type" in e && (e as AgentVerifiableCredential).type === "VerifiableCredential";
+}
+
+/** Type guard for legacy endorsements */
+export function isLegacyEndorsement(e: Endorsement): e is AgentEndorsement {
+  return "authorityId" in e;
 }
 
 /**
@@ -460,6 +538,12 @@ export interface AgentIdentityProof {
  * Identity ("who you are") is separate from capability ("what you can do")
  * and from the transient AgentId assigned per registration.
  *
+ * The persistentId format depends on the identity type:
+ * - keypair:       "did:key:z6Mk..." (W3C DID:key) or "key:..." (legacy)
+ * - platform:      "platform:{uuid}"
+ * - attested:      "spiffe://trust-domain/path" (CNCF SPIFFE)
+ * - decentralized: "did:web:domain:path" or "did:wba:domain:path"
+ *
  * The persistentId is stable across:
  * - Session boundaries (disconnect/reconnect)
  * - Token refresh and expiration
@@ -467,16 +551,18 @@ export interface AgentIdentityProof {
  * - Federation (cross-system movement)
  */
 export interface AgentPersistentIdentity {
-  /** Stable identifier across sessions (e.g., "key:fingerprint", "platform:uuid", "did:agent:...") */
+  /** Stable identifier across sessions */
   persistentId: string;
   /** How this identity was established */
   identityType: IdentityType;
-  /** Public key for self-certifying verification (PEM format, optional) */
+  /** Public key for self-certifying verification (PEM format) */
   publicKey?: string;
+  /** Public key in JWK format (for DID/VC ecosystem interop) */
+  publicKeyJwk?: AgentPublicKeyJwk;
   /** Proof binding this identity to the current session */
   proof?: AgentIdentityProof;
-  /** Authority endorsements for progressive trust */
-  endorsements?: AgentEndorsement[];
+  /** Endorsements for progressive trust (supports both legacy and VC formats) */
+  endorsements?: Endorsement[];
   /**
    * How the server verified this identity.
    * Set by the server, not the client. Servers MUST NOT set "verified"
