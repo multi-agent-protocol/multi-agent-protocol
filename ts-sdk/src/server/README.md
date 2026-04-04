@@ -378,7 +378,7 @@ const recentEvents = eventBus.getEvents({
 
 ### AgentRegistry
 
-Manages agent lifecycle and state.
+Manages agent lifecycle, state, and persistent identity.
 
 ```typescript
 const agents = new AgentRegistryImpl({ eventBus });
@@ -391,11 +391,60 @@ const agent = agents.register({
   metadata: { version: "1.0" },
 });
 
+// Register with persistent identity
+const identifiedAgent = agents.register({
+  name: "Translator",
+  sessionId: "session-456",
+  persistentIdentity: {
+    persistentId: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
+    identityType: "keypair",
+  },
+});
+
 // Update state
 agents.updateState(agent.id, "busy");
 
 // List by filter
 const busyAgents = agents.list({ state: "busy" });
+
+// List by persistent identity
+const agentsByIdentity = agents.list({
+  persistentId: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
+});
+
+// Resume an orphaned agent under a new session
+const resumed = agents.resume(
+  agent.id,
+  "new-session-789",
+  { resumedAt: Date.now() },        // merge metadata
+  updatedPersistentIdentity,         // update identity (optional)
+);
+```
+
+#### Agent Handler Options
+
+The `createAgentHandlers()` factory accepts identity-related options:
+
+```typescript
+const handlers = createAgentHandlers({
+  agents,
+  sessions,
+  eventBus,
+
+  // Pluggable identity verification — called during registration
+  identityVerifier: {
+    async verify(identity, context) {
+      // context: { sessionId, agentName, isResumption }
+      if (identity.identityType === 'keypair' && identity.proof) {
+        return await verifyCrypto(identity) ? 'verified' : 'unverified';
+      }
+      return undefined; // skip verification
+    },
+  },
+
+  // Enforce one active agent per persistentId
+  uniqueIdentity: true,
+});
 ```
 
 ### ScopeManager
@@ -764,10 +813,11 @@ The SDK implements these MAP protocol methods:
 | Category | Methods |
 |----------|---------|
 | Connection | `map/connect`, `map/disconnect` |
-| Agents | `map/agents/register`, `map/agents/unregister`, `map/agents/list`, `map/agents/get`, `map/agents/update` |
+| Agents | `map/agents/register`, `map/agents/unregister`, `map/agents/list`, `map/agents/get`, `map/agents/update`, `map/agents/spawn` |
 | Scopes | `map/scopes/create`, `map/scopes/delete`, `map/scopes/list`, `map/scopes/get`, `map/scopes/join`, `map/scopes/leave` |
 | Messages | `map/send` |
 | Subscriptions | `map/subscribe`, `map/unsubscribe`, `map/replay` |
+| Credentials | `cred/get`, `cred/list`, `cred/status` |
 | Federation | `map/federation/connect`, `map/federation/disconnect`, `map/federation/list`, `map/federation/route` |
 
 ## Events Emitted
@@ -776,7 +826,9 @@ Building blocks emit these events via EventBus:
 
 | Building Block | Events |
 |----------------|--------|
-| AgentRegistry | `agent.registered`, `agent.unregistered`, `agent.state.changed`, `agent.metadata.changed` |
+| AgentRegistry | `agent.registered`, `agent.unregistered`, `agent.resumed`, `agent.state.changed`, `agent.metadata.changed` |
+| Agent Handlers | `agent.identity.verification.failed` |
+| Credential Handlers | `credential.issued`, `credential.denied` |
 | ScopeManager | `scope.created`, `scope.deleted`, `scope.agent.joined`, `scope.agent.left` |
 | SessionManager | `session.connected`, `session.disconnected`, `session.resumed`, `session.expired` |
 | MessageRouter | `message.sent`, `message.delivered`, `message.queued`, `message.expired` |

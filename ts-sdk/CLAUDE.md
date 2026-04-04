@@ -106,6 +106,24 @@ Key functions:
 - Timeout-based force release for stuck dependencies
 - Overflow handling when buffer is full
 
+### Persistent Identity (`src/types/index.ts`, `src/server/agents/`)
+
+Agents can carry stable identities across sessions, using industry-standard formats:
+
+- **Identity types**: `keypair` (DID:key), `attested` (SPIFFE), `decentralized` (DID:web), `platform`, `x-*` custom
+- **Identity format**: `AgentPersistentIdentity` with `persistentId`, `identityType`, optional `publicKeyJwk` (JWK RFC 7517), `proof` (challenge/signature), and `endorsements` (W3C VC or legacy)
+- **Verification**: `IdentityVerificationStatus` — `"verified"` | `"auth-derived"` | `"self-declared"` | `"unverified"`
+- **Resumption**: `resumePersistentIdentity` flag in `map/agents/register` to resume orphaned agents by `persistentId`
+- **Server hooks**: `IdentityVerifier` interface for pluggable cryptographic verification; `uniqueIdentity` server config
+- **Auth integration**: `AgentIAMProvider` extracts persistent identity from agent-iam tokens
+- **Credential audit**: `credential.issued` / `credential.denied` events include `persistentId`
+
+Key types:
+- `AgentPersistentIdentity`, `IdentityType`, `IdentityVerificationStatus`
+- `AgentPublicKeyJwk`, `AgentIdentityProof`, `AgentEndorsement`, `AgentVerifiableCredential`
+- `Endorsement` (union of legacy and W3C VC formats)
+- `IdentityVerifier`, `IdentityVerificationContext` (server types)
+
 ## Protocol Methods
 
 All methods are registered in `src/protocol/index.ts`:
@@ -126,8 +144,10 @@ Core types in `src/types/index.ts`:
 - Branded ID types: `AgentId`, `ScopeId`, `SessionId`, `SubscriptionId`, `MessageId`
 - `Agent`, `Scope`, `Message`, `Event`
 - `AgentPermissions`, `ParticipantCapabilities`
+- `AgentPersistentIdentity`, `IdentityType`, `IdentityVerificationStatus`, `AgentPublicKeyJwk`
+- `AgentEndorsement`, `AgentVerifiableCredential`, `Endorsement` (union)
 - `FederationEnvelope`, `FederationRoutingConfig`
-- Request/response types for all protocol methods
+- Request/response types for all protocol methods (including `resumePersistentIdentity` on register)
 
 ## Testing
 
@@ -184,6 +204,10 @@ npm run lint               # ESLint
 - ✅ Outage buffering for federation
 - ✅ Causal event ordering
 - ✅ Permission update events
+- ✅ Persistent agent identity (DID:key, SPIFFE, DID:web, W3C VC, JWK)
+- ✅ Agent resumption via persistentId
+- ✅ Identity verification hooks
+- ✅ Credential audit with persistentId
 
 **Deferred (P2/P3):**
 - Ordering modes (none/per-agent/causal/total)

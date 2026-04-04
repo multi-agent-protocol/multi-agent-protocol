@@ -28,18 +28,18 @@ The MAP Server SDK provides **composable building blocks** for implementing Mult
 ```
 server/
 ├── index.ts                 # Main exports (re-exports everything)
-├── types.ts                 # ALL interfaces and types (~800 lines)
+├── types.ts                 # ALL interfaces and types (~900 lines)
 │
 ├── events/                  # EventBus - central event dispatcher
 │   ├── index.ts
 │   ├── event-bus.ts         # EventBusImpl
 │   └── stores/in-memory.ts  # InMemoryEventStore
 │
-├── agents/                  # AgentRegistry - agent lifecycle
+├── agents/                  # AgentRegistry - agent lifecycle + persistent identity
 │   ├── index.ts
-│   ├── registry.ts          # AgentRegistryImpl
-│   ├── handlers.ts          # createAgentHandlers()
-│   └── stores/in-memory.ts  # InMemoryAgentStore
+│   ├── registry.ts          # AgentRegistryImpl (includes resume())
+│   ├── handlers.ts          # createAgentHandlers() (resumption, identity verification)
+│   └── stores/in-memory.ts  # InMemoryAgentStore (persistentId filter)
 │
 ├── sessions/                # SessionManager - connection tracking
 │   ├── index.ts
@@ -80,6 +80,18 @@ server/
 │   ├── index.ts
 │   └── cleaner.ts           # ResourceCleanerImpl
 │
+├── credentials/             # Credential brokering
+│   ├── index.ts
+│   ├── handlers.ts          # createCredentialHandlers() (audit with persistentId)
+│   └── types.ts             # BrokerLike interface
+│
+├── auth/                    # Authentication
+│   ├── index.ts
+│   ├── manager.ts           # AuthManagerImpl
+│   └── providers/
+│       ├── agent-iam.ts     # AgentIAMProvider (persistent identity extraction)
+│       └── agent-iam-federation.ts  # Federation gateway auth
+│
 └── federation/              # Cross-system communication
     ├── index.ts
     ├── gateway.ts           # FederationGatewayImpl
@@ -87,7 +99,7 @@ server/
     ├── handlers.ts          # createFederationHandlers()
     └── decorators/
         ├── index.ts
-        ├── agents.ts        # FederatedAgentRegistry
+        ├── agents.ts        # FederatedAgentRegistry (includes resume())
         ├── scopes.ts        # FederatedScopeManager
         └── messages.ts      # FederatedMessageRouter
 ```
@@ -146,6 +158,36 @@ const federatedAgents = new FederatedAgentRegistry({
 // Same interface, added behavior
 federatedAgents.register({ name: "Agent" }); // Also broadcasts to peers
 ```
+
+### Persistent Identity Pattern
+
+Agents can carry stable identities across sessions. The flow:
+
+1. Agent authenticates with `agent-iam` → token carries `persistentIdentity`
+2. Register handler extracts identity (explicit param or auth-derived fallback)
+3. `IdentityVerifier` hook runs if configured → sets `verificationStatus`
+4. If `resumePersistentIdentity: true`, looks up orphaned agents by `persistentId`
+5. Identity propagates through spawn (parent → child) and federation
+
+```typescript
+// Configure identity-aware agent handlers
+const handlers = createAgentHandlers({
+  agents,
+  eventBus,
+  identityVerifier: myVerifier,  // Pluggable verification hook
+  uniqueIdentity: true,          // Enforce one active agent per identity
+});
+```
+
+Key types in `types.ts`:
+- `IdentityVerifier` - Verification hook interface with `verify(identity, context?)`
+- `IdentityVerificationContext` - Context passed to verifier (sessionId, agentName, isResumption)
+- `RegisteredAgent.persistentIdentity` - Stored on agent, survives resume
+
+Events emitted:
+- `agent.resumed` - Agent resumed under new session
+- `agent.identity.verification.failed` - Verifier threw an error
+- `credential.issued` / `credential.denied` - Include `persistentId` in audit data
 
 ## Common Tasks
 
@@ -229,7 +271,7 @@ All types are in `types.ts`. Key types:
 | Type | Purpose |
 |------|---------|
 | `MAPEvent` | Event with id, type, timestamp, data, source, causedBy |
-| `RegisteredAgent` | Agent with id, name, role, state, metadata, sessionId |
+| `RegisteredAgent` | Agent with id, name, role, state, metadata, sessionId, persistentIdentity |
 | `ServerScope` | Scope with id, name, metadata, parentId |
 | `ServerSession` | Session with id, role, status, agentIds, subscriptionIds |
 | `ServerSubscription` | Subscription with id, sessionId, filter |
@@ -237,6 +279,8 @@ All types are in `types.ts`. Key types:
 | `HandlerContext` | Context passed to handlers (session, requestId, signal) |
 | `HandlerRegistry` | Record<string, Handler> |
 | `Middleware` | (method, params, ctx, next) => Promise<unknown> |
+| `IdentityVerifier` | Pluggable hook for verifying agent persistent identity |
+| `IdentityVerificationContext` | Context for verifier (sessionId, agentName, isResumption) |
 
 ## Testing
 
@@ -257,6 +301,7 @@ Tests are in `src/__tests__/`:
 | `server-federation-gateway.test.ts` | FederationGateway, OutageBuffer |
 | `server-federated-decorators.test.ts` | All federation decorators |
 | `server-federation-handlers.test.ts` | Federation protocol handlers |
+| `server-persistent-identity.test.ts` | Persistent identity, resumption, verifier, credential audit |
 | `server-sdk-integration.test.ts` | Full integration tests |
 
 Run tests:

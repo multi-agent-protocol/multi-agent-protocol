@@ -136,6 +136,61 @@ const message = { id: 'msg-1', to: { agent: 'remote-agent' }, payload: { ... } }
 await gateway.routeToSystem('system-b', message);
 ```
 
+### Persistent Agent Identity
+
+Agents can carry stable identities across sessions using industry-standard identity formats:
+
+```typescript
+import { AgentConnection } from '@multi-agent-protocol/sdk';
+
+const agent = new AgentConnection(stream, { name: 'My Agent' });
+await agent.connect();
+
+// Register with a persistent identity (DID:key, SPIFFE, or DID:web)
+await agent.register({
+  name: 'Translator',
+  role: 'translator',
+  persistentIdentity: {
+    persistentId: 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK',
+    identityType: 'keypair',
+    publicKeyJwk: {
+      kty: 'OKP',
+      crv: 'Ed25519',
+      x: 'base64url-encoded-public-key',
+    },
+    proof: {
+      challenge: 'server-nonce-123',
+      signature: 'ed25519-signature-bytes',
+      provenAt: new Date().toISOString(),
+    },
+  },
+});
+
+// Resume a previously orphaned agent by persistentId
+await agent.register({
+  name: 'Translator',
+  persistentIdentity: {
+    persistentId: 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK',
+    identityType: 'keypair',
+  },
+  resumePersistentIdentity: true,  // Resume previous agent with this identity
+});
+```
+
+**Identity types supported:**
+- `keypair` - Self-certifying Ed25519 (W3C DID:key format)
+- `attested` - Workload attestation (CNCF SPIFFE format)
+- `decentralized` - Domain-anchored (W3C DID:web format)
+- `platform` - Platform-assigned UUID
+- `x-*` - Custom identity types
+
+**Server-side identity features:**
+- `IdentityVerifier` hook for pluggable cryptographic verification
+- `uniqueIdentity` mode to enforce one active agent per identity
+- Identity inheritance through `map/agents/spawn`
+- `persistentId` in credential audit events (`credential.issued`, `credential.denied`)
+- Agent discovery by `persistentId` via `map/agents/list`
+
 ### Causal Event Ordering
 
 Buffer and release events in causal order:
@@ -215,6 +270,40 @@ const server = new MAPServer({
     ],
     // Bypass auth for trusted transports
     bypassForTransports: { stdio: true },
+  },
+});
+```
+
+### Server with agent-iam Authentication and Identity Verification
+
+```typescript
+import { MAPServer, AgentIAMProvider } from '@multi-agent-protocol/sdk/server';
+import { TokenService } from 'agent-iam';
+
+const tokenService = new TokenService(secret);
+
+const server = new MAPServer({
+  name: 'Identity-Aware Server',
+  auth: {
+    required: true,
+    authenticators: [
+      new AgentIAMProvider({ tokenService, systemId: 'my-system' }),
+    ],
+  },
+  agents: {
+    // Pluggable identity verification
+    identityVerifier: {
+      async verify(identity, context) {
+        // Implement cryptographic verification (DID:key, SPIFFE, etc.)
+        if (identity.identityType === 'keypair' && identity.proof) {
+          const valid = await verifyEd25519Signature(identity);
+          return valid ? 'verified' : 'unverified';
+        }
+        return 'self-declared';
+      },
+    },
+    // Enforce one active agent per persistent identity
+    uniqueIdentity: true,
   },
 });
 ```
@@ -372,7 +461,11 @@ Event types use dot notation (e.g., `agent.registered`). Subscription filters ac
 type EventType =
   | 'agent.registered'
   | 'agent.unregistered'
+  | 'agent.resumed'
   | 'agent.state.changed'
+  | 'agent.identity.verification.failed'
+  | 'credential.issued'
+  | 'credential.denied'
   | 'scope.created'
   | 'scope.joined'
   | 'scope.left'

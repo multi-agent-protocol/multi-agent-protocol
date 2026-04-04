@@ -197,6 +197,7 @@ export function hasCapability(capabilities: string[] | undefined, pattern: strin
  * Events emitted:
  * - agent.registered
  * - agent.unregistered
+ * - agent.resumed
  * - agent.state.changed
  * - agent.metadata.changed
  */
@@ -221,6 +222,8 @@ export class AgentRegistryImpl implements AgentRegistry {
     capabilities?: string[];
     /** Structured capability descriptor for rich agent discovery */
     capabilityDescriptor?: import('../../types').MAPAgentCapabilityDescriptor;
+    /** Persistent identity for this agent */
+    persistentIdentity?: import('../../types').AgentPersistentIdentity;
   }): RegisteredAgent {
     const now = Date.now();
     const agent: RegisteredAgent = {
@@ -234,6 +237,7 @@ export class AgentRegistryImpl implements AgentRegistry {
       lastStateChange: now,
       capabilities: params.capabilities,
       capabilityDescriptor: params.capabilityDescriptor,
+      persistentIdentity: params.persistentIdentity,
     };
 
     this.store.save(agent);
@@ -354,6 +358,48 @@ export class AgentRegistryImpl implements AgentRegistry {
     });
 
     return updatedAgent;
+  }
+
+  /**
+   * Resume an orphaned agent under a new session.
+   * Updates sessionId, resets state to idle, optionally merges metadata,
+   * and optionally updates the persistent identity (e.g., with fresh proof).
+   * Emits agent.resumed event.
+   */
+  resume(
+    id: string,
+    newSessionId: string,
+    metadata?: Record<string, unknown>,
+    persistentIdentity?: import('../../types').AgentPersistentIdentity,
+  ): RegisteredAgent {
+    const agent = this.store.get(id);
+    if (!agent) {
+      throw new AgentNotFoundError(id);
+    }
+
+    const previousSessionId = agent.sessionId;
+    const now = Date.now();
+    const resumedAgent: RegisteredAgent = {
+      ...agent,
+      sessionId: newSessionId,
+      state: "idle",
+      lastStateChange: now,
+      metadata: metadata ? { ...agent.metadata, ...metadata } : agent.metadata,
+      ...(persistentIdentity && { persistentIdentity }),
+    };
+
+    this.store.save(resumedAgent);
+
+    this.eventBus.emit({
+      type: "agent.resumed",
+      data: {
+        agent: resumedAgent,
+        previousSessionId,
+      },
+      source: { agentId: id, sessionId: newSessionId },
+    });
+
+    return resumedAgent;
   }
 
   /**

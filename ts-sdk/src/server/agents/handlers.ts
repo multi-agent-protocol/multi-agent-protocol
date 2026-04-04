@@ -10,6 +10,7 @@ import type {
   HandlerRegistry,
   ServerAgentState,
   SessionManager,
+  IdentityVerifier,
 } from "../types";
 import type { AuthManager } from "../auth";
 import type { AuthManagerImpl } from "../auth/manager";
@@ -19,6 +20,20 @@ import {
   InvalidStateTransitionError,
   InvalidAgentStateError,
 } from "./registry";
+
+/**
+ * Shape of persistentIdentity as stored in agent-iam token provider data.
+ * Used to safely extract identity without `as any` casts.
+ */
+interface AgentIAMTokenIdentity {
+  persistentId: string;
+  identityType: string;
+  proof?: string;
+  challenge?: string;
+  publicKey?: string;
+  publicKeyJwk?: { kty: string; crv?: string; x?: string; [key: string]: unknown };
+  endorsements?: unknown[];
+}
 
 /**
  * Options for creating agent handlers.
@@ -37,6 +52,27 @@ export interface AgentHandlerOptions {
    * are returned in the spawn response for child agent setup.
    */
   authManager?: AuthManager;
+  /**
+   * EventBus for emitting identity-related events (e.g., verification failures).
+   */
+  eventBus?: import('../types').EventBus;
+  /**
+   * Pluggable identity verifier hook.
+   * Called during registration when persistentIdentity is provided.
+   * Sets verificationStatus on the identity based on cryptographic verification.
+   */
+  identityVerifier?: IdentityVerifier;
+  /**
+   * When true, enforce that at most one active (non-stopped) agent exists
+   * per persistentId. Registration with an already-active persistentId
+   * will fail unless resumePersistentIdentity is set (which takes over
+   * the existing agent).
+   *
+   * Semantics: first registration wins. Subsequent attempts with the same
+   * persistentId fail until the existing agent is stopped or unregistered.
+   * Use resumePersistentIdentity: true to take over the existing agent instead.
+   */
+  uniqueIdentity?: boolean;
 }
 
 /**
@@ -50,6 +86,10 @@ interface RegisterParams {
   capabilities?: string[];
   /** Structured capability descriptor for rich agent discovery */
   capabilityDescriptor?: import('../../types').MAPAgentCapabilityDescriptor;
+  /** Persistent identity for this agent */
+  persistentIdentity?: import('../../types').AgentPersistentIdentity;
+  /** When true, attempt to resume an orphaned agent with the same persistentId */
+  resumePersistentIdentity?: boolean;
 }
 
 /**
@@ -82,6 +122,8 @@ interface ListParams {
   tags?: string[];
   /** Filter by accepted content type from capabilityDescriptor */
   accepts?: string;
+  /** Filter by persistent identity */
+  persistentId?: string;
 }
 
 /**
@@ -143,11 +185,168 @@ interface SpawnParams {
  * - `map/agents/spawn` - Spawn a child agent with delegated credentials
  */
 export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegistry {
-  const { agents, sessions, authManager } = options;
+  const { agents, sessions, authManager, eventBus, identityVerifier, uniqueIdentity } = options;
 
   return {
     "map/agents/register": async (params: unknown, ctx: HandlerContext) => {
-      const { name, role, metadata, capabilities, capabilityDescriptor } = params as RegisterParams;
+      const { name, role, metadata, capabilities, capabilityDescriptor, persistentIdentity, resumePersistentIdentity } = params as RegisterParams;
+
+      // Validate required name parameter
+      if (!name || typeof name !== 'string' || name.trim() === '') {
+        throw new Error('Agent name is required');
+      }
+
+      // Resolve persistent identity: explicit param takes precedence,
+      // then fall back to identity from the auth token (if authenticated via agent-iam)
+      let resolvedIdentity = persistentIdentity;
+      if (!resolvedIdentity) {
+        const tokenData = ctx.session.providers?.['agent-iam']?.providerData as
+          { persistentIdentity?: AgentIAMTokenIdentity } | undefined;
+        if (tokenData?.persistentIdentity) {
+          const pi = tokenData.persistentIdentity;
+          // Validate required fields before constructing identity
+          if (pi.persistentId && pi.identityType) {
+            resolvedIdentity = {
+              persistentId: pi.persistentId,
+              identityType: pi.identityType as import('../../types').IdentityType,
+              publicKey: pi.publicKey,
+              publicKeyJwk: pi.publicKeyJwk as import('../../types').AgentPublicKeyJwk | undefined,
+              // Token stores proof and challenge as separate strings;
+              // map to AgentIdentityProof object
+              proof: pi.proof && pi.challenge ? {
+                challenge: pi.challenge,
+                signature: pi.proof,
+                provenAt: new Date().toISOString(),
+              } : undefined,
+              verificationStatus: 'auth-derived' as const,
+            };
+          }
+        }
+      }
+
+      // Validate persistentIdentity if present
+      if (resolvedIdentity) {
+        if (!resolvedIdentity.persistentId || typeof resolvedIdentity.persistentId !== 'string' ||
+            resolvedIdentity.persistentId.trim() === '') {
+          throw new Error('persistentIdentity.persistentId must be a non-empty string');
+        }
+        if (!resolvedIdentity.identityType || typeof resolvedIdentity.identityType !== 'string') {
+          throw new Error('persistentIdentity.identityType is required');
+        }
+      }
+
+      // Run identity verifier hook if configured and identity is present
+      if (resolvedIdentity && identityVerifier) {
+        const verificationContext = {
+          sessionId: ctx.session.id,
+          agentName: name,
+          isResumption: !!resumePersistentIdentity,
+        };
+        try {
+          const status = await identityVerifier.verify(resolvedIdentity, verificationContext);
+          if (status) {
+            resolvedIdentity = { ...resolvedIdentity, verificationStatus: status };
+          }
+        } catch (verifyError) {
+          // Verification failure is non-fatal; mark as unverified
+          resolvedIdentity = { ...resolvedIdentity, verificationStatus: 'unverified' };
+          // Emit verification failure event for observability
+          if (eventBus) {
+            eventBus.emit({
+              type: 'agent.identity.verification.failed',
+              data: {
+                persistentId: resolvedIdentity.persistentId,
+                identityType: resolvedIdentity.identityType,
+                error: verifyError instanceof Error ? verifyError.message : String(verifyError),
+              },
+              source: { sessionId: ctx.session.id },
+            });
+          }
+        }
+      }
+
+      // Check for existing agents with same persistentId
+      const persistentId = resolvedIdentity?.persistentId;
+      if (persistentId) {
+        const existingAgents = agents.list({ persistentId });
+        // Filter to active (non-stopped) agents
+        const activeAgents = existingAgents.filter((a) => a.state !== 'stopped');
+
+        if (resumePersistentIdentity && activeAgents.length > 0) {
+          // Resume the most recently active orphaned agent.
+          // Wrap in try/catch to handle TOCTOU race: between list() and resume(),
+          // another concurrent request may have already resumed or removed the agent.
+          // If that happens, fall through to create a new agent instead.
+          const sorted = activeAgents.sort((a, b) => b.lastStateChange - a.lastStateChange);
+          const resumeTarget = sorted[0];
+
+          try {
+            // Update session tracking — guard against old session being cleaned up
+            if (sessions) {
+              try {
+                if (resumeTarget.sessionId !== ctx.session.id) {
+                  sessions.removeAgent(resumeTarget.sessionId, resumeTarget.id);
+                }
+              } catch {
+                // Old session may no longer exist; that's fine
+              }
+              sessions.addAgent(ctx.session.id, resumeTarget.id);
+            } else {
+              ctx.session.agentIds.push(resumeTarget.id);
+            }
+
+            const previousSessionId = resumeTarget.sessionId;
+
+            // Resume: updates sessionId, resets to idle, merges metadata,
+            // and updates persistentIdentity with fresh proof/verificationStatus
+            const resumedAgent = agents.resume(
+              resumeTarget.id,
+              ctx.session.id,
+              {
+                ...(metadata || {}),
+                resumedAt: Date.now(),
+                resumedFromSession: previousSessionId,
+              },
+              resolvedIdentity,
+            );
+
+            return {
+              agent: {
+                id: resumedAgent.id,
+                name: resumedAgent.name,
+                role: resumedAgent.role,
+                state: resumedAgent.state,
+                metadata: resumedAgent.metadata,
+                capabilities: resumedAgent.capabilities,
+                capabilityDescriptor: resumedAgent.capabilityDescriptor,
+                persistentIdentity: resumedAgent.persistentIdentity,
+                visibility: "public",
+              },
+              resumed: true,
+              resumedFrom: {
+                previousSessionId,
+              },
+            };
+          } catch (resumeError) {
+            if (resumeError instanceof AgentNotFoundError) {
+              // Agent was removed between list() and resume() — fall through
+              // to create a new agent below
+            } else {
+              throw resumeError;
+            }
+          }
+        }
+
+        // uniqueIdentity enforcement: reject if active agent already exists.
+        // Semantics: first registration wins; subsequent attempts fail until
+        // the existing agent is stopped or unregistered.
+        if (uniqueIdentity && activeAgents.length > 0) {
+          throw new Error(
+            `An active agent with persistentId "${persistentId}" already exists. ` +
+            `Use resumePersistentIdentity: true to resume it, or unregister the existing agent first.`
+          );
+        }
+      }
 
       const registeredAgent = agents.register({
         name,
@@ -156,6 +355,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         sessionId: ctx.session.id,
         capabilities,
         capabilityDescriptor,
+        persistentIdentity: resolvedIdentity,
       });
 
       // Track agent in session - use SessionManager if available for atomic updates
@@ -176,6 +376,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           metadata: registeredAgent.metadata,
           capabilities: registeredAgent.capabilities,
           capabilityDescriptor: registeredAgent.capabilityDescriptor,
+          persistentIdentity: registeredAgent.persistentIdentity,
           visibility: "public",
         },
       };
@@ -225,6 +426,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           metadata: a.metadata,
           capabilities: a.capabilities,
           capabilityDescriptor: a.capabilityDescriptor,
+          persistentIdentity: a.persistentIdentity,
           visibility: "public",
         })),
       };
@@ -248,6 +450,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           metadata: agent.metadata,
           capabilities: agent.capabilities,
           capabilityDescriptor: agent.capabilityDescriptor,
+          persistentIdentity: agent.persistentIdentity,
           visibility: "public",
         },
       };
@@ -281,6 +484,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           metadata: agent.metadata,
           capabilities: agent.capabilities,
           capabilityDescriptor: agent.capabilityDescriptor,
+          persistentIdentity: agent.persistentIdentity,
           visibility: "public",
         },
       };
@@ -328,7 +532,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         throw new Error(`Parent agent ${parent} does not belong to this session`);
       }
 
-      // Register the child agent
+      // Register the child agent, inheriting parent's persistent identity
       const childAgent = agents.register({
         name: name ?? `${parentAgent.name}-child`,
         role,
@@ -338,6 +542,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         },
         sessionId: ctx.session.id,
         capabilityDescriptor,
+        persistentIdentity: parentAgent.persistentIdentity,
       });
 
       // Track child in session
@@ -375,6 +580,7 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
           state: childAgent.state,
           metadata: childAgent.metadata,
           capabilityDescriptor: childAgent.capabilityDescriptor,
+          persistentIdentity: childAgent.persistentIdentity,
           visibility: "public",
         },
       };
