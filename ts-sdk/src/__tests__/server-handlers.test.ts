@@ -528,6 +528,145 @@ describe("Handler Factories", () => {
       expect(deliveredMessages.some((m) => m.agentId === receiver1.id)).toBe(true);
       expect(deliveredMessages.some((m) => m.agentId === receiver2.id)).toBe(true);
     });
+
+    // ── Structured Address object tests ─────────────────────────────────
+
+    it("should send message using DirectAddress object { agent: id }", async () => {
+      const handlers = createMessageHandlers({ messages, scopes });
+
+      const sender = agents.register({ name: "Sender", sessionId: mockSession.id });
+      mockSession.agentIds.push(sender.id);
+      const receiver = agents.register({ name: "Receiver", sessionId: "other" });
+
+      const deliveredMessages: any[] = [];
+      messages.onDeliver((agentId, msg) => { deliveredMessages.push({ agentId, msg }); });
+
+      const result = await handlers["map/send"](
+        { to: { agent: receiver.id }, payload: { text: "hello via DirectAddress" } },
+        mockContext,
+      );
+
+      expect(result.messageId).toBeDefined();
+      expect(deliveredMessages.some(m => m.agentId === receiver.id)).toBe(true);
+      expect(deliveredMessages[0].msg.payload).toEqual({ text: "hello via DirectAddress" });
+    });
+
+    it("should send message using ScopeAddress object { scope: id }", async () => {
+      const handlers = createMessageHandlers({ messages, scopes });
+
+      const scope = scopes.create({ name: "ObjectScope" });
+      const sender = agents.register({ name: "Sender", sessionId: mockSession.id });
+      const receiver = agents.register({ name: "Receiver", sessionId: "other" });
+      mockSession.agentIds.push(sender.id);
+      scopes.join(scope.id, sender.id);
+      scopes.join(scope.id, receiver.id);
+
+      const deliveredMessages: any[] = [];
+      messages.onDeliver((agentId, msg) => { deliveredMessages.push({ agentId, msg }); });
+
+      const result = await handlers["map/send"](
+        { to: { scope: scope.id }, payload: { text: "hello scope" } },
+        mockContext,
+      );
+
+      expect(result.messageId).toBeDefined();
+      expect(deliveredMessages.some(m => m.agentId === receiver.id)).toBe(true);
+    });
+
+    it("should send message using MultiAddress object { agents: [id1, id2] }", async () => {
+      const handlers = createMessageHandlers({ messages, scopes });
+
+      const sender = agents.register({ name: "Sender", sessionId: mockSession.id });
+      mockSession.agentIds.push(sender.id);
+      const receiver1 = agents.register({ name: "R1", sessionId: "s1" });
+      const receiver2 = agents.register({ name: "R2", sessionId: "s2" });
+
+      const deliveredMessages: any[] = [];
+      messages.onDeliver((agentId, msg) => { deliveredMessages.push({ agentId, msg }); });
+
+      const result = await handlers["map/send"](
+        { to: { agents: [receiver1.id, receiver2.id] }, payload: { text: "multi" } },
+        mockContext,
+      );
+
+      expect(result.messageId).toBeDefined();
+      expect(deliveredMessages.some(m => m.agentId === receiver1.id)).toBe(true);
+      expect(deliveredMessages.some(m => m.agentId === receiver2.id)).toBe(true);
+    });
+
+    it("should send message using array of DirectAddress objects", async () => {
+      const handlers = createMessageHandlers({ messages, scopes });
+
+      const sender = agents.register({ name: "Sender", sessionId: mockSession.id });
+      mockSession.agentIds.push(sender.id);
+      const r1 = agents.register({ name: "R1", sessionId: "s1" });
+      const r2 = agents.register({ name: "R2", sessionId: "s2" });
+
+      const deliveredMessages: any[] = [];
+      messages.onDeliver((agentId, msg) => { deliveredMessages.push({ agentId, msg }); });
+
+      const result = await handlers["map/send"](
+        { to: [{ agent: r1.id }, { agent: r2.id }], payload: { text: "array" } },
+        mockContext,
+      );
+
+      expect(result.messageId).toBeDefined();
+      expect(result.delivered).toHaveLength(2);
+      expect(deliveredMessages.some(m => m.agentId === r1.id)).toBe(true);
+      expect(deliveredMessages.some(m => m.agentId === r2.id)).toBe(true);
+    });
+
+    it("should send message using mixed string and Address objects in array", async () => {
+      const handlers = createMessageHandlers({ messages, scopes });
+
+      const sender = agents.register({ name: "Sender", sessionId: mockSession.id });
+      mockSession.agentIds.push(sender.id);
+      const r1 = agents.register({ name: "R1", sessionId: "s1" });
+      const r2 = agents.register({ name: "R2", sessionId: "s2" });
+
+      const deliveredMessages: any[] = [];
+      messages.onDeliver((agentId, msg) => { deliveredMessages.push({ agentId, msg }); });
+
+      const result = await handlers["map/send"](
+        { to: [{ agent: r1.id }, r2.id], payload: { text: "mixed" } },
+        mockContext,
+      );
+
+      expect(result.messageId).toBeDefined();
+      expect(result.delivered).toHaveLength(2);
+    });
+
+    it("should handle DirectAddress with ACP envelope payload", async () => {
+      // This is the critical path: ACPStreamConnection sends ACP envelopes
+      // to a target agent using DirectAddress objects
+      const handlers = createMessageHandlers({ messages, scopes });
+
+      const sender = agents.register({ name: "Sender", sessionId: mockSession.id });
+      mockSession.agentIds.push(sender.id);
+      const receiver = agents.register({ name: "ACPAgent", sessionId: "acp-session" });
+
+      const deliveredMessages: any[] = [];
+      messages.onDeliver((agentId, msg) => { deliveredMessages.push({ agentId, msg }); });
+
+      const acpEnvelope = {
+        acp: { jsonrpc: "2.0", id: "req-1", method: "session/new", params: {} },
+        acpContext: { streamId: "stream-1", sessionId: null, direction: "client-to-agent" },
+      };
+
+      const result = await handlers["map/send"](
+        {
+          to: { agent: receiver.id },
+          payload: acpEnvelope,
+          meta: { protocol: "acp", correlationId: "req-1" },
+        },
+        mockContext,
+      );
+
+      expect(result.messageId).toBeDefined();
+      expect(deliveredMessages).toHaveLength(1);
+      expect(deliveredMessages[0].agentId).toBe(receiver.id);
+      expect(deliveredMessages[0].msg.payload).toEqual(acpEnvelope);
+    });
   });
 
   describe("createConnectionHandlers", () => {
