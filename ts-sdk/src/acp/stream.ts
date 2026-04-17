@@ -593,14 +593,17 @@ export class ACPStreamConnection extends EventEmitter {
       throw err;
     }
 
-    // Check again after send - close() may have been called and already rejected
-    // the pending request, in which case resultPromise will reject
-    if (this.#closed && !this.#pendingRequests.has(correlationId)) {
-      throw new Error("ACP stream closed");
-    }
-
-    // `return await` (not bare `return`) ensures the rejection handler is
-    // attached synchronously, preventing the runtime from detecting the
+    // Do NOT throw synchronously here even when close() has already run.
+    // If close() raced with us it will have called `pending.reject(...)` on
+    // `resultPromise` — that rejection must be consumed by the `await`
+    // below, otherwise `resultPromise` lives on as an unhandled rejection
+    // and Node's default --unhandled-rejections=throw crashes the host.
+    // Falling through means the awaiter sees the same "ACP stream closed"
+    // error (the one close() produced), just via the promise instead of a
+    // bare throw.
+    //
+    // `return await` (not bare `return`) also ensures the rejection handler
+    // is attached synchronously, preventing the runtime from detecting the
     // rejection as unhandled during the microtask gap before the async
     // function adopts the promise. Critical in Bun worker threads.
     return await resultPromise;
