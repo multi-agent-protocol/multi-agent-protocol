@@ -212,6 +212,15 @@ export interface MAPServerOptions {
     /** Workspace capability overrides for connect handshake */
     capabilities?: Omit<WorkspaceCapabilityConfig, 'enabled'>;
   };
+
+  // === Resource Discovery Config ===
+  /** Resource discovery configuration. Omit or set enabled=false to disable. */
+  resources?: {
+    /** Enable resource discovery (default: false) */
+    enabled?: boolean;
+    /** Namespaced resource types the hub has handlers for */
+    kinds?: string[];
+  };
 }
 
 /**
@@ -436,6 +445,9 @@ export class MAPServer {
             : undefined,
           workspaceCapabilities: options.workspace?.enabled
             ? { enabled: true, ...options.workspace.capabilities }
+            : undefined,
+          resourceCapabilities: options.resources?.enabled
+            ? { enabled: true, kinds: options.resources.kinds }
             : undefined,
         }),
         createAgentHandlers({ agents: this.agents, sessions: this.sessions }),

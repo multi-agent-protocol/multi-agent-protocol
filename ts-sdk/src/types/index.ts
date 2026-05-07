@@ -300,6 +300,13 @@ export interface ParticipantCapabilities {
     /** Can list and query tasks */
     canList?: boolean;
   };
+  /** Resource discovery capabilities */
+  resources?: {
+    /** Whether resource discovery is enabled (server response only) */
+    enabled?: boolean;
+    /** Namespaced resource types the hub has handlers for */
+    kinds?: string[];
+  };
   /** Streaming/backpressure capabilities */
   streaming?: StreamingCapabilities;
 

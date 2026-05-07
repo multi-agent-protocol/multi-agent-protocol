@@ -189,6 +189,30 @@ Events emitted:
 - `agent.identity.verification.failed` - Verifier threw an error
 - `credential.issued` / `credential.denied` - Include `persistentId` in audit data
 
+### Resource Discovery Pattern
+
+Hubs advertise typed resource discovery via `MAPServerOptions.resources`. The SDK handles capability advertisement in the connect handshake; hubs supply the actual handler logic via `additionalHandlers`.
+
+```typescript
+const server = new MAPServer({
+  resources: {
+    enabled: true,
+    kinds: ['x-workspace/repo', 'x-minimem/memory-bank'],
+  },
+  additionalHandlers: {
+    'map/resources/list': async (params, ctx) => { /* hub-owned dispatch */ },
+    'map/resources/get': async (params, ctx) => { /* hub-owned lookup */ },
+  },
+});
+```
+
+Agents receive `capabilities.resources.kinds` in the connect response and can check which resource types are available before calling `map/resources/list`. See [13-resource-protocol.md](../../../../docs/13-resource-protocol.md) for the full protocol specification.
+
+Key types:
+- `ParticipantCapabilities.resources` - `{ enabled?: boolean; kinds?: string[] }` on the wire
+- `ResourceCapabilityConfig` - Server-side config (`router/handlers.ts`)
+- `MAPServerOptions.resources` - Top-level server config
+
 ## Common Tasks
 
 ### Adding a New Protocol Method
@@ -281,6 +305,7 @@ All types are in `types.ts`. Key types:
 | `Middleware` | (method, params, ctx, next) => Promise<unknown> |
 | `IdentityVerifier` | Pluggable hook for verifying agent persistent identity |
 | `IdentityVerificationContext` | Context for verifier (sessionId, agentName, isResumption) |
+| `ResourceCapabilityConfig` | Resource discovery config (enabled, kinds[]) for connect handshake |
 
 ## Testing
 

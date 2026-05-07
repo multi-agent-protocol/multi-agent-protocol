@@ -136,6 +136,7 @@ All methods are registered in `src/protocol/index.ts`:
 | State | `agents/update`, `agents/stop`, `agents/suspend`, `agents/resume` |
 | Scope | `scopes/create`, `scopes/join`, `scopes/leave` |
 | Federation | `federation/connect`, `federation/route` |
+| Resources | `resources/list`, `resources/get` |
 | Permissions | `permissions/update` |
 
 ## Type System
@@ -182,6 +183,8 @@ npm run lint               # ESLint
 - `06-visibility-permissions.md` - 4-layer permission model
 - `07-federation.md` - MAP-to-MAP federation design
 - `08-macro-agent-migration.md` - Migration from macro-agent
+- `11-trajectory-protocol.md` - Trajectory checkpoint protocol
+- `13-resource-protocol.md` - Typed resource discovery protocol
 
 **SDK-specific docs** are in `./docs/`:
 - `design-gaps.md` - Gap analysis between spec and SDK implementation

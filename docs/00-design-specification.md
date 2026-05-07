@@ -165,6 +165,12 @@ interface MAPParticipantCapabilities {
     canViewHistory?: boolean;       // Can view conversation history
     canCreateThreads?: boolean;     // Can create threads
   };
+
+  // Resource discovery - extension
+  resources?: {
+    enabled?: boolean;              // Server supports resource discovery (response only)
+    kinds?: string[];               // Namespaced resource types with registered handlers
+  };
 }
 ```
 
@@ -440,6 +446,10 @@ type MAPAddress =
 "map/federation/connect"    // Connect to peer MAP system
 "map/federation/route"      // Route message to peer system
 
+// RESOURCES (typed resource discovery)
+"map/resources/list"        // Browse resources by type with filtering
+"map/resources/get"         // Fetch a single resource by ID
+
 // MAIL (Conversations, Turns, Threads)
 "mail/create"           // Create a conversation
 "mail/get"              // Get conversation details with optional includes
@@ -486,6 +496,8 @@ type MAPAddress =
 - [07-federation.md](07-federation.md): Federation & System-to-System Communication
 - [08-macro-agent-migration.md](08-macro-agent-migration.md): macro-agent Migration Example
 - [10-mail-protocol.md](10-mail-protocol.md): Mail Protocol (Conversations, Turns, Threads)
+- [11-trajectory-protocol.md](11-trajectory-protocol.md): Trajectory Protocol (Checkpoints, Content)
+- [13-resource-protocol.md](13-resource-protocol.md): Resource Protocol (Typed Resource Discovery)
 
 ---
 

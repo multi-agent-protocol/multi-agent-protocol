@@ -33,6 +33,7 @@ export {
   combineHandlers,
   type ConnectionHandlerOptions,
   type MailCapabilityConfig,
+  type ResourceCapabilityConfig,
 } from "./handlers";
 
 // Re-export workspace capability config for convenience

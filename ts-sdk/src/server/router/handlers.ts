@@ -38,6 +38,13 @@ export interface MailCapabilityConfig {
   canCreateThreads?: boolean;
 }
 
+export interface ResourceCapabilityConfig {
+  /** Whether resource discovery is enabled on this server */
+  enabled: boolean;
+  /** Namespaced resource types the hub has handlers for */
+  kinds?: string[];
+}
+
 export interface ConnectionHandlerOptions {
   sessions: SessionManager;
   agents?: AgentRegistry;
@@ -55,6 +62,8 @@ export interface ConnectionHandlerOptions {
   credentialCapabilities?: import("../credentials").CredentialCapabilityConfig;
   /** Workspace capability configuration (optional). When provided and enabled, workspace capabilities are advertised. */
   workspaceCapabilities?: import("../workspace").WorkspaceCapabilityConfig;
+  /** Resource discovery configuration (optional). When provided and enabled, resource capabilities are advertised. */
+  resourceCapabilities?: ResourceCapabilityConfig;
 }
 
 /**
@@ -127,6 +136,7 @@ export function createConnectionHandlers(
   } = options;
   const credentialCapabilities = options.credentialCapabilities;
   const workspaceCapabilities = options.workspaceCapabilities;
+  const resourceCapabilities = options.resourceCapabilities;
 
   return {
     "map/connect": async (params: unknown, ctx: HandlerContext) => {
@@ -270,6 +280,14 @@ export function createConnectionHandlers(
           canSearch: workspaceCapabilities.canSearch ?? true,
           canList: workspaceCapabilities.canList ?? true,
           canRead: workspaceCapabilities.canRead ?? true,
+        };
+      }
+
+      // Include resource discovery capabilities if configured and enabled
+      if (resourceCapabilities?.enabled) {
+        capabilities.resources = {
+          enabled: true,
+          kinds: resourceCapabilities.kinds ?? [],
         };
       }
 
