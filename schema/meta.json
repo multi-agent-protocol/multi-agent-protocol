@@ -507,6 +507,24 @@
       "description": "List tasks with optional filters by assignee and status",
       "requestType": "TasksListRequest",
       "responseType": "TasksListResponse"
+    },
+    "map/resources/list": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["resources.enabled"],
+      "description": "Browse resources by type with optional filtering and pagination",
+      "requestType": "ResourcesListRequest",
+      "responseType": "ResourcesListResponse"
+    },
+    "map/resources/get": {
+      "tier": "extension",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["resources.enabled"],
+      "description": "Fetch a single resource by ID with optional type hint",
+      "requestType": "ResourcesGetRequest",
+      "responseType": "ResourcesGetResponse"
     }
   },
   "notifications": {

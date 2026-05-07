@@ -58,6 +58,7 @@ export type MethodCategory =
   | 'workspace'
   | 'trajectory'
   | 'task'
+  | 'resource'
   | 'notification';
 
 /** Capability path like 'observation.canQuery' */
@@ -432,6 +433,20 @@ export const METHOD_REGISTRY: Record<string, MethodInfo> = {
     category: 'task',
     capabilities: ['tasks.canList'],
     description: 'List tasks with optional filters',
+  },
+
+  // Resource discovery methods
+  'resources/list': {
+    method: 'map/resources/list',
+    category: 'resource',
+    capabilities: ['resources.enabled'],
+    description: 'Browse resources by type with optional filtering',
+  },
+  'resources/get': {
+    method: 'map/resources/get',
+    category: 'resource',
+    capabilities: ['resources.enabled'],
+    description: 'Fetch a single resource by ID',
   },
 
   // Notification methods (client → server)

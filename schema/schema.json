@@ -328,6 +328,19 @@
           },
           "additionalProperties": false
         },
+        "resources": {
+          "type": "object",
+          "description": "Resource discovery capabilities",
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Whether resource discovery is enabled (server response only)" },
+            "kinds": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Namespaced resource types the hub has handlers for"
+            }
+          },
+          "additionalProperties": false
+        },
         "_meta": { "$ref": "#/$defs/Meta" }
       },
       "additionalProperties": false
