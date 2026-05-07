@@ -1,6 +1,6 @@
 {
   "name": "multi-agent-protocol",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Multi-Agent Protocol (MAP) - A protocol for observing, coordinating, and routing messages within multi-agent AI systems",
   "type": "module",
   "main": "./schema/schema.json",
