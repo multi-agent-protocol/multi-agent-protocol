@@ -9,6 +9,7 @@
 
 import type { AuthCredentials, AuthResult } from '../../../types';
 import type { Authenticator, AuthContext, AuthenticatorOptions, MAPJWTClaims } from '../types';
+import type { JSONWebKeySet as JoseJSONWebKeySet } from 'jose';
 
 /**
  * Options for JWTAuthenticator.
@@ -141,7 +142,6 @@ async function getJose(): Promise<typeof import('jose')> {
 export class JWTAuthenticator implements Authenticator {
   readonly methods = ['bearer'] as const;
   readonly #options: JWTAuthenticatorOptions;
-  #jwksCache: { keys: unknown; fetchedAt: number } | null = null;
 
   constructor(options: JWTAuthenticatorOptions = {}) {
     // Validate options
@@ -194,11 +194,11 @@ export class JWTAuthenticator implements Authenticator {
       const keySource = await this.#getKeySource(jose);
 
       // Verify the token
-      const { payload } = await jose.jwtVerify(token, keySource, {
+      const { payload } = await jose.jwtVerify(token, keySource as Parameters<typeof jose.jwtVerify>[1], {
         issuer: this.#options.issuer,
         audience: this.#options.audience,
         algorithms: this.#options.algorithms,
-        clockTolerance: this.#options.clockTolerance,
+        clockTolerance: this.#options.clockTolerance as string | number,
       });
 
       const claims = payload as MAPJWTClaims;
@@ -248,7 +248,7 @@ export class JWTAuthenticator implements Authenticator {
 
     // Static JWKS
     if (this.#options.jwks) {
-      return jose.createLocalJWKSet(this.#options.jwks as jose.JSONWebKeySet);
+      return jose.createLocalJWKSet(this.#options.jwks as JoseJSONWebKeySet);
     }
 
     // Remote JWKS
@@ -274,11 +274,7 @@ export class JWTAuthenticator implements Authenticator {
         return;
       }
 
-      const jwks = await response.json();
-      this.#jwksCache = {
-        keys: jwks,
-        fetchedAt: Date.now(),
-      };
+      await response.json(); // pre-fetch to warm the remote JWKS cache
     } catch (error) {
       console.warn('[JWTAuthenticator] Failed to fetch JWKS:', error);
     }

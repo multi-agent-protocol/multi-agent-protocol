@@ -6,7 +6,6 @@
 
 import type { Middleware } from '../types';
 import type { AuthManager, AuthContext } from './types';
-import type { AuthCredentials } from '../../types';
 
 /**
  * JSON-RPC error codes for auth errors.
@@ -76,7 +75,7 @@ export function authMiddleware(
     'map/authenticate',
   ]);
 
-  return async (method, params, ctx, next) => {
+  return async (method, _params, ctx, next) => {
     // Allow exempt methods
     if (exemptMethods.has(method)) {
       return next();

@@ -69,7 +69,7 @@ export function rateLimitMiddleware(options: {
 }): Middleware {
   const requestCounts = new Map<string, { count: number; resetAt: number }>();
 
-  return async (method, params, ctx, next) => {
+  return async (_method, _params, ctx, next) => {
     const sessionId = ctx.session.id;
     const now = Date.now();
 
@@ -116,7 +116,7 @@ export function validationMiddleware(
  * @param timeoutMs - Timeout in milliseconds
  */
 export function timeoutMiddleware(timeoutMs: number): Middleware {
-  return async (method, params, ctx, next) => {
+  return async (_method, _params, ctx, next) => {
     const timeoutPromise = new Promise((_, reject) => {
       const timer = setTimeout(() => {
         reject(new Error(`Request timeout after ${timeoutMs}ms`));

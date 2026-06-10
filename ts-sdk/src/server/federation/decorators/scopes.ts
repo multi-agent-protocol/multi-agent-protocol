@@ -242,14 +242,16 @@ export class FederatedScopeManager implements ScopeManager {
   /**
    * Remove agent from all scopes.
    */
-  leaveAll(agentId: string): void {
+  leaveAll(agentId: string): string[] {
     // Get scopes before leaving
-    const scopeIds = this.local.getScopesForAgent?.(agentId) ?? [];
+    const scopeIds = this.local.getScopesForAgent(agentId);
 
     // Leave all local scopes
     for (const scopeId of scopeIds) {
       this.leave(scopeId, agentId);
     }
+
+    return scopeIds;
   }
 
   /**
@@ -271,8 +273,8 @@ export class FederatedScopeManager implements ScopeManager {
   /**
    * Get all scopes an agent belongs to.
    */
-  getScopesForAgent?(agentId: string): string[] {
-    const localScopes = this.local.getScopesForAgent?.(agentId) ?? [];
+  getScopesForAgent(agentId: string): string[] {
+    const localScopes = this.local.getScopesForAgent(agentId);
 
     if (!this.sync.includeRemote) {
       return localScopes;
@@ -287,6 +289,21 @@ export class FederatedScopeManager implements ScopeManager {
     }
 
     return [...localScopes, ...remoteScopes];
+  }
+
+  /**
+   * Check if agent is in scope (delegates to local; remote scope membership tracked separately).
+   */
+  isMember(
+    scopeId: string,
+    agentId: string,
+    opts?: { checkAncestors?: boolean }
+  ): boolean {
+    const remote = this.remoteScopes.get(scopeId);
+    if (remote) {
+      return remote.members.has(agentId);
+    }
+    return this.local.isMember(scopeId, agentId, opts);
   }
 
   /**

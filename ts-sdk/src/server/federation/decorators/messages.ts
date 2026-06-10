@@ -15,7 +15,6 @@ import type {
 import {
   formatFederatedId,
   parseFederatedId,
-  isFederatedId,
   isFederatedAgent,
 } from "../federated-id";
 
@@ -59,10 +58,10 @@ export class FederatedMessageRouter implements MessageRouter {
     this.gateway.onPeerMessage(this.handlePeerMessage.bind(this));
 
     // Forward local delivery events
-    this.local.onDeliver((message) => {
+    this.local.onDeliver((agentId, message) => {
       for (const handler of this.deliveryHandlers) {
         try {
-          handler(message);
+          handler(agentId, message);
         } catch (error) {
           console.error("FederatedMessageRouter delivery handler error:", error);
         }
@@ -230,29 +229,28 @@ export class FederatedMessageRouter implements MessageRouter {
 
     const message = payload.message;
 
+    // to may be a string or string[] — normalise to string for local lookup
+    const toId = Array.isArray(message.to) ? message.to[0] : message.to;
+
     // Check if target is a local agent
-    const localAgent = this.agents.get(message.to);
+    const localAgent = this.agents.get(toId);
     if (!localAgent) {
       // Target not found locally
-      console.warn(`Received federated message for unknown agent: ${message.to}`);
+      console.warn(`Received federated message for unknown agent: ${toId}`);
       return;
     }
 
-    // Update message metadata with federated ID format
+    // Update message with the federated source ID. (ServerMessage has no
+    // metadata field, so federation provenance lives only in `from`.)
     const federatedMessage: ServerMessage = {
       ...message,
       from: formatFederatedId(from, "agent", message.from),
-      metadata: {
-        ...(message.metadata ?? {}),
-        _federatedFrom: from,
-        _originalFrom: message.from,
-      },
     };
 
     // Deliver locally
     for (const handler of this.deliveryHandlers) {
       try {
-        handler(federatedMessage);
+        handler(toId, federatedMessage);
       } catch (error) {
         console.error("FederatedMessageRouter delivery handler error:", error);
       }

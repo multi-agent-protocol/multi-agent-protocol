@@ -15,8 +15,6 @@ import type {
 } from "../../types";
 import {
   formatFederatedId,
-  parseFederatedId,
-  isFederatedId,
   isFromSystem,
 } from "../federated-id";
 

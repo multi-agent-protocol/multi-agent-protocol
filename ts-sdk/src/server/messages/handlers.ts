@@ -12,10 +12,8 @@ import type {
   HandlerContext,
   HandlerRegistry,
 } from "../types";
-import type { TurnVisibility } from "../../types";
 import {
   isAddress,
-  isAgentAddress,
   isScopeAddress,
   extractId,
 } from "./address";
@@ -264,7 +262,7 @@ export function createMessageHandlers(options: MessageHandlerOptions): HandlerRe
           turns.recordInterceptedTurn({
             conversationId: (meta as any).mail.conversationId,
             participant: from,
-            contentType: "data" as TurnVisibility,
+            contentType: "data",
             content: sendParams.payload,
             messageId: result.messageId,
             threadId: (meta as any).mail.threadId,

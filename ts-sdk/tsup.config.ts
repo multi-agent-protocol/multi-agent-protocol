@@ -15,18 +15,13 @@ export default defineConfig([
     treeshake: true,
     outDir: 'dist',
   },
-  // Server module — runtime only. rollup-dts (tsup's dts) can't bundle the
-  // server's declarations because of pre-existing strict errors in
-  // federation/auth/messages; the declaration TREE is emitted separately by
-  // `tsc` (see the `build:server-types` script) into dist/server-types/, which
-  // the package's `./server` export points at. tsc emits best-effort `.d.ts`
-  // even with those errors, where rollup-dts hard-fails.
+  // Server module — now has clean types, bundled declarations enabled.
   {
     entry: {
       server: 'src/server/index.ts',
     },
     format: ['cjs', 'esm'],
-    dts: false,
+    dts: true,
     clean: false,
     sourcemap: true,
     splitting: false,

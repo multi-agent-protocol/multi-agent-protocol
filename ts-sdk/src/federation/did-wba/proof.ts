@@ -140,8 +140,8 @@ export async function verifyDIDWBAProof(options: ProofVerificationOptions): Prom
     return await crypto.subtle.verify(
       algorithm,
       cryptoKey,
-      signatureBytes,
-      payloadBytes
+      signatureBytes as BufferSource,
+      payloadBytes as BufferSource
     );
   } catch {
     return false;

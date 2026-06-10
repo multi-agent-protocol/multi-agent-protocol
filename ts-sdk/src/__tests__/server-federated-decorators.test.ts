@@ -567,7 +567,9 @@ describe("FederatedMessageRouter", () => {
         timestamp: Date.now(),
       });
 
+      // DeliveryHandler contract is (agentId, message) — see server CLAUDE.md.
       expect(delivered).toHaveBeenCalledWith(
+        agent.id,
         expect.objectContaining({
           from: "system-b:agent:remote-agent",
           to: agent.id,

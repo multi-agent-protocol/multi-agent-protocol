@@ -888,6 +888,7 @@ export interface MessageRouter {
     replyTo?: string;
     priority?: number;
     ttlMs?: number;
+    messageType?: string;
   }): ServerMessage;
 
   /** Broadcast to all agents in a scope */
@@ -897,6 +898,7 @@ export interface MessageRouter {
     payload: unknown;
     excludeSender?: boolean;
     includeDescendants?: boolean;
+    messageType?: string;
   }): ServerMessage;
 
   /** Set delivery callback */
@@ -1229,6 +1231,9 @@ export interface FederationGateway {
 
   /** Disconnect from peer */
   disconnectPeer(systemId: string): void;
+
+  /** Create a federation envelope for sending to a peer */
+  createEnvelope(to: string, payload: unknown, maxHops?: number): ServerFederationEnvelope;
 
   /** Outage buffer for resilience */
   readonly buffer: OutageBuffer;

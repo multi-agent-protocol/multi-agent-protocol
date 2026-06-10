@@ -34,7 +34,7 @@ export class PermissionDeniedError extends Error {
  * @returns Middleware function that denies unauthorized access
  */
 export function permissionMiddleware(checker: PermissionChecker): Middleware {
-  return async (method, params, ctx, next) => {
+  return async (method, _params, ctx, next) => {
     const result = checker.canCallMethod(ctx.session, method);
 
     if (!result.allowed) {
@@ -57,7 +57,7 @@ export function permissionLoggingMiddleware(
   checker: PermissionChecker,
   logger: Pick<Console, "log" | "warn"> = console
 ): Middleware {
-  return async (method, params, ctx, next) => {
+  return async (method, _params, ctx, next) => {
     const result = checker.canCallMethod(ctx.session, method);
 
     if (result.allowed) {
@@ -87,7 +87,7 @@ export function selectivePermissionMiddleware(
   checker: PermissionChecker,
   methodPatterns: string[]
 ): Middleware {
-  return async (method, params, ctx, next) => {
+  return async (method, _params, ctx, next) => {
     // Check if method matches any pattern
     const shouldCheck = methodPatterns.some((pattern) => {
       // Simple glob matching

@@ -304,7 +304,7 @@ export function createFederationHandlers(
       const messages = gateway.buffer.flush(params.systemId);
       return { count: messages.length };
     },
-  };
+  } as HandlerRegistry;
 }
 
 /**
