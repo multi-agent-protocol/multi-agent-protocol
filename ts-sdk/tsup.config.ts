@@ -15,7 +15,12 @@ export default defineConfig([
     treeshake: true,
     outDir: 'dist',
   },
-  // Server module (DTS deferred until pre-existing type errors are fixed)
+  // Server module — runtime only. rollup-dts (tsup's dts) can't bundle the
+  // server's declarations because of pre-existing strict errors in
+  // federation/auth/messages; the declaration TREE is emitted separately by
+  // `tsc` (see the `build:server-types` script) into dist/server-types/, which
+  // the package's `./server` export points at. tsc emits best-effort `.d.ts`
+  // even with those errors, where rollup-dts hard-fails.
   {
     entry: {
       server: 'src/server/index.ts',

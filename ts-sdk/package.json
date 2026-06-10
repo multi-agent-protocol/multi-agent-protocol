@@ -18,7 +18,7 @@
       "require": "./dist/testing.cjs"
     },
     "./server": {
-      "types": "./dist/server.d.ts",
+      "types": "./dist/server-types/server/index.d.ts",
       "import": "./dist/server.js",
       "require": "./dist/server.cjs"
     }
@@ -28,7 +28,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && npm run build:server-types",
+    "build:server-types": "tsc -p tsconfig.json --emitDeclarationOnly --declaration --declarationMap false --outDir dist/server-types --noUnusedLocals false --noUnusedParameters false || true",
     "dev": "tsup --watch",
     "test": "vitest",
     "test:run": "vitest run",
