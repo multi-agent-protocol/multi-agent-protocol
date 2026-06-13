@@ -8,6 +8,7 @@ import type {
   AgentRegistry,
   HandlerContext,
   HandlerRegistry,
+  RegisteredAgent,
   ServerAgentState,
   SessionManager,
   IdentityVerifier,
@@ -184,8 +185,47 @@ interface SpawnParams {
  * - `map/agents/update/metadata` - Update agent metadata (legacy)
  * - `map/agents/spawn` - Spawn a child agent with delegated credentials
  */
+/**
+ * Serialize a stored agent into the protocol `Agent` shape returned by handlers.
+ * Mirrors the inline mapping used across the agent handlers.
+ */
+export function toProtocolAgent(agent: RegisteredAgent) {
+  return {
+    id: agent.id,
+    name: agent.name,
+    role: agent.role,
+    state: agent.state,
+    metadata: agent.metadata,
+    capabilities: agent.capabilities,
+    capabilityDescriptor: agent.capabilityDescriptor,
+    persistentIdentity: agent.persistentIdentity,
+    visibility: "public",
+  };
+}
+
 export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegistry {
   const { agents, sessions, authManager, eventBus, identityVerifier, uniqueIdentity } = options;
+
+  /** Build a lifecycle handler that transitions an agent to `target` state. */
+  const transitionHandler =
+    (target: ServerAgentState) =>
+    async (params: unknown) => {
+      const { agentId } = params as { agentId: string };
+      try {
+        return { agent: toProtocolAgent(agents.updateState(agentId, target)) };
+      } catch (error) {
+        if (error instanceof AgentNotFoundError) {
+          throw MAPRequestError.agentNotFound(agentId);
+        }
+        if (error instanceof InvalidStateTransitionError) {
+          throw MAPRequestError.stateInvalid(target, "transition");
+        }
+        if (error instanceof InvalidAgentStateError) {
+          throw MAPRequestError.stateInvalid(target, "update");
+        }
+        throw error;
+      }
+    };
 
   return {
     "map/agents/register": async (params: unknown, ctx: HandlerContext) => {
@@ -519,6 +559,14 @@ export function createAgentHandlers(options: AgentHandlerOptions): HandlerRegist
         throw error;
       }
     },
+
+    // Lifecycle control. Per the spec's "lifecycle is descriptive, not prescriptive"
+    // principle, these record the state transition and emit the corresponding event;
+    // the hub enforces actual process control. Thin wrappers over the registry state
+    // machine (idle/busy <-> suspended -> stopped).
+    "map/agents/stop": transitionHandler("stopped"),
+    "map/agents/suspend": transitionHandler("suspended"),
+    "map/agents/resume": transitionHandler("idle"),
 
     "map/agents/spawn": async (params: unknown, ctx: HandlerContext) => {
       const { parent, name, role, metadata, capabilityDescriptor, requestedScopes, ttlMinutes } = params as SpawnParams;

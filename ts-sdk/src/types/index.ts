@@ -307,6 +307,15 @@ export interface ParticipantCapabilities {
     /** Namespaced resource types the hub has handlers for */
     kinds?: string[];
   };
+  /**
+   * MAP extensions this participant advertises (capability negotiation, advertise-only).
+   * Each entry is a MAP-EXT capability URI plus optional version. See docs/map-ext.md.
+   * Phase 1: advertise-only — the SDK populates this from mounted manifests and clients
+   * MAY read it, but nothing is enforced at runtime yet (consolidation plan §6.0).
+   *
+   * @example [{ uri: 'urn:map:ext:mail:1' }, { uri: 'urn:map:ext:trajectory:1', version: '1.0.0' }]
+   */
+  extensions?: Array<{ uri: string; version?: string }>;
   /** Streaming/backpressure capabilities */
   streaming?: StreamingCapabilities;
 
