@@ -1,0 +1,218 @@
+{
+  "name": "mail",
+  "uri": "urn:map:ext:mail:1",
+  "version": "1.0.0",
+  "stability": "stable",
+  "owner": "agent-inbox",
+  "methodPrefix": "mail/",
+  "errorRange": [
+    10000,
+    10999
+  ],
+  "methods": {
+    "mail/create": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canCreate"
+      ],
+      "description": "Create a new conversation with optional initial participants and turn",
+      "requestType": "MailCreateRequest",
+      "responseType": "MailCreateResponse"
+    },
+    "mail/get": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
+      "description": "Get conversation details with optional includes (participants, threads, recent turns, stats)",
+      "requestType": "MailGetRequest",
+      "responseType": "MailGetResponse"
+    },
+    "mail/list": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
+      "description": "List conversations with filtering by type, status, participant, and time range",
+      "requestType": "MailListRequest",
+      "responseType": "MailListResponse"
+    },
+    "mail/close": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "Close a conversation (must be a participant)",
+      "requestType": "MailCloseRequest",
+      "responseType": "MailCloseResponse"
+    },
+    "mail/join": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canJoin"
+      ],
+      "description": "Join a conversation with optional catch-up history",
+      "requestType": "MailJoinRequest",
+      "responseType": "MailJoinResponse"
+    },
+    "mail/leave": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "Leave a conversation (must be a participant)",
+      "requestType": "MailLeaveRequest",
+      "responseType": "MailLeaveResponse"
+    },
+    "mail/invite": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canInvite"
+      ],
+      "description": "Invite a participant to a conversation",
+      "requestType": "MailInviteRequest",
+      "responseType": "MailInviteResponse"
+    },
+    "mail/turn": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "Record a turn in a conversation (must be a participant)",
+      "requestType": "MailTurnRequest",
+      "responseType": "MailTurnResponse"
+    },
+    "mail/turns/list": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
+      "description": "List turns in a conversation with filtering and pagination",
+      "requestType": "MailTurnsListRequest",
+      "responseType": "MailTurnsListResponse"
+    },
+    "mail/thread/create": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canCreateThreads"
+      ],
+      "description": "Create a thread rooted at a specific turn",
+      "requestType": "MailThreadCreateRequest",
+      "responseType": "MailThreadCreateResponse"
+    },
+    "mail/thread/list": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
+      "description": "List threads in a conversation",
+      "requestType": "MailThreadListRequest",
+      "responseType": "MailThreadListResponse"
+    },
+    "mail/summary": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
+      "description": "Get or generate a summary for a conversation",
+      "requestType": "MailSummaryRequest",
+      "responseType": "MailSummaryResponse"
+    },
+    "mail/replay": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
+      "description": "Replay conversation turns from a specific point",
+      "requestType": "MailReplayRequest",
+      "responseType": "MailReplayResponse"
+    }
+  },
+  "errorCodes": {
+    "mail": {
+      "10000": "Conversation not found",
+      "10001": "Conversation closed",
+      "10002": "Not a participant",
+      "10003": "Mail permission denied",
+      "10004": "Participant already joined",
+      "10005": "Participant not found",
+      "10006": "Turn not found",
+      "10007": "Thread not found",
+      "10008": "Invalid content type",
+      "10009": "Thread nesting limit exceeded",
+      "10010": "Mail not enabled"
+    }
+  }
+}

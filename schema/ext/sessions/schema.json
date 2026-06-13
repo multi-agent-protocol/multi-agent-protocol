@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-extension": "sessions",
+  "$comment": "Message schemas for the sessions MAP extension (docs/map-ext.md). Merged into schema/schema.json by scripts/build-schema.mjs.",
+  "$defs": {
+    "SessionListRequest": {
+      "type": "object",
+      "x-method": "map/session/list",
+      "x-tier": "core",
+      "description": "List participant's sessions",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "map/session/list"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          }
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method"
+      ]
+    },
+    "SessionLoadRequest": {
+      "type": "object",
+      "x-method": "map/session/load",
+      "x-tier": "core",
+      "description": "Load/reconnect to an existing session",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "map/session/load"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "$ref": "#/$defs/SessionId"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "sessionId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "SessionCloseRequest": {
+      "type": "object",
+      "x-method": "map/session/close",
+      "x-tier": "core",
+      "description": "Explicitly end a session",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "map/session/close"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "$ref": "#/$defs/SessionId"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          }
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method"
+      ]
+    }
+  }
+}

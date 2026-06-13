@@ -1,0 +1,415 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Multi-Agent Protocol Method Metadata (Core)",
+  "description": "Core machinery methods. Extensions live in schema/ext/<name>/manifest.json (docs/map-ext.md).",
+  "protocolVersion": 1,
+  "methods": {
+    "map/connect": {
+      "tier": "core",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [],
+      "description": "Connect to the MAP system and negotiate capabilities",
+      "requestType": "ConnectRequest",
+      "responseType": "ConnectResponse"
+    },
+    "map/disconnect": {
+      "tier": "core",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [],
+      "description": "Gracefully disconnect from the MAP system",
+      "requestType": "DisconnectRequest",
+      "responseType": "DisconnectResponse"
+    },
+    "map/agents/list": {
+      "tier": "core",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
+      "description": "List agents with optional filters (server-filtered by visibility)",
+      "requestType": "AgentsListRequest",
+      "responseType": "AgentsListResponse"
+    },
+    "map/agents/get": {
+      "tier": "core",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
+      "description": "Get details for a single agent",
+      "requestType": "AgentsGetRequest",
+      "responseType": "AgentsGetResponse"
+    },
+    "map/send": {
+      "tier": "core",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "messaging.canSend"
+      ],
+      "description": "Send a message to an address",
+      "requestType": "SendRequest",
+      "responseType": "SendResponse"
+    },
+    "map/subscribe": {
+      "tier": "core",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [
+        "observation.canObserve"
+      ],
+      "description": "Subscribe to event streams",
+      "requestType": "SubscribeRequest",
+      "responseType": "SubscribeResponse"
+    },
+    "map/unsubscribe": {
+      "tier": "core",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [
+        "observation.canObserve"
+      ],
+      "description": "Unsubscribe from event streams",
+      "requestType": "UnsubscribeRequest",
+      "responseType": "UnsubscribeResponse"
+    },
+    "map/auth/refresh": {
+      "tier": "core",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [],
+      "description": "Refresh authentication token in-band",
+      "requestType": "AuthRefreshRequest",
+      "responseType": "AuthRefreshResponse"
+    },
+    "map/agents/register": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canRegister"
+      ],
+      "description": "Register a new agent in the system",
+      "requestType": "AgentsRegisterRequest",
+      "responseType": "AgentsRegisterResponse"
+    },
+    "map/agents/spawn": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canSpawn"
+      ],
+      "description": "Register agent and assign initial task atomically",
+      "requestType": "AgentsSpawnRequest",
+      "responseType": "AgentsSpawnResponse"
+    },
+    "map/agents/unregister": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canUnregister"
+      ],
+      "description": "Remove an agent from the system",
+      "requestType": "AgentsUnregisterRequest",
+      "responseType": "AgentsUnregisterResponse"
+    },
+    "map/agents/update": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [],
+      "description": "Update agent state or metadata (agents can update themselves)",
+      "requestType": "AgentsUpdateRequest",
+      "responseType": "AgentsUpdateResponse"
+    },
+    "map/agents/stop": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canStop"
+      ],
+      "description": "Request graceful agent stop",
+      "requestType": "AgentsStopRequest",
+      "responseType": "AgentsStopResponse"
+    },
+    "map/agents/suspend": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canStop"
+      ],
+      "description": "Pause an agent",
+      "requestType": "AgentsSuspendRequest",
+      "responseType": "AgentsSuspendResponse"
+    },
+    "map/agents/resume": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canStop"
+      ],
+      "description": "Resume a suspended agent",
+      "requestType": "AgentsResumeRequest",
+      "responseType": "AgentsResumeResponse"
+    },
+    "map/structure/graph": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
+      "description": "Get the agent relationship graph",
+      "requestType": "StructureGraphRequest",
+      "responseType": "StructureGraphResponse"
+    },
+    "map/scopes/list": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
+      "description": "List all scopes",
+      "requestType": "ScopesListRequest",
+      "responseType": "ScopesListResponse"
+    },
+    "map/scopes/get": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
+      "description": "Get details for a single scope",
+      "requestType": "ScopesGetRequest",
+      "responseType": "ScopesGetResponse"
+    },
+    "map/scopes/create": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "scopes.canCreateScopes"
+      ],
+      "description": "Create a new scope",
+      "requestType": "ScopesCreateRequest",
+      "responseType": "ScopesCreateResponse"
+    },
+    "map/scopes/delete": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "scopes.canManageScopes"
+      ],
+      "description": "Delete a scope",
+      "requestType": "ScopesDeleteRequest",
+      "responseType": "ScopesDeleteResponse"
+    },
+    "map/scopes/join": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [],
+      "description": "Add an agent to a scope",
+      "requestType": "ScopesJoinRequest",
+      "responseType": "ScopesJoinResponse"
+    },
+    "map/scopes/leave": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [],
+      "description": "Remove an agent from a scope",
+      "requestType": "ScopesLeaveRequest",
+      "responseType": "ScopesLeaveResponse"
+    },
+    "map/scopes/members": {
+      "tier": "structure",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
+      "description": "List members of a scope",
+      "requestType": "ScopesMembersRequest",
+      "responseType": "ScopesMembersResponse"
+    }
+  },
+  "notifications": {
+    "map/event": {
+      "tier": "core",
+      "stability": "stable",
+      "direction": "system-to-participant",
+      "description": "System event notification (sent to subscribers)",
+      "paramsType": "EventNotification"
+    },
+    "map/message": {
+      "tier": "core",
+      "stability": "stable",
+      "direction": "system-to-participant",
+      "description": "Message delivery notification",
+      "paramsType": "MessageNotification"
+    }
+  },
+  "errorCodes": {
+    "protocol": {
+      "-32700": "Parse error",
+      "-32600": "Invalid request",
+      "-32601": "Method not found",
+      "-32602": "Invalid params",
+      "-32603": "Internal error"
+    },
+    "auth": {
+      "1000": "Authentication required",
+      "1001": "Authentication failed",
+      "1002": "Token expired",
+      "1003": "Insufficient permissions"
+    },
+    "routing": {
+      "2000": "Address not found",
+      "2001": "Agent not found",
+      "2002": "Scope not found",
+      "2003": "Delivery failed",
+      "2004": "Address ambiguous"
+    },
+    "agent": {
+      "3000": "Agent already exists",
+      "3001": "Agent state invalid",
+      "3002": "Agent not responding",
+      "3003": "Agent terminated",
+      "3004": "Spawn failed"
+    },
+    "resource": {
+      "4000": "Resource exhausted",
+      "4001": "Rate limited",
+      "4002": "Quota exceeded"
+    }
+  },
+  "tiers": {
+    "core": {
+      "description": "Required methods for basic MAP functionality",
+      "required": true
+    },
+    "structure": {
+      "description": "Methods for agent lifecycle and system structure management",
+      "required": false
+    },
+    "extension": {
+      "description": "Optional extension methods for advanced features",
+      "required": false
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "resources",
+  "uri": "urn:map:ext:resources:1",
+  "version": "1.0.0",
+  "stability": "staging",
+  "owner": "multi-agent-protocol",
+  "methodPrefix": "map/resources/",
+  "errorRange": [
+    15000,
+    15999
+  ],
+  "methods": {
+    "map/resources/list": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "resources.enabled"
+      ],
+      "description": "Browse resources by type with optional filtering and pagination",
+      "requestType": "ResourcesListRequest",
+      "responseType": "ResourcesListResponse"
+    },
+    "map/resources/get": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "resources.enabled"
+      ],
+      "description": "Fetch a single resource by ID with optional type hint",
+      "requestType": "ResourcesGetRequest",
+      "responseType": "ResourcesGetResponse"
+    }
+  }
+}

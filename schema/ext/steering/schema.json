@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-extension": "steering",
+  "$comment": "Message schemas for the steering MAP extension (docs/map-ext.md). Merged into schema/schema.json by scripts/build-schema.mjs.",
+  "$defs": {
+    "InjectRequest": {
+      "type": "object",
+      "x-method": "map/inject",
+      "x-tier": "extension",
+      "description": "Inject context into a running agent (steering)",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "map/inject"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "agentId": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "content": {
+              "description": "Content to inject"
+            },
+            "delivery": {
+              "type": "string",
+              "enum": [
+                "interrupt",
+                "queue",
+                "best-effort"
+              ],
+              "default": "best-effort",
+              "description": "How to deliver the injection"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "agentId",
+            "content"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    }
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "name": "tasks",
+  "uri": "urn:map:ext:tasks:1",
+  "version": "1.0.0",
+  "stability": "staging",
+  "owner": "multi-agent-protocol",
+  "methodPrefix": "map/tasks/",
+  "errorRange": [
+    14000,
+    14999
+  ],
+  "methods": {
+    "map/tasks/create": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "tasks.canCreate"
+      ],
+      "description": "Create a new task with optional assignee, status, and provider metadata",
+      "requestType": "TasksCreateRequest",
+      "responseType": "TasksCreateResponse"
+    },
+    "map/tasks/assign": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "tasks.canAssign"
+      ],
+      "description": "Assign a task to an agent",
+      "requestType": "TasksAssignRequest",
+      "responseType": "TasksAssignResponse"
+    },
+    "map/tasks/update": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "tasks.canUpdate"
+      ],
+      "description": "Update task status, fields, or provider metadata",
+      "requestType": "TasksUpdateRequest",
+      "responseType": "TasksUpdateResponse"
+    },
+    "map/tasks/list": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "tasks.canList"
+      ],
+      "description": "List tasks with optional filters by assignee and status",
+      "requestType": "TasksListRequest",
+      "responseType": "TasksListResponse"
+    }
+  },
+  "errorCodes": {
+    "tasks": {
+      "14000": "Tasks not enabled",
+      "14001": "Task not found",
+      "14002": "Task assignment failed",
+      "14003": "Task permission denied"
+    }
+  }
+}

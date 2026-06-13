@@ -1,0 +1,11 @@
+{
+  "name": "identity",
+  "uri": "urn:map:ext:identity:1",
+  "version": "1.0.0",
+  "stability": "staging",
+  "owner": "multi-agent-protocol",
+  "namespace": "capability-only",
+  "errorRange": null,
+  "methods": {},
+  "note": "persistentId stays opaque-in-core; this ext is the IdentityVerifier hook + DID/SPIFFE capability."
+}
