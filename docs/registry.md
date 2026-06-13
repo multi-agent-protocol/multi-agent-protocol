@@ -44,18 +44,19 @@ Counts: 58 methods total — 37 stable (23 core + 13 mail + `trajectory/checkpoi
 - **agentic-mesh** — P2P / CRDT over Nebula/Tailscale (`references/agentic-mesh`).
 - **openhive-sync** — hub JSON-RPC mesh at `/sync/v1` (openhive).
 
-## Mail divergences (Phase 1 reconciliation input)
+## Mail divergences — RECONCILED (Phase 1)
 
-agent-inbox implements a **superset** of MAP's mail spec; these deltas must be reconciled into the agent-inbox-owned mail v1.1 (Phase 1). Enumerated from `agent-inbox/src/jsonrpc/mail-server.ts` vs `docs/10-mail-protocol.md`:
+Ownership inverted: **agent-inbox now owns the canonical mail spec** (`references/agent-inbox/spec/mail/{manifest.json,extension.md}`, v1.1.0). Divergent-method count between spec and implementation is now **0**. Resolution:
 
-| agent-inbox has | MAP spec has | Resolution (Phase 1) |
+| agent-inbox has | MAP v1.0 spec had | Resolution (v1.1) |
 |---|---|---|
-| `mail/presence` | — | adopt into v1.1 |
-| `mail/reopen` | `mail/close` only | adopt into v1.1 |
-| participant management (`mail/join`/`leave`/`invite` + extras) | `join`/`leave`/`invite` | reconcile extras into v1.1 |
-| `mail/replay` (router semantics) | `mail/replay` | verify semantics match |
+| `mail/presence` | — | **adopted** into canonical v1.1 |
+| `mail/reopen` | `mail/close` only | **adopted** into canonical v1.1 |
+| `mail/turn.received` (notification) | — | **adopted** into canonical v1.1 |
+| — | `mail/summary` | **dropped** (never implemented anywhere) |
+| error codes `-32001`/`-32602` (generic JSON-RPC) | `10000–10010` (mail range) | spec defines `10000–10010` as the target; impl migration is Phase 3 mechanics |
 
-Since we own agent-inbox with write access, reconciliation is an internal decision, not a cross-party negotiation (consolidation plan §8, risk downgraded to Low).
+The MAP repo retains `schema/ext/mail/` as a **pinned v1.0 mirror** (13 methods) so its bundled meta/schema stay byte-consistent while the SDK still ships mail v1.0; the mirror is removed when mail leaves the SDK (Phase 3), after which the agent-inbox spec is the sole source. We own agent-inbox with write access, so this was an internal decision, not a cross-party negotiation (consolidation plan §8, risk Low).
 
 ## Findings
 

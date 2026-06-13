@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "stability": "stable",
   "owner": "agent-inbox",
+  "canonicalSource": "agent-inbox@spec/mail/manifest.json (v1.1.0)",
+  "_note": "Pinned v1.0 mirror. Canonical spec is owned by agent-inbox; this mirror stays at v1.0 (13 methods) so the SDK's bundled meta/schema stay byte-consistent until mail leaves the SDK (consolidation Phase 3), then it is removed.",
   "methodPrefix": "mail/",
   "errorRange": [
     10000,
