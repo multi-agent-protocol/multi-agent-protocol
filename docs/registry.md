@@ -56,7 +56,7 @@ Counts: 59 methods total — 38 stable (23 core + 14 mail + `trajectory/checkpoi
 | — | `mail/summary` | **dropped** (never implemented anywhere) |
 | error codes `-32001`/`-32602` (generic JSON-RPC) | `10000–10010` (mail range) | spec defines `10000–10010` as the target; impl migration is Phase 3 mechanics |
 
-`schema/ext/mail/` is the **owned contract** (v1.1), not a mirror. Remaining work: relocate the SDK's default impl + types to the `ext/mail` subpath, build the conformance suite, and (agent-inbox side) migrate its error codes `-32001`→`10000` and run the suite against `MailJsonRpcServer`. Tracked in the consolidation plan; the error-code migration is the one genuinely additive agent-inbox change.
+`schema/ext/mail/` is the **owned contract** (v1.1), not a mirror. **Status: complete.** The SDK ships the default impl + typed client at `@multi-agent-protocol/sdk/ext/mail`; the conformance suite is published at `…/ext/mail/conformance`; the SDK default impl passes 9/9; and **agent-inbox conforms** (`references/agent-inbox`, `map-consolidation`): its `mail/*` wire now speaks the MAP convention (camelCase, `conversationId`, 10000-range errors) via boundary translation, and it passes the same suite 9/9. Mail is a verified **2-implementation stable extension**. The only deferred item is the physical relocation of `src/server/mail/` + its types out of the core tree (low-value churn; the subpath already presents them).
 
 ## Findings
 
