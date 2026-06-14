@@ -16,7 +16,7 @@ The 23-method machinery core (target of the consolidation recut): connection/aut
 
 | Extension | Namespace | Capability URI | Errors | Stability | Owner | Consumers (independent) |
 |---|---|---|---|---|---|---|
-| **mail** | `mail/` (13) | `urn:map:ext:mail:1` | 10000–10999 | **stable** | → **agent-inbox** *(inversion: Phase 1)* | agent-inbox, openhive |
+| **mail** | `mail/` (14) | `urn:map:ext:mail:1` v1.1 | 10000–10999 | **stable** | **multi-agent-protocol** (contract); flagship impl: **agent-inbox** | agent-inbox, openhive |
 | **trajectory** | `trajectory/` | `urn:map:ext:trajectory:1` | 13000–13999 | **stable** nucleus + **staging** query surface | multi-agent-protocol | `checkpoint`: claude-code-swarm (+ openhive serve/receive). `list`/`get`/`content`: **0** (federation-gated, [plan §Appendix C](./14-consolidation-plan.md)) |
 | **acp-tunnel** | payload `protocol: "acp"` | `urn:map:ext:acp-tunnel:1` | in-band | **staging** | multi-agent-protocol | openhive (Threads/web chat) |
 | **sessions** | `map/session/` (3) | `urn:map:ext:sessions:1` | 16000–16999 *(reserve)* | **staging** | multi-agent-protocol | **0** explicit-method callers; resume solved at app layer |
@@ -28,7 +28,7 @@ The 23-method machinery core (target of the consolidation recut): connection/aut
 | **steering** | `map/inject` (1) | `urn:map:ext:steering:1` | — | **staging** | multi-agent-protocol | **0** (grep hits were Fastify `app.inject()`) |
 | **identity** | (capability + `IdentityVerifier` hook) | `urn:map:ext:identity:1` | — | **staging** | multi-agent-protocol | openhive uses HMAC tokens, not DID/SPIFFE. `persistentId` stays opaque-in-core |
 
-Counts: 58 methods total — 37 stable (23 core + 13 mail + `trajectory/checkpoint`), 21 staging.
+Counts: 59 methods total — 38 stable (23 core + 14 mail + `trajectory/checkpoint`), 21 staging.
 
 ## Profiles
 
@@ -46,7 +46,7 @@ Counts: 58 methods total — 37 stable (23 core + 13 mail + `trajectory/checkpoi
 
 ## Mail divergences — RECONCILED (Phase 1)
 
-Ownership inverted: **agent-inbox now owns the canonical mail spec** (`references/agent-inbox/spec/mail/{manifest.json,extension.md}`, v1.1.0). Divergent-method count between spec and implementation is now **0**. Resolution:
+**Model (revised): MAP owns the `ext/mail` contract; agent-inbox is the flagship implementation.** The `urn:map:ext:mail:1` contract (v1.1, 14 methods) lives in `schema/ext/mail/` and is owned by MAP as the protocol authority. The SDK ships a **default optional in-process implementation** at `@multi-agent-protocol/sdk/ext/mail`; **agent-inbox** is the flagship standalone (Seam-2) implementation. A transport-agnostic **conformance suite** validates both, which is what keeps the MAP-owned contract from drifting from reality. The v1.0→v1.1 reconciliation that informed the contract:
 
 | agent-inbox has | MAP v1.0 spec had | Resolution (v1.1) |
 |---|---|---|
@@ -56,7 +56,7 @@ Ownership inverted: **agent-inbox now owns the canonical mail spec** (`reference
 | — | `mail/summary` | **dropped** (never implemented anywhere) |
 | error codes `-32001`/`-32602` (generic JSON-RPC) | `10000–10010` (mail range) | spec defines `10000–10010` as the target; impl migration is Phase 3 mechanics |
 
-The MAP repo retains `schema/ext/mail/` as a **pinned v1.0 mirror** (13 methods) so its bundled meta/schema stay byte-consistent while the SDK still ships mail v1.0; the mirror is removed when mail leaves the SDK (Phase 3), after which the agent-inbox spec is the sole source. We own agent-inbox with write access, so this was an internal decision, not a cross-party negotiation (consolidation plan §8, risk Low).
+`schema/ext/mail/` is the **owned contract** (v1.1), not a mirror. Remaining work: relocate the SDK's default impl + types to the `ext/mail` subpath, build the conformance suite, and (agent-inbox side) migrate its error codes `-32001`→`10000` and run the suite against `MailJsonRpcServer`. Tracked in the consolidation plan; the error-code migration is the one genuinely additive agent-inbox change.
 
 ## Findings
 

@@ -574,7 +574,20 @@
       "requestType": "MailThreadListRequest",
       "responseType": "MailThreadListResponse"
     },
-    "mail/summary": {
+    "mail/reopen": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "Reopen a completed conversation",
+      "requestType": "MailReopenRequest",
+      "responseType": "MailReopenResponse"
+    },
+    "mail/presence": {
       "tier": "extension",
       "stability": "stable",
       "implementedBy": "system",
@@ -585,9 +598,9 @@
       "capabilities": [
         "mail.canViewHistory"
       ],
-      "description": "Get or generate a summary for a conversation",
-      "requestType": "MailSummaryRequest",
-      "responseType": "MailSummaryResponse"
+      "description": "List a conversation's participants with live presence status",
+      "requestType": "MailPresenceRequest",
+      "responseType": "MailPresenceResponse"
     },
     "mail/replay": {
       "tier": "extension",
@@ -867,6 +880,12 @@
       "direction": "system-to-participant",
       "description": "Message delivery notification",
       "paramsType": "MessageNotification"
+    },
+    "mail/turn.received": {
+      "tier": "extension",
+      "stability": "stable",
+      "direction": "system-to-participant",
+      "description": "Server-push notification that a new turn was recorded in a subscribed conversation"
     },
     "trajectory/content.chunk": {
       "tier": "extension",

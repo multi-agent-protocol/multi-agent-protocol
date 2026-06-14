@@ -1,11 +1,11 @@
 {
   "name": "mail",
   "uri": "urn:map:ext:mail:1",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "stability": "stable",
-  "owner": "agent-inbox",
-  "canonicalSource": "agent-inbox@spec/mail/manifest.json (v1.1.0)",
-  "_note": "Pinned v1.0 mirror. Canonical spec is owned by agent-inbox; this mirror stays at v1.0 (13 methods) so the SDK's bundled meta/schema stay byte-consistent until mail leaves the SDK (consolidation Phase 3), then it is removed.",
+  "owner": "multi-agent-protocol",
+  "flagshipImplementation": "agent-inbox",
+  "_note": "MAP owns this contract. The SDK ships a default optional in-process implementation at @multi-agent-protocol/sdk/ext/mail; agent-inbox is the flagship standalone implementation. Both are validated by the mail conformance suite, which keeps the contract from drifting.",
   "methodPrefix": "mail/",
   "errorRange": [
     10000,
@@ -171,20 +171,25 @@
       "requestType": "MailThreadListRequest",
       "responseType": "MailThreadListResponse"
     },
-    "mail/summary": {
+    "mail/reopen": {
       "tier": "extension",
       "stability": "stable",
       "implementedBy": "system",
-      "callableBy": [
-        "client",
-        "agent"
-      ],
-      "capabilities": [
-        "mail.canViewHistory"
-      ],
-      "description": "Get or generate a summary for a conversation",
-      "requestType": "MailSummaryRequest",
-      "responseType": "MailSummaryResponse"
+      "callableBy": ["client", "agent"],
+      "capabilities": [],
+      "description": "Reopen a completed conversation",
+      "requestType": "MailReopenRequest",
+      "responseType": "MailReopenResponse"
+    },
+    "mail/presence": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": ["client", "agent"],
+      "capabilities": ["mail.canViewHistory"],
+      "description": "List a conversation's participants with live presence status",
+      "requestType": "MailPresenceRequest",
+      "responseType": "MailPresenceResponse"
     },
     "mail/replay": {
       "tier": "extension",
@@ -200,6 +205,14 @@
       "description": "Replay conversation turns from a specific point",
       "requestType": "MailReplayRequest",
       "responseType": "MailReplayResponse"
+    }
+  },
+  "notifications": {
+    "mail/turn.received": {
+      "tier": "extension",
+      "stability": "stable",
+      "direction": "system-to-participant",
+      "description": "Server-push notification that a new turn was recorded in a subscribed conversation"
     }
   },
   "errorCodes": {
