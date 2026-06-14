@@ -3043,6 +3043,50 @@ export interface MailCloseResponseResult {
   _meta?: Meta;
 }
 
+// --- mail/reopen ---
+
+export interface MailReopenRequestParams {
+  conversationId: ConversationId;
+  _meta?: Meta;
+}
+
+export interface MailReopenRequest extends MAPRequestBase<MailReopenRequestParams> {
+  method: "mail/reopen";
+  params: MailReopenRequestParams;
+}
+
+export interface MailReopenResponseResult {
+  conversation: Conversation;
+  _meta?: Meta;
+}
+
+// --- mail/presence ---
+
+export type MailPresenceStatus = "online" | "offline" | "unknown";
+
+export interface MailPresenceRequestParams {
+  conversationId: ConversationId;
+  _meta?: Meta;
+}
+
+export interface MailPresenceRequest extends MAPRequestBase<MailPresenceRequestParams> {
+  method: "mail/presence";
+  params: MailPresenceRequestParams;
+}
+
+export interface MailPresenceParticipant {
+  participantId: ParticipantId;
+  role: ParticipantRole;
+  joinedAt: Timestamp;
+  presence: MailPresenceStatus;
+}
+
+export interface MailPresenceResponseResult {
+  conversationId: ConversationId;
+  participants: MailPresenceParticipant[];
+  _meta?: Meta;
+}
+
 // --- mail/join ---
 
 export interface MailJoinRequestParams {
@@ -3919,6 +3963,8 @@ export const MAIL_METHODS = {
   MAIL_GET: "mail/get",
   MAIL_LIST: "mail/list",
   MAIL_CLOSE: "mail/close",
+  MAIL_REOPEN: "mail/reopen",
+  MAIL_PRESENCE: "mail/presence",
   MAIL_JOIN: "mail/join",
   MAIL_LEAVE: "mail/leave",
   MAIL_INVITE: "mail/invite",
