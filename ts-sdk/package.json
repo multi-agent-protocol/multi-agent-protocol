@@ -31,6 +31,11 @@
       "types": "./dist/ext/trajectory.d.ts",
       "import": "./dist/ext/trajectory.js",
       "require": "./dist/ext/trajectory.cjs"
+    },
+    "./ext/mail": {
+      "types": "./dist/ext/mail.d.ts",
+      "import": "./dist/ext/mail.js",
+      "require": "./dist/ext/mail.cjs"
     }
   },
   "files": [
