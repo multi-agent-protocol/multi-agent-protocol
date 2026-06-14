@@ -22,6 +22,11 @@
       "import": "./dist/server.js",
       "require": "./dist/server.cjs"
     },
+    "./conformance": {
+      "types": "./dist/conformance.d.ts",
+      "import": "./dist/conformance.js",
+      "require": "./dist/conformance.cjs"
+    },
     "./ext": {
       "types": "./dist/ext/index.d.ts",
       "import": "./dist/ext/index.js",

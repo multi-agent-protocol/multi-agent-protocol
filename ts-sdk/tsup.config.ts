@@ -6,6 +6,7 @@ export default defineConfig([
     entry: {
       index: 'src/index.ts',
       testing: 'src/testing.ts',
+      conformance: 'src/conformance/core.ts',
       // Extension framework + per-extension subpaths (@multi-agent-protocol/sdk/ext/*)
       'ext/index': 'src/ext/index.ts',
       'ext/trajectory': 'src/ext/trajectory/index.ts',
