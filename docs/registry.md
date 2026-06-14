@@ -20,11 +20,11 @@ The 23-method machinery core (target of the consolidation recut): connection/aut
 | **trajectory** | `trajectory/` | `urn:map:ext:trajectory:1` | 13000–13999 | **stable** nucleus + **staging** query surface | multi-agent-protocol | `checkpoint`: claude-code-swarm (+ openhive serve/receive). `list`/`get`/`content`: **0** (federation-gated, [plan §Appendix C](./14-consolidation-plan.md)) |
 | **acp-tunnel** | payload `protocol: "acp"` | `urn:map:ext:acp-tunnel:1` | in-band | **staging** | multi-agent-protocol | openhive (Threads/web chat) |
 | **sessions** | `map/session/` (3) | `urn:map:ext:sessions:1` | 16000–16999 *(reserve)* | **staging** | multi-agent-protocol | **0** explicit-method callers; resume solved at app layer |
-| **tasks** | `map/tasks/` (4) | `urn:map:ext:tasks:1` | 14000–14999 | **staging** | multi-agent-protocol *(offer → opentasks)* | opentasks (optional bridge); openhive rolls its own |
+| **tasks** | `map/tasks/` (4) | `urn:map:ext:tasks:1` | 14000–14999 | **staging** | multi-agent-protocol *(flagship: opentasks)* | opentasks (optional bridge); openhive rolls its own |
 | **workspace** | `workspace/` (3) | `urn:map:ext:workspace:1` | 12000–12999 | **staging** | multi-agent-protocol | ~1 |
-| **credentials** | `cred/` (3) | `urn:map:ext:credentials:1` | 11000–11999 | **staging** | multi-agent-protocol *(offer → agent-iam)* | openhive uses agent-iam tokens directly, not `cred/*` |
+| **credentials** | `cred/` (3) | `urn:map:ext:credentials:1` | 11000–11999 | **staging** | multi-agent-protocol *(flagship: agent-iam)* | openhive uses agent-iam tokens directly, not `cred/*` |
 | **resources** | `map/resources/` (2) | `urn:map:ext:resources:1` | 15000–15999 *(reserve)* | **staging** | multi-agent-protocol | openhive |
-| **federation** | `map/federation/` (2) | `urn:map:ext:federation:1` | 5000–5999 | **staging** | multi-agent-protocol | **0** uses of `federation/route`; 2 independent transport replacements exist (see Profiles) |
+| **federation** | `map/federation/` (2) | `urn:map:ext:federation:1` | 5000–5999 | **staging** | multi-agent-protocol | **0** uses of `federation/route`; real federation runs on transport profiles → [federation-profiles.md](./federation-profiles.md) |
 | **steering** | `map/inject` (1) | `urn:map:ext:steering:1` | — | **staging** | multi-agent-protocol | **0** (grep hits were Fastify `app.inject()`) |
 | **identity** | (capability + `IdentityVerifier` hook) | `urn:map:ext:identity:1` | — | **staging** | multi-agent-protocol | openhive uses HMAC tokens, not DID/SPIFFE. `persistentId` stays opaque-in-core |
 
@@ -39,10 +39,10 @@ Counts: 59 methods total — 38 stable (23 core + 14 mail + `trajectory/checkpoi
 
 ## Federation transport profiles (not the `federation/*` methods)
 
-`federation/route` has no observed consumers; real cross-system transport is done by these, documented as profiles in Phase 4:
+`federation/route` has no observed consumers; real cross-system transport is done by two blessed profiles — full write-up in [**federation-profiles.md**](./federation-profiles.md):
 
-- **agentic-mesh** — P2P / CRDT over Nebula/Tailscale (`references/agentic-mesh`).
-- **openhive-sync** — hub JSON-RPC mesh at `/sync/v1` (openhive).
+- **agentic-mesh** — P2P federation over encrypted mesh (Nebula/Tailscale/Headscale); reference consumer agent-inbox.
+- **openhive-sync** — hub-to-hub JSON-RPC mesh at `/sync/v1`; reference consumer openhive.
 
 ## Mail divergences — RECONCILED (Phase 1)
 

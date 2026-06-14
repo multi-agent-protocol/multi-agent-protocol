@@ -121,7 +121,9 @@ Cautionary tales: **Matrix** (extraction without gates → spec became flagship 
 
 ### D5 — Invert domain ownership
 
-**Decision:** The source of truth for a stable extension lives with its primary implementation:
+> **⚠️ Superseded during implementation (mail).** The mail work reversed this: **MAP owns every extension contract** (it is the authority over the `urn:map:ext:` namespace); consumers are *flagship implementations*, not spec owners. The anti-divergence guard is a **conformance suite run against the flagship**, not handing the flagship the pen. This resolves the Phase 4 tasks/cred "ownership transfer" decision points the same way (MAP owns; opentasks/agent-iam are flagships). See the mail chapter and `docs/registry.md`. The original inversion reasoning is kept below for the record.
+
+**Decision (original — superseded):** The source of truth for a stable extension lives with its primary implementation:
 - **mail** → agent-inbox repo owns the spec; MAP references it. Divergences (presence, reopen, participant management) get reconciled *into* the owned spec rather than treated as drift.
 - **tasks** → candidate transfer to opentasks (decision point in Phase 4 — opentasks may decline; then tasks stays a MAP-staging extension).
 - **cred** → candidate transfer to agent-iam.
@@ -401,9 +403,9 @@ Work items:
 
 Work items:
 1. Demote tasks/workspace/resources/cred/federation/inject/identity-matrix to staging in all docs and the registry (already labeled in meta since Phase 0; this is the spec-document recut, D1).
-2. **Decision point — tasks ownership:** offer transfer to opentasks. If accepted: opentasks owns the spec, MAP registry points there. If declined: tasks remains MAP-staging.
-3. **Decision point — cred ownership:** same offer to agent-iam.
-4. Write the two federation transport profiles (agentic-mesh, openhive-sync) as short profile docs; mark `federation/*` methods staging with pointers.
+2. **Tasks ownership — RESOLVED:** MAP owns the `tasks` contract (consistent with the mail-derived model, D5); **opentasks is the flagship implementer**, not the spec owner. tasks stays MAP-staging. (No ownership transfer; ownership transfer was the superseded D5 idea.)
+3. **Cred ownership — RESOLVED:** same — MAP owns the `cred` contract; **agent-iam is the flagship**. cred stays MAP-staging.
+4. **DONE:** federation transport profiles (agentic-mesh, openhive-sync) documented in [`docs/federation-profiles.md`](./federation-profiles.md); `federation/*` marked staging with a pointer to it in the registry.
 5. Migrate the five SDK-consuming repos (openhive, agent-inbox, opentasks, swarm-dispatch, claude-code-swarm) to 0.2.x imports; remove deprecated-path usage. The other documented repos (git-cascade, sessionlog, agent-iam, agentic-mesh) carry no SDK dependency and are untouched here — see §7.2.
 6. Publish 0.3.0 (remove deprecated re-exports) once the CI grep across first-party repos shows zero old-path imports.
 
