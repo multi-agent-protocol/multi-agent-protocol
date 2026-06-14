@@ -16,6 +16,7 @@ import {
   type BaseConnectionOptions,
   type ConnectionState,
 } from "./base";
+import { MAPRequestError } from "../errors";
 import { withRetry, type RetryPolicy, DEFAULT_RETRY_POLICY } from "../utils";
 import { Subscription, createSubscription } from "../subscription";
 import {
@@ -262,6 +263,8 @@ export class AgentConnection {
     new Set();
   readonly #notificationHandlers: Map<string, Set<(params: unknown) => Promise<void> | void>> =
     new Map();
+  readonly #requestHandlers: Map<string, (params: unknown) => Promise<unknown> | unknown> =
+    new Map();
   readonly #scopeMemberships: Set<ScopeId> = new Set();
 
   #agentId: AgentId | null = null;
@@ -283,6 +286,16 @@ export class AgentConnection {
     this.#connection.setNotificationHandler(
       this.#handleNotification.bind(this),
     );
+
+    // Dispatch inbound requests to per-method handlers registered via onRequest().
+    // Unregistered methods produce a standard methodNotFound error response —
+    // identical to the prior no-handler behavior, but now agents can answer
+    // requests (real request/response instead of notification-pair workarounds).
+    this.#connection.setRequestHandler(async (method, params) => {
+      const handler = this.#requestHandlers.get(method);
+      if (!handler) throw MAPRequestError.methodNotFound(method);
+      return handler(params);
+    });
 
     // Set up disconnect detection for auto-reconnect
     if (options.reconnection?.enabled && options.createStream) {
@@ -877,6 +890,36 @@ export class AgentConnection {
       handlers.delete(handler);
       if (handlers.size === 0) this.#notificationHandlers.delete(method);
     }
+    return this;
+  }
+
+  /**
+   * Register a handler for an inbound request method (request/response).
+   *
+   * Lets an agent answer JSON-RPC requests addressed to it — e.g. an extension
+   * method another participant calls on this agent. The handler's return value
+   * becomes the response result; throwing a {@link MAPRequestError} yields a
+   * structured error response. One handler per method (last registration wins).
+   *
+   * This replaces the notification-pair + correlation-id workaround consumers
+   * used because `AgentConnection` previously exposed no request handler.
+   *
+   * @param method - The JSON-RPC request method name to handle
+   * @param handler - Async function called with the request params; its result is the response
+   */
+  onRequest(
+    method: string,
+    handler: (params: unknown) => Promise<unknown> | unknown,
+  ): this {
+    this.#requestHandlers.set(method, handler);
+    return this;
+  }
+
+  /**
+   * Remove the request handler for a specific method.
+   */
+  offRequest(method: string): this {
+    this.#requestHandlers.delete(method);
     return this;
   }
 
