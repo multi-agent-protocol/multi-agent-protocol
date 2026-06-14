@@ -111,3 +111,37 @@ describe("Core conformance: extension capability advertisement (Phase 1 item 3)"
     await client.disconnect();
   });
 });
+
+describe("Core conformance: over-the-wire e2e (new core methods through a real connection)", () => {
+  it("structure/graph + lifecycle round-trip client → stream → server → handler → client", async () => {
+    const server = new MAPServer({ name: "E2EServer" });
+
+    // An agent connects on its own stream and registers into the shared registry.
+    const [agentClient, agentServer] = createStreamPair();
+    server.accept(agentServer, { role: "agent" }).start();
+    const agent = new AgentConnection(agentClient, { name: "worker-1", role: "worker" });
+    const reg = await agent.connect();
+    const agentId = reg.agent.id;
+
+    // A separate client observes/controls over its own stream.
+    const [obsClient, obsServer] = createStreamPair();
+    server.accept(obsServer, { role: "client" }).start();
+    const client = new ClientConnection(obsClient, { name: "observer" });
+    await client.connect();
+
+    // structure/graph over the wire shows the registered agent.
+    const graph: any = await client.callExtension("map/structure/graph", {});
+    expect(graph.nodes.map((n: any) => n.id)).toContain(agentId);
+
+    // lifecycle methods drive real state transitions over the wire.
+    const suspended: any = await client.callExtension("map/agents/suspend", { agentId });
+    expect(suspended.agent.state).toBe("suspended");
+    const resumed: any = await client.callExtension("map/agents/resume", { agentId });
+    expect(resumed.agent.state).toBe("idle");
+    const stopped: any = await client.callExtension("map/agents/stop", { agentId });
+    expect(stopped.agent.state).toBe("stopped");
+
+    await client.disconnect();
+    await agent.disconnect();
+  });
+});
