@@ -11,6 +11,7 @@ export default defineConfig([
       'ext/trajectory': 'src/ext/trajectory/index.ts',
       'ext/mail': 'src/ext/mail/index.ts',
       'ext/mail/conformance': 'src/ext/mail/conformance.ts',
+      'ext/trajectory/conformance': 'src/ext/trajectory/conformance.ts',
     },
     format: ['cjs', 'esm'],
     dts: true,

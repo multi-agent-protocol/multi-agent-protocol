@@ -41,6 +41,11 @@
       "types": "./dist/ext/mail/conformance.d.ts",
       "import": "./dist/ext/mail/conformance.js",
       "require": "./dist/ext/mail/conformance.cjs"
+    },
+    "./ext/trajectory/conformance": {
+      "types": "./dist/ext/trajectory/conformance.d.ts",
+      "import": "./dist/ext/trajectory/conformance.js",
+      "require": "./dist/ext/trajectory/conformance.cjs"
     }
   },
   "files": [
