@@ -21,6 +21,16 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "require": "./dist/server.cjs"
+    },
+    "./ext": {
+      "types": "./dist/ext/index.d.ts",
+      "import": "./dist/ext/index.js",
+      "require": "./dist/ext/index.cjs"
+    },
+    "./ext/trajectory": {
+      "types": "./dist/ext/trajectory.d.ts",
+      "import": "./dist/ext/trajectory.js",
+      "require": "./dist/ext/trajectory.cjs"
     }
   },
   "files": [
