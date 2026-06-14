@@ -109,7 +109,7 @@ Grammar: `<extension>.<noun>.<verb-past>` — e.g. `mail.turn.created`, `traject
 | **staging** | namespaced, registered URI, schema in repo | written spec + **1 real consumer** | yes, as staging |
 | **stable** | version-locked URI | **≥ 2 independent consumers** + conformance pack + 1 release cycle with no breaking change | yes, as stable |
 
-Promotion is a registry PR using the graduation checklist (Phase 5). Demotion is symmetric: a stable extension that loses its second consumer can return to staging. The gate's present value is **discipline**, not governance (single maintainer today — consolidation plan §8); it becomes real governance when third parties appear.
+Promotion is a registry PR using the [**graduation checklist**](./graduation-checklist.md) (which also records the current applied ladder positions). Demotion is symmetric: a stable extension that loses its second consumer can return to staging. The gate's present value is **discipline**, not governance (single maintainer today — consolidation plan §8); it becomes real governance when third parties appear.
 
 Retroactive application (from the audit): **mail**, **trajectory/checkpoint** → stable; everything else → staging. See [registry.md](./registry.md).
 
