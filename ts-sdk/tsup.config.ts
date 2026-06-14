@@ -10,6 +10,7 @@ export default defineConfig([
       'ext/index': 'src/ext/index.ts',
       'ext/trajectory': 'src/ext/trajectory/index.ts',
       'ext/mail': 'src/ext/mail/index.ts',
+      'ext/mail/conformance': 'src/ext/mail/conformance.ts',
     },
     format: ['cjs', 'esm'],
     dts: true,

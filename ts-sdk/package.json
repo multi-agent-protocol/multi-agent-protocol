@@ -36,6 +36,11 @@
       "types": "./dist/ext/mail.d.ts",
       "import": "./dist/ext/mail.js",
       "require": "./dist/ext/mail.cjs"
+    },
+    "./ext/mail/conformance": {
+      "types": "./dist/ext/mail/conformance.d.ts",
+      "import": "./dist/ext/mail/conformance.js",
+      "require": "./dist/ext/mail/conformance.cjs"
     }
   },
   "files": [
