@@ -1,5 +1,7 @@
 # MAP Federation & System-to-System Communication
 
+> **Status note (post-consolidation).** The `map/federation/*` methods described here (`connect`, `route`/`send`) are a **staging extension with zero observed consumers of `federation/route`**. Real cross-system transport in the MAP ecosystem runs on two blessed **transport profiles** — see [`federation-profiles.md`](./federation-profiles.md) (agentic-mesh, openhive-sync). This document remains the design reference for the in-protocol federation primitive; for current state see [`14-consolidation-plan.md`](./14-consolidation-plan.md) and [`registry.md`](./registry.md). (The `did:wba` auth slice below is implemented; see `docs/09-authentication.md`.)
+
 This spec details how multiple MAP systems can communicate with each other, enabling distributed multi-agent architectures while maintaining internal transparency.
 
 ## Design Principles

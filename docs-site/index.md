@@ -15,6 +15,9 @@ A JSON-RPC based protocol for observing, coordinating, and routing messages with
 [Get Started](/multi-agent-protocol/getting-started/){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [View on GitHub](https://github.com/multi-agent-protocol/multi-agent-protocol){: .btn .fs-5 .mb-4 .mb-md-0 }
 
+{: .note }
+> **Heads up:** MAP has been recut into a small **23-method machinery core** plus separately-versioned, capability-negotiated **extensions** (mail, trajectory, tasks, resources, federation, and more). Domain capabilities are optional extensions, not core protocol features. Some pages on this site still describe the pre-consolidation shape; the canonical model lives in [`docs/registry.md`](https://github.com/multi-agent-protocol/multi-agent-protocol/blob/main/docs/registry.md) and [`docs/map-ext.md`](https://github.com/multi-agent-protocol/multi-agent-protocol/blob/main/docs/map-ext.md).
+
 ---
 
 ## Why MAP?
@@ -103,7 +106,7 @@ flowchart TB
 
 ## Protocol Methods
 
-The protocol defines **27 methods** across three tiers:
+The protocol defines a **23-method machinery core** plus separately-versioned, capability-negotiated extensions (59 methods total). The core is grouped into:
 
 ### Core (Required)
 `map/connect`, `map/disconnect`, `map/send`, `map/subscribe`, `map/unsubscribe`, `map/agents/list`, `map/agents/get`
@@ -112,7 +115,7 @@ The protocol defines **27 methods** across three tiers:
 Agent lifecycle (`register`, `spawn`, `unregister`, `update`, `stop`, `suspend`, `resume`), scope management (`scopes/create`, `join`, `leave`), and structure queries
 
 ### Extensions (Optional)
-Federation (`federation/connect`, `federation/route`), session management, and steering (`map/inject`)
+Optional, capability-negotiated domains — mail and trajectory (stable); tasks, resources, federation, sessions, workspace, credentials, steering (`map/inject`), acp-tunnel, and identity (staging). A `map/` prefix does not imply core.
 
 ---
 

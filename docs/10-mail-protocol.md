@@ -1,6 +1,6 @@
 # MAP Mail Protocol
 
-> **⚠️ Superseded (Phase 1 consolidation).** The canonical mail spec is now **owned by agent-inbox** — see `references/agent-inbox/spec/mail/extension.md` (v1.1.0), which reflects the shipped 14-method surface (`+reopen`, `+presence`, `+mail/turn.received`, `−summary`). This document remains as the v1.0 design background; the pinned v1.0 mirror lives at `schema/ext/mail/`. See [`registry.md`](./registry.md) for the reconciliation record.
+> **⚠️ Superseded (Phase 1 consolidation).** The canonical mail contract `urn:map:ext:mail:1` (v1.1) is **owned by multi-agent-protocol** and lives at `schema/ext/mail/`; **agent-inbox** is the flagship implementation (see `references/agent-inbox/spec/mail/extension.md`). The shipped v1.1 surface is **14 methods** (`+reopen`, `+presence`, `+mail/turn.received`, `−summary`) using the MAP convention: **camelCase**, `conversationId`, errors in the **10000–10999** range. This document is retained as **v1.0 design background only** — its method list, `mail/summary` (never implemented, dropped in v1.1), and any generic JSON-RPC error codes do **not** reflect the current contract. See [`registry.md`](./registry.md) for the reconciliation record.
 
 ## Overview
 

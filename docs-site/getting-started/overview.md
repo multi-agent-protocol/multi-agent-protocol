@@ -80,7 +80,7 @@ A MAP server manages these internal components:
 
 ### Protocol Methods
 
-The protocol defines **27 methods** across three tiers:
+The protocol defines a **23-method machinery core** plus separately-versioned, capability-negotiated extensions (59 methods total). The core tiers:
 
 **Core (Required):**
 - `map/connect` - Establish connection
@@ -96,10 +96,9 @@ The protocol defines **27 methods** across three tiers:
 - Scope management: `scopes/create`, `scopes/join`, `scopes/leave`
 - Structure queries: `scopes/list`, `agents/children`
 
-**Extensions (Optional):**
-- Federation: `federation/connect`, `federation/route`
-- Session management: `sessions/list`, `sessions/get`
-- Steering: `map/inject`
+**Extensions (Optional, capability-negotiated — not core, even when `map/`-prefixed):**
+- Stable: mail (`mail/*`), trajectory (`trajectory/checkpoint`)
+- Staging: federation (`map/federation/*`), sessions (`map/session/*`), tasks (`map/tasks/*`), resources (`map/resources/*`), workspace, credentials, steering (`map/inject`), acp-tunnel, identity
 
 ---
 

@@ -35,7 +35,7 @@ MAP is a JSON-RPC 2.0 based protocol designed for **observing, coordinating, and
 
 ## Protocol Methods
 
-The protocol defines **27 methods** across three tiers:
+The protocol defines a **23-method machinery core** that every conformant server implements, plus separately-versioned, capability-negotiated **extensions** (mail, trajectory, tasks, and more) — 59 methods in total across core and extensions. The core is grouped into the tiers below:
 
 ### Core (Required)
 
@@ -70,18 +70,14 @@ These methods enable full agent lifecycle and scope management:
 - `map/scopes/leave` - Leave a scope
 - `map/scopes/list` - List available scopes
 
-### Extensions (Optional)
+### Extensions (Optional, capability-negotiated)
 
-**Federation:**
-- `map/federation/connect` - Establish peer connection
-- `map/federation/route` - Route to remote system
+Domain capabilities are **separately-versioned extensions**, advertised via `urn:map:ext:<name>:<major>` capabilities at connect time — not core protocol features. Note that a `map/` prefix does **not** imply core: `map/federation/*`, `map/session/*`, `map/tasks/*`, `map/resources/*`, and `map/inject` are all extensions.
 
-**Session Management:**
-- `map/sessions/list` - List active sessions
-- `map/sessions/get` - Get session details
+Stable: **mail** (`mail/*`), **trajectory** (`trajectory/checkpoint`).
+Staging: **federation** (`map/federation/*`), **sessions** (`map/session/*`), **tasks** (`map/tasks/*`), **resources** (`map/resources/*`), **workspace**, **credentials**, **steering** (`map/inject`), **acp-tunnel**, **identity**.
 
-**Steering:**
-- `map/inject` - Inject context into agent
+See the [extension registry](https://github.com/multi-agent-protocol/multi-agent-protocol/blob/main/docs/registry.md) for the full inventory.
 
 ---
 

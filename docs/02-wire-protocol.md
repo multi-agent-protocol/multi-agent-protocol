@@ -1,5 +1,7 @@
 # MAP Wire Protocol & ACP Compatibility Layer
 
+> **Status (2026-06):** Predates the consolidation recut and uses an older method vocabulary. The current protocol uses `map/connect` / `map/disconnect` (not `map/initialize` / `map/shutdown`), `map/agents/*` / `map/scopes/*` (not `map/agent.*` / `map/scope.*`), and a 23-method core + separately-versioned extensions. ACP interop is now the `acp-tunnel` extension (payload `protocol: "acp"` over `map/send`), not the `_map/` compat namespace described here. See [14-consolidation-plan.md](14-consolidation-plan.md), [map-ext.md](map-ext.md), and [registry.md](registry.md).
+
 This spec details the wire protocol format for MAP and how it maintains compatibility with ACP.
 
 ## Design Goals

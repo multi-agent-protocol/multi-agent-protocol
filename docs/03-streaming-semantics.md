@@ -1,5 +1,7 @@
 # MAP Streaming Semantics
 
+> **Status (2026-06):** The subscription, filtering, replay, ordering, and backpressure semantics here are current, but some method names predate the consolidation recut. The core streaming surface is `map/subscribe` / `map/unsubscribe` (replay is expressed via `fromEventId` / `fromSeq` / `fromTimestamp` params on subscribe, not a separate `map/replay`). `task.*` stream events belong to the **tasks** extension (STAGING), not the core. See [registry.md](registry.md) and [14-consolidation-plan.md](14-consolidation-plan.md).
+
 This spec details how MAP handles system-wide event streaming, subscriptions, filtering, and replay.
 
 ## Design Goals

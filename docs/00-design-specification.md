@@ -1,5 +1,7 @@
 # Multi-Agent Protocol (MAP) Design Specification
 
+> **Status (2026-06):** This design spec predates the consolidation recut. MAP is now a 23-method machinery core plus separately-versioned extensions; the "Tier 1/2/3" method grouping and the inclusion of mail/tasks/federation/resources/sessions/steering as protocol methods below are superseded. See [14-consolidation-plan.md](14-consolidation-plan.md), [map-ext.md](map-ext.md), and [registry.md](registry.md) for the current core/extension model.
+
 ## Overview
 
 MAP (Multi-Agent Protocol) is a communication protocol for **observing, coordinating, and routing messages within multi-agent AI systems**. Unlike protocols designed for single-agent interaction (ACP) or peer-to-peer agent delegation (A2A), MAP provides a **window into** a multi-agent system with visibility into its internal structure, agent relationships, and message flows.
@@ -378,59 +380,46 @@ type MAPAddress =
 
 ## Protocol Methods
 
-### Tier 1: Core (Required)
+### Machinery Core (Required — 23 methods)
+
+The only methods required of a conformant implementation. The `map/` prefix alone does NOT mean core: `map/session/*`, `map/tasks/*`, `map/resources/*`, `map/federation/*`, and `map/inject` are extensions despite the prefix (see Extensions below).
 
 ```typescript
-// SYSTEM
+// CONNECTION / MESSAGING (6)
 "map/connect"           // Connect to system, negotiate capabilities
 "map/disconnect"        // Graceful disconnect
-
-// SESSION
-"map/session/list"      // List participant's sessions
-"map/session/load"      // Load/reconnect to existing session
-"map/session/close"     // Explicitly end session
-
-// AGENTS (read)
-"map/agents/list"       // List agents with filters (server-filtered)
-"map/agents/get"        // Get single agent details
-
-// MESSAGING
+"map/auth/refresh"      // In-band token refresh
 "map/send"              // Send message to address
-
-// STREAMING
 "map/subscribe"         // Subscribe to event streams
 "map/unsubscribe"       // Unsubscribe from streams
 
-// AUTH
-"map/auth/refresh"      // In-band token refresh
-```
-
-### Tier 2: Structure (Recommended)
-
-```typescript
-// AGENTS (write)
+// AGENTS (9)
+"map/agents/list"       // List agents with filters (server-filtered)
+"map/agents/get"        // Get single agent details
 "map/agents/register"   // Add agent to system
-"map/agents/spawn"      // Register + initial task (atomic)
 "map/agents/unregister" // Remove agent
+"map/agents/spawn"      // Register + initial task (atomic)
 "map/agents/update"     // Update agent state/metadata
-
-// LIFECYCLE CONTROL
 "map/agents/stop"       // Request graceful stop
 "map/agents/suspend"    // Pause agent
 "map/agents/resume"     // Resume suspended agent
 
-// STRUCTURE
-"map/structure/graph"   // Get relationship graph
-
-// SCOPES
-"map/scopes/list"       // List scopes
+// SCOPES (7)
 "map/scopes/create"     // Create scope
 "map/scopes/delete"     // Delete scope
+"map/scopes/get"        // Get scope details
 "map/scopes/join"       // Agent joins scope
 "map/scopes/leave"      // Agent leaves scope
+"map/scopes/list"       // List scopes
+"map/scopes/members"    // List scope members
+
+// STRUCTURE (1)
+"map/structure/graph"   // Get relationship graph
 ```
 
-### Tier 3: Extensions (Optional)
+### Extensions (Optional, separately versioned)
+
+None of the methods below are required of a conformant implementation. Each is a separately-versioned extension with its own stability label and error range (mail STABLE; the rest STAGING). See [map-ext.md](map-ext.md) and [registry.md](registry.md).
 
 ```typescript
 // TASKS
@@ -450,20 +439,23 @@ type MAPAddress =
 "map/resources/list"        // Browse resources by type with filtering
 "map/resources/get"         // Fetch a single resource by ID
 
-// MAIL (Conversations, Turns, Threads)
+// MAIL (Conversations, Turns, Threads) — STABLE extension, v1.1, 14 methods
 "mail/create"           // Create a conversation
 "mail/get"              // Get conversation details with optional includes
 "mail/list"             // List conversations with filtering
 "mail/close"            // Close a conversation
+"mail/reopen"           // Reopen a closed conversation
 "mail/join"             // Join a conversation with optional catch-up
 "mail/leave"            // Leave a conversation
 "mail/invite"           // Invite a participant to a conversation
+"mail/presence"         // Report/query participant presence
 "mail/turn"             // Record a turn in a conversation
 "mail/turns/list"       // List turns with filtering and pagination
 "mail/thread/create"    // Create a thread within a conversation
 "mail/thread/list"      // List threads in a conversation
-"mail/summary"          // Get or generate a conversation summary
 "mail/replay"           // Replay conversation turns from a point
+// Notification: mail/turn.received
+// Wire convention: camelCase, conversationId (not conversation_id); errors 10000–10999
 ```
 
 > See [10-mail-protocol.md](10-mail-protocol.md) for the full Mail Protocol specification.
