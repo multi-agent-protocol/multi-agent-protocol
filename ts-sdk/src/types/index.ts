@@ -307,6 +307,15 @@ export interface ParticipantCapabilities {
     /** Namespaced resource types the hub has handlers for */
     kinds?: string[];
   };
+  /**
+   * MAP extensions this participant advertises (capability negotiation, advertise-only).
+   * Each entry is a MAP-EXT capability URI plus optional version. See docs/map-ext.md.
+   * Phase 1: advertise-only — the SDK populates this from mounted manifests and clients
+   * MAY read it, but nothing is enforced at runtime yet (consolidation plan §6.0).
+   *
+   * @example [{ uri: 'urn:map:ext:mail:1' }, { uri: 'urn:map:ext:trajectory:1', version: '1.0.0' }]
+   */
+  extensions?: Array<{ uri: string; version?: string }>;
   /** Streaming/backpressure capabilities */
   streaming?: StreamingCapabilities;
 
@@ -3034,6 +3043,50 @@ export interface MailCloseResponseResult {
   _meta?: Meta;
 }
 
+// --- mail/reopen ---
+
+export interface MailReopenRequestParams {
+  conversationId: ConversationId;
+  _meta?: Meta;
+}
+
+export interface MailReopenRequest extends MAPRequestBase<MailReopenRequestParams> {
+  method: "mail/reopen";
+  params: MailReopenRequestParams;
+}
+
+export interface MailReopenResponseResult {
+  conversation: Conversation;
+  _meta?: Meta;
+}
+
+// --- mail/presence ---
+
+export type MailPresenceStatus = "online" | "offline" | "unknown";
+
+export interface MailPresenceRequestParams {
+  conversationId: ConversationId;
+  _meta?: Meta;
+}
+
+export interface MailPresenceRequest extends MAPRequestBase<MailPresenceRequestParams> {
+  method: "mail/presence";
+  params: MailPresenceRequestParams;
+}
+
+export interface MailPresenceParticipant {
+  participantId: ParticipantId;
+  role: ParticipantRole;
+  joinedAt: Timestamp;
+  presence: MailPresenceStatus;
+}
+
+export interface MailPresenceResponseResult {
+  conversationId: ConversationId;
+  participants: MailPresenceParticipant[];
+  _meta?: Meta;
+}
+
 // --- mail/join ---
 
 export interface MailJoinRequestParams {
@@ -3910,6 +3963,8 @@ export const MAIL_METHODS = {
   MAIL_GET: "mail/get",
   MAIL_LIST: "mail/list",
   MAIL_CLOSE: "mail/close",
+  MAIL_REOPEN: "mail/reopen",
+  MAIL_PRESENCE: "mail/presence",
   MAIL_JOIN: "mail/join",
   MAIL_LEAVE: "mail/leave",
   MAIL_INVITE: "mail/invite",

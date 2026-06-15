@@ -7,6 +7,8 @@ revised: 2026-05-07
 
 # MAP Resource Protocol v1
 
+> **Status note.** `map/resources/*` is a **staging extension** (not core), and its `resources` vs `workspace` overlap is a recorded open question. Error range **15000–15999 is reserved** for it in the registry, though it currently reuses generic JSON-RPC codes as shown below. See [`registry.md`](./registry.md), [`map-ext.md`](./map-ext.md), and [`14-consolidation-plan.md`](./14-consolidation-plan.md) for current state.
+
 ## Overview
 
 The MAP Resource Protocol defines a standard surface for discovering, browsing, and observing typed resources on a MAP-protocol hub. Resources are any named, typed, owned entities that agents may need to discover or interact with — repositories, environments, memory banks, task boards, skill registries, sessions, etc.

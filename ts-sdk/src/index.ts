@@ -53,6 +53,19 @@ export {
 export { Subscription, createSubscription } from "./subscription";
 
 // ===========================================================================
+// Extensions - the defineExtension() framework (individual extensions live at
+// the @multi-agent-protocol/sdk/ext/<name> subpaths)
+// ===========================================================================
+export {
+  defineExtension,
+  type ExtensionManifest,
+  type ExtensionDef,
+  type ExtensionCaller,
+  type ExtensionCall,
+  type DefineExtensionOptions,
+} from "./ext";
+
+// ===========================================================================
 // Connections - Role-specific connection classes
 // ===========================================================================
 export {

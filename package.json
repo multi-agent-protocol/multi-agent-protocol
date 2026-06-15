@@ -19,8 +19,11 @@
   ],
   "scripts": {
     "build": "npm run build --workspace=ts-sdk",
+    "build:meta": "node scripts/build-meta.mjs",
+    "build:schema": "node scripts/build-schema.mjs",
     "test": "npm run test --workspace=ts-sdk",
     "typecheck": "npm run typecheck --workspace=ts-sdk",
+    "validate:schema": "node scripts/build-meta.mjs --check && node scripts/build-schema.mjs --check && node scripts/method-counts.mjs --check",
     "publish:npm": "npm publish --access public",
     "prepublishOnly": "npm run build",
     "version:patch": "npm version patch && git push && git push --tags",

@@ -245,6 +245,36 @@ export class ConversationManagerImpl implements ConversationManager {
   }
 
   /**
+   * Reopen a completed conversation (sets status back to active).
+   */
+  reopen(id: string, reopenedBy: string): ServerConversation {
+    const conversation = this.store.get(id);
+    if (!conversation) {
+      throw new ConversationNotFoundError(id);
+    }
+
+    const now = Date.now();
+    const updated: ServerConversation = {
+      ...conversation,
+      status: "active",
+      closedAt: undefined,
+      updatedAt: now,
+    };
+
+    this.store.save(updated);
+
+    this.eventBus.emit({
+      type: "mail.reopened",
+      data: {
+        conversationId: id,
+        reopenedBy,
+      },
+    });
+
+    return updated;
+  }
+
+  /**
    * Join a conversation.
    */
   join(params: {

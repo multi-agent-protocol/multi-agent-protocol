@@ -567,7 +567,7 @@ Federated servers MUST:
   "jsonrpc": "2.0",
   "id": 1,
   "error": {
-    "code": -32001,  // MAP error code
+    "code": -32001,  // generic JSON-RPC server error; semantic detail is in data.authError.code
     "message": "Authentication failed",
     "data": {
       "authError": {

@@ -1,0 +1,91 @@
+{
+  "name": "trajectory",
+  "uri": "urn:map:ext:trajectory:1",
+  "version": "1.0.0",
+  "stability": "stable",
+  "owner": "multi-agent-protocol",
+  "methodPrefix": "trajectory/",
+  "errorRange": [
+    13000,
+    13999
+  ],
+  "methods": {
+    "trajectory/checkpoint": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent"
+      ],
+      "capabilities": [
+        "trajectory.canReport"
+      ],
+      "description": "Report a trajectory checkpoint with metadata",
+      "requestType": "TrajectoryCheckpointRequest",
+      "responseType": "TrajectoryCheckpointResponse"
+    },
+    "trajectory/list": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "trajectory.canQuery"
+      ],
+      "description": "List trajectory checkpoints with filtering",
+      "requestType": "TrajectoryListRequest",
+      "responseType": "TrajectoryListResponse"
+    },
+    "trajectory/get": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "trajectory.canQuery"
+      ],
+      "description": "Get a specific trajectory checkpoint",
+      "requestType": "TrajectoryGetRequest",
+      "responseType": "TrajectoryGetResponse"
+    },
+    "trajectory/content": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "trajectory.canRequestContent"
+      ],
+      "description": "Request full checkpoint content (may stream large transcripts)",
+      "requestType": "TrajectoryContentRequest",
+      "responseType": "TrajectoryContentResponse"
+    }
+  },
+  "notifications": {
+    "trajectory/content.chunk": {
+      "tier": "extension",
+      "stability": "staging",
+      "direction": "system-to-participant",
+      "description": "Content chunk for streaming large trajectory transcripts",
+      "paramsType": "TrajectoryContentChunkNotification"
+    }
+  },
+  "errorCodes": {
+    "trajectory": {
+      "13000": "Trajectory not enabled",
+      "13001": "Checkpoint not found",
+      "13002": "Content unavailable",
+      "13003": "Stream failed",
+      "13004": "Permission denied"
+    }
+  }
+}

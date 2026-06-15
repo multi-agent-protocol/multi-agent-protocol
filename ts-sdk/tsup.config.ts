@@ -6,6 +6,13 @@ export default defineConfig([
     entry: {
       index: 'src/index.ts',
       testing: 'src/testing.ts',
+      conformance: 'src/conformance/core.ts',
+      // Extension framework + per-extension subpaths (@multi-agent-protocol/sdk/ext/*)
+      'ext/index': 'src/ext/index.ts',
+      'ext/trajectory': 'src/ext/trajectory/index.ts',
+      'ext/mail': 'src/ext/mail/index.ts',
+      'ext/mail/conformance': 'src/ext/mail/conformance.ts',
+      'ext/trajectory/conformance': 'src/ext/trajectory/conformance.ts',
     },
     format: ['cjs', 'esm'],
     dts: true,

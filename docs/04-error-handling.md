@@ -1,5 +1,7 @@
 # MAP Error Handling & Failure Modes
 
+> **Status (2026-06):** The error *taxonomy*, failure modes, recovery, and retry semantics here are current, but the numeric **Error Codes** block below predates the consolidation recut. Per-extension error ranges are now allocated by the registry — mail 10000–10999, credentials 11000–11999, workspace 12000–12999, trajectory 13000–13999, tasks 14000–14999, resources 15000–15999, sessions 16000–16999, federation 5000–5999 — with JSON-RPC standard codes unchanged. The 1xxx/2xxx/3xxx/4xxx ranges below are superseded. See [map-ext.md](map-ext.md) §4 and [registry.md](registry.md).
+
 This spec details how MAP handles errors, failures, and recovery across single-node and federated deployments.
 
 ## Design Goals

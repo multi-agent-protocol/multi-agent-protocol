@@ -1,0 +1,26 @@
+{
+  "name": "steering",
+  "uri": "urn:map:ext:steering:1",
+  "version": "1.0.0",
+  "stability": "staging",
+  "owner": "multi-agent-protocol",
+  "methodPrefix": "map/inject",
+  "errorRange": null,
+  "methods": {
+    "map/inject": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "lifecycle.canSteer"
+      ],
+      "description": "Inject context into a running agent (steering)",
+      "requestType": "InjectRequest",
+      "responseType": "InjectResponse"
+    }
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-extension": "federation",
+  "$comment": "Message schemas for the federation MAP extension (docs/map-ext.md). Merged into schema/schema.json by scripts/build-schema.mjs.",
+  "$defs": {
+    "FederationConnectRequest": {
+      "type": "object",
+      "x-method": "map/federation/connect",
+      "x-tier": "extension",
+      "description": "Connect to a peer MAP system. Supports single-request auth: include auth inline to complete federation handshake in one round-trip.",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "map/federation/connect"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "systemId": {
+              "type": "string"
+            },
+            "endpoint": {
+              "type": "string",
+              "format": "uri"
+            },
+            "auth": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "description": "Standard federation auth (bearer, api-key, mtls, etc.)",
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "oneOf": [
+                        {
+                          "enum": [
+                            "bearer",
+                            "api-key",
+                            "mtls",
+                            "none",
+                            "did:wba",
+                            "oauth2"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "pattern": "^x-"
+                        }
+                      ]
+                    },
+                    "credentials": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "method"
+                  ]
+                },
+                {
+                  "$ref": "#/$defs/DIDWBACredentials"
+                }
+              ]
+            },
+            "authContext": {
+              "type": "object",
+              "description": "Additional auth context for single-request federation auth",
+              "properties": {
+                "challenge": {
+                  "type": "string",
+                  "description": "Challenge nonce for proof-based auth"
+                }
+              }
+            },
+            "systemInfo": {
+              "type": "object",
+              "description": "Connecting system's self-description",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              }
+            },
+            "protocolVersion": {
+              "type": "integer",
+              "description": "MAP protocol version (default: 1)"
+            },
+            "exposure": {
+              "type": "object",
+              "description": "Which resources the connecting system exposes",
+              "properties": {
+                "agents": {
+                  "type": "boolean"
+                },
+                "scopes": {
+                  "type": "boolean"
+                },
+                "events": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "systemId",
+            "endpoint"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "FederationRouteRequest": {
+      "type": "object",
+      "x-method": "map/federation/route",
+      "x-tier": "extension",
+      "description": "Route a message to a federated system",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "map/federation/route"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "systemId": {
+              "type": "string"
+            },
+            "message": {
+              "$ref": "#/$defs/Message"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "systemId",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    }
+  }
+}

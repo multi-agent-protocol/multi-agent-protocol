@@ -1,4 +1,6 @@
 # Git Transport Integration Guide
+
+> **Status note (draft).** This guide covers git-over-mesh transport provided by **agentic-mesh** (a MAP federation transport profile — see [`federation-profiles.md`](./federation-profiles.md)), not MAP core. File/line references point into the agentic-mesh repo and are indicative. For current MAP state see [`14-consolidation-plan.md`](./14-consolidation-plan.md) and [`registry.md`](./registry.md).
  
 This guide explains how git transport is integrated with agentic-mesh and how to use it from the MAP side.
  

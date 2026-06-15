@@ -1,0 +1,51 @@
+{
+  "name": "federation",
+  "uri": "urn:map:ext:federation:1",
+  "version": "1.0.0",
+  "stability": "staging",
+  "owner": "multi-agent-protocol",
+  "methodPrefix": "map/federation/",
+  "errorRange": [
+    5000,
+    5999
+  ],
+  "methods": {
+    "map/federation/connect": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "system"
+      ],
+      "capabilities": [],
+      "description": "Connect to a peer MAP system. Supports single-request auth with inline credentials including did:wba.",
+      "requestType": "FederationConnectRequest",
+      "responseType": "FederationConnectResponse"
+    },
+    "map/federation/route": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "messaging.canSend"
+      ],
+      "description": "Route a message to a federated system",
+      "requestType": "FederationRouteRequest",
+      "responseType": "FederationRouteResponse"
+    }
+  },
+  "errorCodes": {
+    "federation": {
+      "5000": "Federation unavailable",
+      "5001": "System not found",
+      "5002": "Federation auth failed",
+      "5003": "Route rejected",
+      "5004": "DID resolution failed",
+      "5005": "DID proof invalid"
+    }
+  }
+}

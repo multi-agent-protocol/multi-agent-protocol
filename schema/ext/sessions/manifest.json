@@ -1,0 +1,53 @@
+{
+  "name": "sessions",
+  "uri": "urn:map:ext:sessions:1",
+  "version": "1.0.0",
+  "stability": "staging",
+  "owner": "multi-agent-protocol",
+  "methodPrefix": "map/session/",
+  "errorRange": [
+    16000,
+    16999
+  ],
+  "methods": {
+    "map/session/list": {
+      "tier": "core",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "List participant's sessions",
+      "requestType": "SessionListRequest",
+      "responseType": "SessionListResponse"
+    },
+    "map/session/load": {
+      "tier": "core",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "Load/reconnect to an existing session",
+      "requestType": "SessionLoadRequest",
+      "responseType": "SessionLoadResponse"
+    },
+    "map/session/close": {
+      "tier": "core",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "Explicitly end a session",
+      "requestType": "SessionCloseRequest",
+      "responseType": "SessionCloseResponse"
+    }
+  }
+}

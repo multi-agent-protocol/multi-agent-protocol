@@ -1,5 +1,7 @@
 # MAP Open Questions & Design Decisions
 
+> **Status (2026-06):** Point-in-time design record (decisions dated Jan 2026). Predates the consolidation recut into a 23-method core + separately-versioned extensions. Specific method names and shapes here (e.g. `map/session/*`, `map/subscribe/resume`, `map/health`, `map/batch`) may not match the current protocol — see [14-consolidation-plan.md](14-consolidation-plan.md) and [registry.md](registry.md) for current state. Retained as a historical record of how decisions were reached.
+
 This spec consolidates all open questions and unresolved design decisions across the MAP specification. Use this as the focal point for iterating on the protocol design.
 
 ## How to Use This Document

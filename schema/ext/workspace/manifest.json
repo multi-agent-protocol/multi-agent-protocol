@@ -1,0 +1,67 @@
+{
+  "name": "workspace",
+  "uri": "urn:map:ext:workspace:1",
+  "version": "1.0.0",
+  "stability": "staging",
+  "owner": "multi-agent-protocol",
+  "methodPrefix": "workspace/",
+  "errorRange": [
+    12000,
+    12999
+  ],
+  "methods": {
+    "workspace/search": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "workspace.canSearch"
+      ],
+      "description": "Search for files matching a query in an agent's workspace",
+      "requestType": "WorkspaceSearchRequest",
+      "responseType": "WorkspaceSearchResponse"
+    },
+    "workspace/list": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "workspace.canList"
+      ],
+      "description": "List files in a directory of an agent's workspace",
+      "requestType": "WorkspaceListRequest",
+      "responseType": "WorkspaceListResponse"
+    },
+    "workspace/read": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "workspace.canRead"
+      ],
+      "description": "Read file contents from an agent's workspace",
+      "requestType": "WorkspaceReadRequest",
+      "responseType": "WorkspaceReadResponse"
+    }
+  },
+  "errorCodes": {
+    "workspace": {
+      "12000": "Workspace not enabled",
+      "12001": "File not found",
+      "12002": "Permission denied",
+      "12003": "Invalid path"
+    }
+  }
+}

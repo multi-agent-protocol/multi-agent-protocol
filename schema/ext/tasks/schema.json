@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-extension": "tasks",
+  "$comment": "Message schemas for the tasks MAP extension (docs/map-ext.md). Merged into schema/schema.json by scripts/build-schema.mjs.",
+  "$defs": {
+    "TasksCreateRequest": {
+      "type": "object",
+      "x-method": "map/tasks/create",
+      "x-tier": "extension",
+      "description": "Create a new task",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "map/tasks/create"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "task": {
+              "type": "object",
+              "description": "Task data. If id is omitted, the server generates one.",
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/TaskId"
+                },
+                "assignee": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/AgentId"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/$defs/MAPTaskStatus"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "meta": {
+                  "$ref": "#/$defs/Meta"
+                }
+              }
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "task"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "TasksAssignRequest": {
+      "type": "object",
+      "x-method": "map/tasks/assign",
+      "x-tier": "extension",
+      "description": "Assign a task to an agent",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "map/tasks/assign"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "$ref": "#/$defs/TaskId"
+            },
+            "agentId": {
+              "$ref": "#/$defs/AgentId"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "taskId",
+            "agentId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "TasksUpdateRequest": {
+      "type": "object",
+      "x-method": "map/tasks/update",
+      "x-tier": "extension",
+      "description": "Update task status or fields",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "map/tasks/update"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "$ref": "#/$defs/TaskId"
+            },
+            "status": {
+              "$ref": "#/$defs/MAPTaskStatus"
+            },
+            "title": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "assignee": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/AgentId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "meta": {
+              "$ref": "#/$defs/Meta"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "taskId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "TasksListRequest": {
+      "type": "object",
+      "x-method": "map/tasks/list",
+      "x-tier": "extension",
+      "description": "List tasks with optional filters",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "map/tasks/list"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "filter": {
+              "type": "object",
+              "properties": {
+                "assignee": {
+                  "$ref": "#/$defs/AgentId"
+                },
+                "status": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/MAPTaskStatus"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MAPTaskStatus"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cursor": {
+              "type": "string"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          }
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method"
+      ]
+    }
+  }
+}

@@ -17,6 +17,7 @@ import type {
   RouterConnectionOptions,
 } from "../types";
 import type { MAPRequestBase, MAPResponse, MAPError } from "../../types";
+import { MAPRequestError } from "../../errors";
 
 /**
  * JSON-RPC error codes
@@ -299,11 +300,16 @@ export class RouterConnectionImpl implements RouterConnection {
       // Send success response
       await this.sendResponse(id, result);
     } catch (error) {
-      // Send error response
-      const mapError: MAPError = {
-        code: JSONRPC_ERRORS.INTERNAL_ERROR,
-        message: error instanceof Error ? error.message : "Internal error",
-      };
+      // Preserve structured MAPRequestError codes (e.g. 10000 mail not-found,
+      // 2001 agent not-found) end-to-end; only fall back to INTERNAL_ERROR for
+      // unknown throws.
+      const mapError: MAPError =
+        error instanceof MAPRequestError
+          ? error.toError()
+          : {
+              code: JSONRPC_ERRORS.INTERNAL_ERROR,
+              message: error instanceof Error ? error.message : "Internal error",
+            };
       await this.sendError(id, mapError);
     }
   }

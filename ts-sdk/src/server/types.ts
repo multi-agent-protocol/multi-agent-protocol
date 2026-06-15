@@ -1578,6 +1578,9 @@ export interface ConversationManager {
   /** Close a conversation */
   close(id: string, closedBy: string, reason?: string): ServerConversation;
 
+  /** Reopen a completed conversation (sets status back to active) */
+  reopen(id: string, reopenedBy: string): ServerConversation;
+
   /** Join a conversation */
   join(params: {
     conversationId: string;

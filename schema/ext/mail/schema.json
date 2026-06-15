@@ -1,0 +1,763 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-extension": "mail",
+  "$comment": "Message schemas for the mail MAP extension (docs/map-ext.md). Merged into schema/schema.json by scripts/build-schema.mjs.",
+  "$defs": {
+    "MailCreateRequest": {
+      "type": "object",
+      "x-method": "mail/create",
+      "x-tier": "extension",
+      "description": "Create a new conversation",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/create"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "$ref": "#/$defs/ConversationType"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "parentConversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "parentTurnId": {
+              "$ref": "#/$defs/TurnId"
+            },
+            "initialParticipants": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/$defs/ParticipantId"
+                  },
+                  "role": {
+                    "$ref": "#/$defs/ParticipantRole"
+                  },
+                  "permissions": {
+                    "$ref": "#/$defs/ConversationPermissions"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "initialTurn": {
+              "type": "object",
+              "properties": {
+                "contentType": {
+                  "type": "string"
+                },
+                "content": {},
+                "visibility": {
+                  "$ref": "#/$defs/TurnVisibility"
+                }
+              },
+              "required": [
+                "contentType",
+                "content"
+              ]
+            },
+            "metadata": {
+              "type": "object"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          }
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method"
+      ]
+    },
+    "MailGetRequest": {
+      "type": "object",
+      "x-method": "mail/get",
+      "x-tier": "extension",
+      "description": "Get conversation details",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/get"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "include": {
+              "type": "object",
+              "properties": {
+                "participants": {
+                  "type": "boolean"
+                },
+                "threads": {
+                  "type": "boolean"
+                },
+                "recentTurns": {
+                  "type": "integer"
+                },
+                "stats": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "MailListRequest": {
+      "type": "object",
+      "x-method": "mail/list",
+      "x-tier": "extension",
+      "description": "List conversations with filtering",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/list"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "filter": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/ConversationType"
+                  }
+                },
+                "status": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/ConversationStatus"
+                  }
+                },
+                "participantId": {
+                  "$ref": "#/$defs/ParticipantId"
+                },
+                "createdAfter": {
+                  "$ref": "#/$defs/Timestamp"
+                },
+                "createdBefore": {
+                  "$ref": "#/$defs/Timestamp"
+                },
+                "parentConversationId": {
+                  "$ref": "#/$defs/ConversationId"
+                }
+              }
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cursor": {
+              "type": "string"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          }
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method"
+      ]
+    },
+    "MailCloseRequest": {
+      "type": "object",
+      "x-method": "mail/close",
+      "x-tier": "extension",
+      "description": "Close a conversation",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/close"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "MailJoinRequest": {
+      "type": "object",
+      "x-method": "mail/join",
+      "x-tier": "extension",
+      "description": "Join a conversation",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/join"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "role": {
+              "$ref": "#/$defs/ParticipantRole"
+            },
+            "catchUp": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "includeSummary": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "MailLeaveRequest": {
+      "type": "object",
+      "x-method": "mail/leave",
+      "x-tier": "extension",
+      "description": "Leave a conversation",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/leave"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "MailInviteRequest": {
+      "type": "object",
+      "x-method": "mail/invite",
+      "x-tier": "extension",
+      "description": "Invite a participant to a conversation",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/invite"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "participant": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/ParticipantId"
+                },
+                "role": {
+                  "$ref": "#/$defs/ParticipantRole"
+                },
+                "permissions": {
+                  "$ref": "#/$defs/ConversationPermissions"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId",
+            "participant"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "MailTurnRequest": {
+      "type": "object",
+      "x-method": "mail/turn",
+      "x-tier": "extension",
+      "description": "Record a turn in a conversation",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/turn"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "contentType": {
+              "type": "string"
+            },
+            "content": {},
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "inReplyTo": {
+              "$ref": "#/$defs/TurnId"
+            },
+            "visibility": {
+              "$ref": "#/$defs/TurnVisibility"
+            },
+            "metadata": {
+              "type": "object"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId",
+            "contentType",
+            "content"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "MailTurnsListRequest": {
+      "type": "object",
+      "x-method": "mail/turns/list",
+      "x-tier": "extension",
+      "description": "List turns in a conversation",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/turns/list"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "filter": {
+              "type": "object",
+              "properties": {
+                "threadId": {
+                  "$ref": "#/$defs/ThreadId"
+                },
+                "includeAllThreads": {
+                  "type": "boolean"
+                },
+                "contentTypes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "participantId": {
+                  "$ref": "#/$defs/ParticipantId"
+                },
+                "afterTurnId": {
+                  "$ref": "#/$defs/TurnId"
+                },
+                "beforeTurnId": {
+                  "$ref": "#/$defs/TurnId"
+                },
+                "afterTimestamp": {
+                  "$ref": "#/$defs/Timestamp"
+                },
+                "beforeTimestamp": {
+                  "$ref": "#/$defs/Timestamp"
+                }
+              }
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "order": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "MailThreadCreateRequest": {
+      "type": "object",
+      "x-method": "mail/thread/create",
+      "x-tier": "extension",
+      "description": "Create a thread within a conversation",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/thread/create"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "rootTurnId": {
+              "$ref": "#/$defs/TurnId"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "parentThreadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId",
+            "rootTurnId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "MailThreadListRequest": {
+      "type": "object",
+      "x-method": "mail/thread/list",
+      "x-tier": "extension",
+      "description": "List threads in a conversation",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/thread/list"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "parentThreadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cursor": {
+              "type": "string"
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "MailSummaryRequest": {
+      "type": "object",
+      "x-method": "mail/summary",
+      "x-tier": "extension",
+      "description": "Get or generate a conversation summary",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/summary"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "scope": {
+              "type": "object",
+              "properties": {
+                "fromTurnId": {
+                  "$ref": "#/$defs/TurnId"
+                },
+                "toTurnId": {
+                  "$ref": "#/$defs/TurnId"
+                },
+                "threadId": {
+                  "$ref": "#/$defs/ThreadId"
+                }
+              }
+            },
+            "regenerate": {
+              "type": "boolean"
+            },
+            "include": {
+              "type": "object",
+              "properties": {
+                "keyPoints": {
+                  "type": "boolean"
+                },
+                "keyDecisions": {
+                  "type": "boolean"
+                },
+                "openQuestions": {
+                  "type": "boolean"
+                },
+                "participants": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    },
+    "MailReplayRequest": {
+      "type": "object",
+      "x-method": "mail/replay",
+      "x-tier": "extension",
+      "description": "Replay conversation turns from a point",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "method": {
+          "const": "mail/replay"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "conversationId": {
+              "$ref": "#/$defs/ConversationId"
+            },
+            "fromTurnId": {
+              "$ref": "#/$defs/TurnId"
+            },
+            "fromTimestamp": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "contentTypes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "_meta": {
+              "$ref": "#/$defs/Meta"
+            }
+          },
+          "required": [
+            "conversationId"
+          ]
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ]
+    }
+  }
+}

@@ -1,4 +1,6 @@
 # Implementation Guide: Agentic-Mesh Transport for MAP SDK
+
+> **Status note (draft).** This is a forward-looking implementation guide, not a description of shipped SDK code. agentic-mesh is a blessed MAP **federation transport profile** — see [`federation-profiles.md`](./federation-profiles.md). The pluggable-transport wiring sketched below is proposed, not current. For current state see [`14-consolidation-plan.md`](./14-consolidation-plan.md) and [`registry.md`](./registry.md).
  
 This guide describes how to implement agentic-mesh as a transport option for the Multi-Agent Protocol (MAP) TypeScript SDK.
  

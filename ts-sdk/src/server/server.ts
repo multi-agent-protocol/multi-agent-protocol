@@ -37,6 +37,7 @@ import type {
 } from "./types";
 import { EventBusImpl } from "./events";
 import { AgentRegistryImpl, createAgentHandlers } from "./agents";
+import { createStructureHandlers } from "./structure";
 import { SessionManagerImpl } from "./sessions";
 import { ScopeManagerImpl, createScopeHandlers } from "./scopes";
 import { SubscriptionManagerImpl, createSubscriptionHandlers } from "./subscriptions";
@@ -451,6 +452,7 @@ export class MAPServer {
             : undefined,
         }),
         createAgentHandlers({ agents: this.agents, sessions: this.sessions }),
+        createStructureHandlers({ agents: this.agents }),
         createScopeHandlers({ scopes: this.scopes }),
         createMessageHandlers({
           messages: this.messages,

@@ -1,5 +1,7 @@
 # MAP Mail Protocol
 
+> **⚠️ Superseded (Phase 1 consolidation).** The canonical mail contract `urn:map:ext:mail:1` (v1.1) is **owned by multi-agent-protocol** and lives at `schema/ext/mail/`; **agent-inbox** is the flagship implementation (see `references/agent-inbox/spec/mail/extension.md`). The shipped v1.1 surface is **14 methods** (`+reopen`, `+presence`, `+mail/turn.received`, `−summary`) using the MAP convention: **camelCase**, `conversationId`, errors in the **10000–10999** range. This document is retained as **v1.0 design background only** — its method list, `mail/summary` (never implemented, dropped in v1.1), and any generic JSON-RPC error codes do **not** reflect the current contract. See [`registry.md`](./registry.md) for the reconciliation record.
+
 ## Overview
 
 The Mail Protocol is an **optional extension** to MAP that adds persistent conversation tracking on top of the ephemeral messaging layer. While `map/send` routes messages between agents in real-time, Mail records these interactions as **turns** within **conversations**, creating a queryable history of multi-agent coordination.

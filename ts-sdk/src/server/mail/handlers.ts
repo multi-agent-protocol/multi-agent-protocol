@@ -16,6 +16,8 @@ import type {
   MailGetRequestParams,
   MailListRequestParams,
   MailCloseRequestParams,
+  MailReopenRequestParams,
+  MailPresenceRequestParams,
   MailJoinRequestParams,
   MailLeaveRequestParams,
   MailInviteRequestParams,
@@ -281,9 +283,45 @@ export function createMailHandlers(options: MailHandlerOptions): HandlerRegistry
       }
     },
 
+    "mail/reopen": async (params: unknown, ctx: HandlerContext) => {
+      const p = params as MailReopenRequestParams;
+      const participantId = getParticipantId(ctx);
+
+      try {
+        const conversation = conversations.reopen(p.conversationId, participantId);
+        return { conversation };
+      } catch (error) {
+        mapMailError(error);
+      }
+    },
+
     // =========================================================================
     // Participants
     // =========================================================================
+
+    "mail/presence": async (params: unknown) => {
+      const p = params as MailPresenceRequestParams;
+
+      const result = conversations.get(p.conversationId, { participants: true });
+      if (!result) {
+        throw new MAPRequestError(
+          MAIL_ERROR_CODES.MAIL_CONVERSATION_NOT_FOUND,
+          `Conversation not found: ${p.conversationId}`,
+          { category: "mail" }
+        );
+      }
+
+      // Default impl has no presence registry — all participants report "unknown".
+      // The flagship implementation (agent-inbox) enriches this with live status.
+      const participants = (result.participants ?? []).map((pt) => ({
+        participantId: pt.id,
+        role: pt.role,
+        joinedAt: pt.joinedAt,
+        presence: "unknown" as const,
+      }));
+
+      return { conversationId: p.conversationId, participants };
+    },
 
     "mail/join": async (params: unknown, ctx: HandlerContext) => {
       const p = params as MailJoinRequestParams;

@@ -6,8 +6,13 @@
   "methods": {
     "map/connect": {
       "tier": "core",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent", "gateway"],
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
       "capabilities": [],
       "description": "Connect to the MAP system and negotiate capabilities",
       "requestType": "ConnectRequest",
@@ -15,89 +20,106 @@
     },
     "map/disconnect": {
       "tier": "core",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent", "gateway"],
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
       "capabilities": [],
       "description": "Gracefully disconnect from the MAP system",
       "requestType": "DisconnectRequest",
       "responseType": "DisconnectResponse"
     },
-    "map/session/list": {
-      "tier": "core",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": [],
-      "description": "List participant's sessions",
-      "requestType": "SessionListRequest",
-      "responseType": "SessionListResponse"
-    },
-    "map/session/load": {
-      "tier": "core",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": [],
-      "description": "Load/reconnect to an existing session",
-      "requestType": "SessionLoadRequest",
-      "responseType": "SessionLoadResponse"
-    },
-    "map/session/close": {
-      "tier": "core",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": [],
-      "description": "Explicitly end a session",
-      "requestType": "SessionCloseRequest",
-      "responseType": "SessionCloseResponse"
-    },
     "map/agents/list": {
       "tier": "core",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent", "gateway"],
-      "capabilities": ["observation.canQuery"],
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
       "description": "List agents with optional filters (server-filtered by visibility)",
       "requestType": "AgentsListRequest",
       "responseType": "AgentsListResponse"
     },
     "map/agents/get": {
       "tier": "core",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent", "gateway"],
-      "capabilities": ["observation.canQuery"],
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
       "description": "Get details for a single agent",
       "requestType": "AgentsGetRequest",
       "responseType": "AgentsGetResponse"
     },
     "map/send": {
       "tier": "core",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["messaging.canSend"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "messaging.canSend"
+      ],
       "description": "Send a message to an address",
       "requestType": "SendRequest",
       "responseType": "SendResponse"
     },
     "map/subscribe": {
       "tier": "core",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent", "gateway"],
-      "capabilities": ["observation.canObserve"],
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [
+        "observation.canObserve"
+      ],
       "description": "Subscribe to event streams",
       "requestType": "SubscribeRequest",
       "responseType": "SubscribeResponse"
     },
     "map/unsubscribe": {
       "tier": "core",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent", "gateway"],
-      "capabilities": ["observation.canObserve"],
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
+      "capabilities": [
+        "observation.canObserve"
+      ],
       "description": "Unsubscribe from event streams",
       "requestType": "UnsubscribeRequest",
       "responseType": "UnsubscribeResponse"
     },
     "map/auth/refresh": {
       "tier": "core",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent", "gateway"],
+      "callableBy": [
+        "client",
+        "agent",
+        "gateway"
+      ],
       "capabilities": [],
       "description": "Refresh authentication token in-band",
       "requestType": "AuthRefreshRequest",
@@ -105,35 +127,57 @@
     },
     "map/agents/register": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["agent", "system"],
-      "capabilities": ["lifecycle.canRegister"],
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canRegister"
+      ],
       "description": "Register a new agent in the system",
       "requestType": "AgentsRegisterRequest",
       "responseType": "AgentsRegisterResponse"
     },
     "map/agents/spawn": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["agent", "system"],
-      "capabilities": ["lifecycle.canSpawn"],
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canSpawn"
+      ],
       "description": "Register agent and assign initial task atomically",
       "requestType": "AgentsSpawnRequest",
       "responseType": "AgentsSpawnResponse"
     },
     "map/agents/unregister": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["agent", "system"],
-      "capabilities": ["lifecycle.canUnregister"],
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canUnregister"
+      ],
       "description": "Remove an agent from the system",
       "requestType": "AgentsUnregisterRequest",
       "responseType": "AgentsUnregisterResponse"
     },
     "map/agents/update": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["agent", "system"],
+      "callableBy": [
+        "agent",
+        "system"
+      ],
       "capabilities": [],
       "description": "Update agent state or metadata (agents can update themselves)",
       "requestType": "AgentsUpdateRequest",
@@ -141,80 +185,135 @@
     },
     "map/agents/stop": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent", "system"],
-      "capabilities": ["lifecycle.canStop"],
+      "callableBy": [
+        "client",
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canStop"
+      ],
       "description": "Request graceful agent stop",
       "requestType": "AgentsStopRequest",
       "responseType": "AgentsStopResponse"
     },
     "map/agents/suspend": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent", "system"],
-      "capabilities": ["lifecycle.canStop"],
+      "callableBy": [
+        "client",
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canStop"
+      ],
       "description": "Pause an agent",
       "requestType": "AgentsSuspendRequest",
       "responseType": "AgentsSuspendResponse"
     },
     "map/agents/resume": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent", "system"],
-      "capabilities": ["lifecycle.canStop"],
+      "callableBy": [
+        "client",
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "lifecycle.canStop"
+      ],
       "description": "Resume a suspended agent",
       "requestType": "AgentsResumeRequest",
       "responseType": "AgentsResumeResponse"
     },
     "map/structure/graph": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["observation.canQuery"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
       "description": "Get the agent relationship graph",
       "requestType": "StructureGraphRequest",
       "responseType": "StructureGraphResponse"
     },
     "map/scopes/list": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["observation.canQuery"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
       "description": "List all scopes",
       "requestType": "ScopesListRequest",
       "responseType": "ScopesListResponse"
     },
     "map/scopes/get": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["observation.canQuery"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
       "description": "Get details for a single scope",
       "requestType": "ScopesGetRequest",
       "responseType": "ScopesGetResponse"
     },
     "map/scopes/create": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["agent", "system"],
-      "capabilities": ["scopes.canCreateScopes"],
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "scopes.canCreateScopes"
+      ],
       "description": "Create a new scope",
       "requestType": "ScopesCreateRequest",
       "responseType": "ScopesCreateResponse"
     },
     "map/scopes/delete": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["agent", "system"],
-      "capabilities": ["scopes.canManageScopes"],
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "scopes.canManageScopes"
+      ],
       "description": "Delete a scope",
       "requestType": "ScopesDeleteRequest",
       "responseType": "ScopesDeleteResponse"
     },
     "map/scopes/join": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["agent", "system"],
+      "callableBy": [
+        "agent",
+        "system"
+      ],
       "capabilities": [],
       "description": "Add an agent to a scope",
       "requestType": "ScopesJoinRequest",
@@ -222,8 +321,12 @@
     },
     "map/scopes/leave": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["agent", "system"],
+      "callableBy": [
+        "agent",
+        "system"
+      ],
       "capabilities": [],
       "description": "Remove an agent from a scope",
       "requestType": "ScopesLeaveRequest",
@@ -231,26 +334,67 @@
     },
     "map/scopes/members": {
       "tier": "structure",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["observation.canQuery"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "observation.canQuery"
+      ],
       "description": "List members of a scope",
       "requestType": "ScopesMembersRequest",
       "responseType": "ScopesMembersResponse"
     },
-    "map/inject": {
+    "cred/get": {
       "tier": "extension",
+      "stability": "staging",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["lifecycle.canSteer"],
-      "description": "Inject context into a running agent (steering)",
-      "requestType": "InjectRequest",
-      "responseType": "InjectResponse"
+      "callableBy": [
+        "agent"
+      ],
+      "capabilities": [
+        "credentials.canGet"
+      ],
+      "description": "Request a short-lived credential for a scope and resource",
+      "requestType": "CredGetRequest",
+      "responseType": "CredGetResponse"
+    },
+    "cred/list": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent"
+      ],
+      "capabilities": [
+        "credentials.canList"
+      ],
+      "description": "List available scopes for the authenticated token",
+      "requestType": "CredListRequest",
+      "responseType": "CredListResponse"
+    },
+    "cred/status": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "Check credential broker status and available providers",
+      "requestType": "CredStatusRequest",
+      "responseType": "CredStatusResponse"
     },
     "map/federation/connect": {
       "tier": "extension",
+      "stability": "staging",
       "implementedBy": "system",
-      "callableBy": ["system"],
+      "callableBy": [
+        "system"
+      ],
       "capabilities": [],
       "description": "Connect to a peer MAP system. Supports single-request auth with inline credentials including did:wba.",
       "requestType": "FederationConnectRequest",
@@ -258,44 +402,72 @@
     },
     "map/federation/route": {
       "tier": "extension",
+      "stability": "staging",
       "implementedBy": "system",
-      "callableBy": ["agent", "system"],
-      "capabilities": ["messaging.canSend"],
+      "callableBy": [
+        "agent",
+        "system"
+      ],
+      "capabilities": [
+        "messaging.canSend"
+      ],
       "description": "Route a message to a federated system",
       "requestType": "FederationRouteRequest",
       "responseType": "FederationRouteResponse"
     },
     "mail/create": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["mail.canCreate"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canCreate"
+      ],
       "description": "Create a new conversation with optional initial participants and turn",
       "requestType": "MailCreateRequest",
       "responseType": "MailCreateResponse"
     },
     "mail/get": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["mail.canViewHistory"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
       "description": "Get conversation details with optional includes (participants, threads, recent turns, stats)",
       "requestType": "MailGetRequest",
       "responseType": "MailGetResponse"
     },
     "mail/list": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["mail.canViewHistory"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
       "description": "List conversations with filtering by type, status, participant, and time range",
       "requestType": "MailListRequest",
       "responseType": "MailListResponse"
     },
     "mail/close": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
       "capabilities": [],
       "description": "Close a conversation (must be a participant)",
       "requestType": "MailCloseRequest",
@@ -303,17 +475,27 @@
     },
     "mail/join": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["mail.canJoin"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canJoin"
+      ],
       "description": "Join a conversation with optional catch-up history",
       "requestType": "MailJoinRequest",
       "responseType": "MailJoinResponse"
     },
     "mail/leave": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
       "capabilities": [],
       "description": "Leave a conversation (must be a participant)",
       "requestType": "MailLeaveRequest",
@@ -321,17 +503,27 @@
     },
     "mail/invite": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["mail.canInvite"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canInvite"
+      ],
       "description": "Invite a participant to a conversation",
       "requestType": "MailInviteRequest",
       "responseType": "MailInviteResponse"
     },
     "mail/turn": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
       "capabilities": [],
       "description": "Record a turn in a conversation (must be a participant)",
       "requestType": "MailTurnRequest",
@@ -339,209 +531,365 @@
     },
     "mail/turns/list": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["mail.canViewHistory"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
       "description": "List turns in a conversation with filtering and pagination",
       "requestType": "MailTurnsListRequest",
       "responseType": "MailTurnsListResponse"
     },
     "mail/thread/create": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["mail.canCreateThreads"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canCreateThreads"
+      ],
       "description": "Create a thread rooted at a specific turn",
       "requestType": "MailThreadCreateRequest",
       "responseType": "MailThreadCreateResponse"
     },
     "mail/thread/list": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["mail.canViewHistory"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
       "description": "List threads in a conversation",
       "requestType": "MailThreadListRequest",
       "responseType": "MailThreadListResponse"
     },
-    "mail/summary": {
+    "mail/reopen": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["mail.canViewHistory"],
-      "description": "Get or generate a summary for a conversation",
-      "requestType": "MailSummaryRequest",
-      "responseType": "MailSummaryResponse"
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "Reopen a completed conversation",
+      "requestType": "MailReopenRequest",
+      "responseType": "MailReopenResponse"
+    },
+    "mail/presence": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
+      "description": "List a conversation's participants with live presence status",
+      "requestType": "MailPresenceRequest",
+      "responseType": "MailPresenceResponse"
     },
     "mail/replay": {
       "tier": "extension",
+      "stability": "stable",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["mail.canViewHistory"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "mail.canViewHistory"
+      ],
       "description": "Replay conversation turns from a specific point",
       "requestType": "MailReplayRequest",
       "responseType": "MailReplayResponse"
     },
-    "cred/get": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["agent"],
-      "capabilities": ["credentials.canGet"],
-      "description": "Request a short-lived credential for a scope and resource",
-      "requestType": "CredGetRequest",
-      "responseType": "CredGetResponse"
-    },
-    "cred/list": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["agent"],
-      "capabilities": ["credentials.canList"],
-      "description": "List available scopes for the authenticated token",
-      "requestType": "CredListRequest",
-      "responseType": "CredListResponse"
-    },
-    "cred/status": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": [],
-      "description": "Check credential broker status and available providers",
-      "requestType": "CredStatusRequest",
-      "responseType": "CredStatusResponse"
-    },
-    "workspace/search": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["workspace.canSearch"],
-      "description": "Search for files matching a query in an agent's workspace",
-      "requestType": "WorkspaceSearchRequest",
-      "responseType": "WorkspaceSearchResponse"
-    },
-    "workspace/list": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["workspace.canList"],
-      "description": "List files in a directory of an agent's workspace",
-      "requestType": "WorkspaceListRequest",
-      "responseType": "WorkspaceListResponse"
-    },
-    "workspace/read": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["workspace.canRead"],
-      "description": "Read file contents from an agent's workspace",
-      "requestType": "WorkspaceReadRequest",
-      "responseType": "WorkspaceReadResponse"
-    },
-    "trajectory/checkpoint": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["agent"],
-      "capabilities": ["trajectory.canReport"],
-      "description": "Report a trajectory checkpoint with metadata",
-      "requestType": "TrajectoryCheckpointRequest",
-      "responseType": "TrajectoryCheckpointResponse"
-    },
-    "trajectory/list": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["trajectory.canQuery"],
-      "description": "List trajectory checkpoints with filtering",
-      "requestType": "TrajectoryListRequest",
-      "responseType": "TrajectoryListResponse"
-    },
-    "trajectory/get": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["trajectory.canQuery"],
-      "description": "Get a specific trajectory checkpoint",
-      "requestType": "TrajectoryGetRequest",
-      "responseType": "TrajectoryGetResponse"
-    },
-    "trajectory/content": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["trajectory.canRequestContent"],
-      "description": "Request full checkpoint content (may stream large transcripts)",
-      "requestType": "TrajectoryContentRequest",
-      "responseType": "TrajectoryContentResponse"
-    },
-    "map/tasks/create": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["tasks.canCreate"],
-      "description": "Create a new task with optional assignee, status, and provider metadata",
-      "requestType": "TasksCreateRequest",
-      "responseType": "TasksCreateResponse"
-    },
-    "map/tasks/assign": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["tasks.canAssign"],
-      "description": "Assign a task to an agent",
-      "requestType": "TasksAssignRequest",
-      "responseType": "TasksAssignResponse"
-    },
-    "map/tasks/update": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["tasks.canUpdate"],
-      "description": "Update task status, fields, or provider metadata",
-      "requestType": "TasksUpdateRequest",
-      "responseType": "TasksUpdateResponse"
-    },
-    "map/tasks/list": {
-      "tier": "extension",
-      "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["tasks.canList"],
-      "description": "List tasks with optional filters by assignee and status",
-      "requestType": "TasksListRequest",
-      "responseType": "TasksListResponse"
-    },
     "map/resources/list": {
       "tier": "extension",
+      "stability": "staging",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["resources.enabled"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "resources.enabled"
+      ],
       "description": "Browse resources by type with optional filtering and pagination",
       "requestType": "ResourcesListRequest",
       "responseType": "ResourcesListResponse"
     },
     "map/resources/get": {
       "tier": "extension",
+      "stability": "staging",
       "implementedBy": "system",
-      "callableBy": ["client", "agent"],
-      "capabilities": ["resources.enabled"],
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "resources.enabled"
+      ],
       "description": "Fetch a single resource by ID with optional type hint",
       "requestType": "ResourcesGetRequest",
       "responseType": "ResourcesGetResponse"
+    },
+    "map/session/list": {
+      "tier": "core",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "List participant's sessions",
+      "requestType": "SessionListRequest",
+      "responseType": "SessionListResponse"
+    },
+    "map/session/load": {
+      "tier": "core",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "Load/reconnect to an existing session",
+      "requestType": "SessionLoadRequest",
+      "responseType": "SessionLoadResponse"
+    },
+    "map/session/close": {
+      "tier": "core",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [],
+      "description": "Explicitly end a session",
+      "requestType": "SessionCloseRequest",
+      "responseType": "SessionCloseResponse"
+    },
+    "map/inject": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "lifecycle.canSteer"
+      ],
+      "description": "Inject context into a running agent (steering)",
+      "requestType": "InjectRequest",
+      "responseType": "InjectResponse"
+    },
+    "map/tasks/create": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "tasks.canCreate"
+      ],
+      "description": "Create a new task with optional assignee, status, and provider metadata",
+      "requestType": "TasksCreateRequest",
+      "responseType": "TasksCreateResponse"
+    },
+    "map/tasks/assign": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "tasks.canAssign"
+      ],
+      "description": "Assign a task to an agent",
+      "requestType": "TasksAssignRequest",
+      "responseType": "TasksAssignResponse"
+    },
+    "map/tasks/update": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "tasks.canUpdate"
+      ],
+      "description": "Update task status, fields, or provider metadata",
+      "requestType": "TasksUpdateRequest",
+      "responseType": "TasksUpdateResponse"
+    },
+    "map/tasks/list": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "tasks.canList"
+      ],
+      "description": "List tasks with optional filters by assignee and status",
+      "requestType": "TasksListRequest",
+      "responseType": "TasksListResponse"
+    },
+    "trajectory/checkpoint": {
+      "tier": "extension",
+      "stability": "stable",
+      "implementedBy": "system",
+      "callableBy": [
+        "agent"
+      ],
+      "capabilities": [
+        "trajectory.canReport"
+      ],
+      "description": "Report a trajectory checkpoint with metadata",
+      "requestType": "TrajectoryCheckpointRequest",
+      "responseType": "TrajectoryCheckpointResponse"
+    },
+    "trajectory/list": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "trajectory.canQuery"
+      ],
+      "description": "List trajectory checkpoints with filtering",
+      "requestType": "TrajectoryListRequest",
+      "responseType": "TrajectoryListResponse"
+    },
+    "trajectory/get": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "trajectory.canQuery"
+      ],
+      "description": "Get a specific trajectory checkpoint",
+      "requestType": "TrajectoryGetRequest",
+      "responseType": "TrajectoryGetResponse"
+    },
+    "trajectory/content": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "trajectory.canRequestContent"
+      ],
+      "description": "Request full checkpoint content (may stream large transcripts)",
+      "requestType": "TrajectoryContentRequest",
+      "responseType": "TrajectoryContentResponse"
+    },
+    "workspace/search": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "workspace.canSearch"
+      ],
+      "description": "Search for files matching a query in an agent's workspace",
+      "requestType": "WorkspaceSearchRequest",
+      "responseType": "WorkspaceSearchResponse"
+    },
+    "workspace/list": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "workspace.canList"
+      ],
+      "description": "List files in a directory of an agent's workspace",
+      "requestType": "WorkspaceListRequest",
+      "responseType": "WorkspaceListResponse"
+    },
+    "workspace/read": {
+      "tier": "extension",
+      "stability": "staging",
+      "implementedBy": "system",
+      "callableBy": [
+        "client",
+        "agent"
+      ],
+      "capabilities": [
+        "workspace.canRead"
+      ],
+      "description": "Read file contents from an agent's workspace",
+      "requestType": "WorkspaceReadRequest",
+      "responseType": "WorkspaceReadResponse"
     }
   },
   "notifications": {
     "map/event": {
       "tier": "core",
+      "stability": "stable",
       "direction": "system-to-participant",
       "description": "System event notification (sent to subscribers)",
       "paramsType": "EventNotification"
     },
     "map/message": {
       "tier": "core",
+      "stability": "stable",
       "direction": "system-to-participant",
       "description": "Message delivery notification",
       "paramsType": "MessageNotification"
     },
+    "mail/turn.received": {
+      "tier": "extension",
+      "stability": "stable",
+      "direction": "system-to-participant",
+      "description": "Server-push notification that a new turn was recorded in a subscribed conversation"
+    },
     "trajectory/content.chunk": {
       "tier": "extension",
+      "stability": "staging",
       "direction": "system-to-participant",
       "description": "Content chunk for streaming large trajectory transcripts",
       "paramsType": "TrajectoryContentChunkNotification"
@@ -580,6 +928,12 @@
       "4001": "Rate limited",
       "4002": "Quota exceeded"
     },
+    "credentials": {
+      "11000": "Credential broker not enabled",
+      "11001": "Credential scope denied",
+      "11002": "Credential provider unavailable",
+      "11003": "Credential request failed"
+    },
     "federation": {
       "5000": "Federation unavailable",
       "5001": "System not found",
@@ -601,17 +955,11 @@
       "10009": "Thread nesting limit exceeded",
       "10010": "Mail not enabled"
     },
-    "credentials": {
-      "11000": "Credential broker not enabled",
-      "11001": "Credential scope denied",
-      "11002": "Credential provider unavailable",
-      "11003": "Credential request failed"
-    },
-    "workspace": {
-      "12000": "Workspace not enabled",
-      "12001": "File not found",
-      "12002": "Permission denied",
-      "12003": "Invalid path"
+    "tasks": {
+      "14000": "Tasks not enabled",
+      "14001": "Task not found",
+      "14002": "Task assignment failed",
+      "14003": "Task permission denied"
     },
     "trajectory": {
       "13000": "Trajectory not enabled",
@@ -620,11 +968,11 @@
       "13003": "Stream failed",
       "13004": "Permission denied"
     },
-    "tasks": {
-      "14000": "Tasks not enabled",
-      "14001": "Task not found",
-      "14002": "Task assignment failed",
-      "14003": "Task permission denied"
+    "workspace": {
+      "12000": "Workspace not enabled",
+      "12001": "File not found",
+      "12002": "Permission denied",
+      "12003": "Invalid path"
     }
   },
   "tiers": {

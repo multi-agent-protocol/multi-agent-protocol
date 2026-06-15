@@ -21,6 +21,36 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "require": "./dist/server.cjs"
+    },
+    "./conformance": {
+      "types": "./dist/conformance.d.ts",
+      "import": "./dist/conformance.js",
+      "require": "./dist/conformance.cjs"
+    },
+    "./ext": {
+      "types": "./dist/ext/index.d.ts",
+      "import": "./dist/ext/index.js",
+      "require": "./dist/ext/index.cjs"
+    },
+    "./ext/trajectory": {
+      "types": "./dist/ext/trajectory.d.ts",
+      "import": "./dist/ext/trajectory.js",
+      "require": "./dist/ext/trajectory.cjs"
+    },
+    "./ext/mail": {
+      "types": "./dist/ext/mail.d.ts",
+      "import": "./dist/ext/mail.js",
+      "require": "./dist/ext/mail.cjs"
+    },
+    "./ext/mail/conformance": {
+      "types": "./dist/ext/mail/conformance.d.ts",
+      "import": "./dist/ext/mail/conformance.js",
+      "require": "./dist/ext/mail/conformance.cjs"
+    },
+    "./ext/trajectory/conformance": {
+      "types": "./dist/ext/trajectory/conformance.d.ts",
+      "import": "./dist/ext/trajectory/conformance.js",
+      "require": "./dist/ext/trajectory/conformance.cjs"
     }
   },
   "files": [
@@ -69,6 +99,7 @@
   "devDependencies": {
     "@hey-api/openapi-ts": "^0.61.0",
     "@types/node": "^20.11.0",
+    "jose": "^5.2.0",
     "json-schema-to-zod": "^2.7.0",
     "tsup": "^8.0.1",
     "typescript": "^5.3.3",

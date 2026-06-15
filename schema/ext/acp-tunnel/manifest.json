@@ -1,0 +1,11 @@
+{
+  "name": "acp-tunnel",
+  "uri": "urn:map:ext:acp-tunnel:1",
+  "version": "1.0.0",
+  "stability": "staging",
+  "owner": "multi-agent-protocol",
+  "payloadProtocol": "acp",
+  "errorRange": null,
+  "methods": {},
+  "spec": "../../../docs/15-acp-tunnel-extension.md"
+}

@@ -4,6 +4,14 @@
 
 The Trajectory Protocol is an **optional extension** to MAP that adds agent work trajectory tracking. While MAP's core protocol tracks agent lifecycle and state, and Mail tracks conversations between agents, Trajectory tracks **what agents actually do** — checkpoints of work with extensible metadata.
 
+> **Consolidation status (v1.1 recut).** `urn:map:ext:trajectory:1` is a **MAP-owned** extension. The **stable nucleus** is `trajectory/checkpoint`; the query surface (`trajectory/list`/`get`/`content` + the chunked `content.chunk` streaming) is **staging, federation-gated** — zero consumers today, retained for the cross-boundary retrieval case (consolidation plan §Appendix C). Conformance suite: `@multi-agent-protocol/sdk/ext/trajectory/conformance` (the SDK default handler passes it).
+>
+> **Implementation notes** (reconciled from claude-code-swarm, the reference reporter):
+> - **The reporter assigns the checkpoint `id`** (claude-code-swarm generates a 12-char hex). The server records it and fills `timestamp`/`agentId` — it does *not* mint the id. The request type reflects this: `checkpoint` is `Omit<TrajectoryCheckpoint, "timestamp">`, so `id` is required from the caller.
+> - **`resource_id` response linkage** (optional): a server that persists checkpoint content MAY return a `resource_id` alongside the checkpoint, tying it to the resources extension for later retrieval. claude-code-swarm caches it.
+> - **Broadcast fallback**: a reporter MAY degrade to a `map/send` broadcast carrying the checkpoint when the peer does not support the `trajectory/checkpoint` extension — observability without a hard dependency.
+> - **Data plane vs. control plane**: within a trust boundary, checkpoint *content* is typically read directly from git (sessionlog stores checkpoints as git tree objects) while MAP is the notification/control plane. The `list`/`get`/`content` methods are the *cross-boundary* retrieval path (Appendix C), unexercised while consumers share the git boundary.
+
 ### Design Rationale
 
 Multi-agent systems need observability not just into agent state (active, idle, stopped) and communication (messages, conversations), but into the **substance of agent work**:

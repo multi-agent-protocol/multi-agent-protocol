@@ -1,5 +1,7 @@
 # macro-agent Migration to MAP
 
+> **Status note.** This is an illustrative migration sketch, not a current-API reference. Method names here (e.g. `map/agent.register`, `map/hierarchy.get`, `map/broadcast`) predate the consolidation and are not the canonical core surface. For the current 23-method core and extension model, see [`14-consolidation-plan.md`](./14-consolidation-plan.md) and [`registry.md`](./registry.md).
+
 This spec provides a concrete example of how the existing macro-agent implementation would migrate to use MAP, demonstrating the protocol's practical application.
 
 ## Current Architecture Recap

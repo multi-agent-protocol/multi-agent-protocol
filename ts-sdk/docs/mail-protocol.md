@@ -1,5 +1,7 @@
 # Mail Protocol Guide
 
+> **Status note (v1.1).** This guide documents the SDK's mail client over the `urn:map:ext:mail:1` contract, which is **MAP-owned** (`schema/ext/mail/`) and shipped as the default impl at `@multi-agent-protocol/sdk/ext/mail` with a conformance suite at `@multi-agent-protocol/sdk/ext/mail/conformance`. The current surface is **14 methods** using camelCase + `conversationId` + errors in **10000–10999**. The v1.1 reconciliation **added `mail/reopen` + `mail/presence` + the `mail/turn.received` notification and dropped `mail/summary`** — the `getConversationSummary` / `mail.summary.generated` references below are from v1.0 and are no longer part of the contract. See [`docs/registry.md`](../../docs/registry.md).
+
 The Mail Protocol adds **persistence and structure** to MAP's existing message routing. It provides conversations as containers for tracking interactions, making them queryable, replayable, and observable.
 
 Mail is purely additive - it doesn't replace or duplicate `map/send`. It layers on top.
@@ -278,15 +280,9 @@ const { threads } = await agent.listThreads({
 });
 ```
 
-### Conversation Summary and Replay
+### Conversation Replay
 
 ```typescript
-// Get a summary
-const summary = await agent.getConversationSummary({
-  conversationId: conversation.id,
-  include: { keyPoints: true, keyDecisions: true },
-});
-
 // Replay turns from a specific point
 const { turns, hasMore } = await agent.replayConversation({
   conversationId: conversation.id,
@@ -487,7 +483,6 @@ for await (const event of subscription) {
 | `mail.turn.added` | Turn recorded | `conversationId`, `turn` |
 | `mail.turn.updated` | Turn status changed | `conversationId`, `turnId`, `status` |
 | `mail.thread.created` | Thread created | `conversationId`, `thread` |
-| `mail.summary.generated` | Summary generated | `conversationId` |
 
 ### Mail Subscription Filters
 
@@ -549,7 +544,6 @@ Key rules:
 | `listTurns(params)` | `mail/turns/list` | List turns with filters |
 | `createThread(params)` | `mail/thread/create` | Create a thread |
 | `listThreads(params)` | `mail/thread/list` | List threads |
-| `getConversationSummary(params)` | `mail/summary` | Get conversation summary |
 | `replayConversation(params)` | `mail/replay` | Replay turns from a point |
 | `sendWithMail(to, payload, convId, opts?)` | `map/send` + `mail` meta | Route and record |
 
